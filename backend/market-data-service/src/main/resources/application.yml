@@ -1,0 +1,79 @@
+server:
+  port: 8082
+  servlet:
+    context-path: /api/market
+
+spring:
+  application:
+    name: market-data-service
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_ADDR:localhost:8848}
+        username: ${NACOS_USER:nacos}
+        password: ${NACOS_PASS:nacos}
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/quant
+    username: quant
+    password: quant
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: 6379
+  kafka:
+    bootstrap-servers: ${KAFKA_ADDR:localhost:9092}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+
+binance:
+  ws-base-url: ${MARKET_WS:wss://stream.binance.com:9443}
+  rest-base-url: ${MARKET_REST:https://api.binance.com}
+  streams:
+    - btcusdt@kline_1m
+    - ethusdt@kline_1m
+    - bnbusdt@kline_1m
+    - solusdt@kline_1m
+    - xrpusdt@kline_1m
+    - adausdt@kline_1m
+    - dogeusdt@kline_1m
+    - avaxusdt@kline_1m
+    - dotusdt@kline_1m
+    - linkusdt@kline_1m
+    - ltcusdt@kline_1m
+    - trxusdt@kline_1m
+    - bchusdt@kline_1m
+    - uniusdt@kline_1m
+    - atomusdt@kline_1m
+    - xlmusdt@kline_1m
+    - etcusdt@kline_1m
+    - filusdt@kline_1m
+    - aptusdt@kline_1m
+    - nearusdt@kline_1m
+    - btcusdt@depth10@1000ms
+    - ethusdt@depth10@1000ms
+    - bnbusdt@depth10@1000ms
+    - solusdt@depth10@1000ms
+    - xrpusdt@depth10@1000ms
+    - adausdt@depth10@1000ms
+    - dogeusdt@depth10@1000ms
+    - avaxusdt@depth10@1000ms
+    - dotusdt@depth10@1000ms
+    - linkusdt@depth10@1000ms
+    - ltcusdt@depth10@1000ms
+    - trxusdt@depth10@1000ms
+    - bchusdt@depth10@1000ms
+    - uniusdt@depth10@1000ms
+    - atomusdt@depth10@1000ms
+    - xlmusdt@depth10@1000ms
+    - etcusdt@depth10@1000ms
+    - filusdt@depth10@1000ms
+    - aptusdt@depth10@1000ms
+    - nearusdt@depth10@1000ms

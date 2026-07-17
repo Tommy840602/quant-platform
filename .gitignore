@@ -1,0 +1,22 @@
+# Java
+target/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+# Node
+node_modules/
+dist/
+.vite/
+# Python
+__pycache__/
+*.pyc
+.venv/
+.env
+# IDE
+.idea/
+.vscode/
+*.iml
+# Secrets
+*-secret.yml
+application-local.yml
+*.pem

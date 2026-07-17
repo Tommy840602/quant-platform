@@ -1,0 +1,20 @@
+server:
+  port: 8087
+  servlet:
+    context-path: /api/backtest
+
+spring:
+  application:
+    name: backtest-service
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_ADDR:localhost:8848}
+        username: ${NACOS_USER:nacos}
+        password: ${NACOS_PASS:nacos}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus

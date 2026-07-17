@@ -1,0 +1,247 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: api-gateway, namespace: quant }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: api-gateway } }
+  template:
+    metadata: { labels: { app: api-gateway } }
+    spec:
+      containers:
+        - name: api-gateway
+          image: quant/api-gateway:1.0.0-SNAPSHOT
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef: { name: quant-config }
+            - secretRef: { name: quant-secrets }
+          ports: [{ containerPort: 8080 }]
+          readinessProbe:
+            httpGet: { path: /actuator/health, port: 8080 }
+            initialDelaySeconds: 40
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata: { name: api-gateway, namespace: quant }
+spec:
+  type: 
+  selector: { app: api-gateway }
+  ports: [{ port: 8080, targetPort: 8080 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: auth-service, namespace: quant }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: auth-service } }
+  template:
+    metadata: { labels: { app: auth-service } }
+    spec:
+      containers:
+        - name: auth-service
+          image: quant/auth-service:1.0.0-SNAPSHOT
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef: { name: quant-config }
+            - secretRef: { name: quant-secrets }
+          ports: [{ containerPort: 8081 }]
+          readinessProbe:
+            httpGet: { path: /api/auth/actuator/health, port: 8081 }
+            initialDelaySeconds: 40
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata: { name: auth-service, namespace: quant }
+spec:
+  type: 
+  selector: { app: auth-service }
+  ports: [{ port: 8081, targetPort: 8081 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: market-data-service, namespace: quant }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: market-data-service } }
+  template:
+    metadata: { labels: { app: market-data-service } }
+    spec:
+      containers:
+        - name: market-data-service
+          image: quant/market-data-service:1.0.0-SNAPSHOT
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef: { name: quant-config }
+            - secretRef: { name: quant-secrets }
+          ports: [{ containerPort: 8082 }]
+          readinessProbe:
+            httpGet: { path: /api/market/actuator/health, port: 8082 }
+            initialDelaySeconds: 40
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata: { name: market-data-service, namespace: quant }
+spec:
+  type: 
+  selector: { app: market-data-service }
+  ports: [{ port: 8082, targetPort: 8082 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: strategy-service, namespace: quant }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: strategy-service } }
+  template:
+    metadata: { labels: { app: strategy-service } }
+    spec:
+      containers:
+        - name: strategy-service
+          image: quant/strategy-service:1.0.0-SNAPSHOT
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef: { name: quant-config }
+            - secretRef: { name: quant-secrets }
+          ports: [{ containerPort: 8083 }]
+          readinessProbe:
+            httpGet: { path: /api/strategy/actuator/health, port: 8083 }
+            initialDelaySeconds: 40
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata: { name: strategy-service, namespace: quant }
+spec:
+  type: 
+  selector: { app: strategy-service }
+  ports: [{ port: 8083, targetPort: 8083 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: order-execution-service, namespace: quant }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: order-execution-service } }
+  template:
+    metadata: { labels: { app: order-execution-service } }
+    spec:
+      containers:
+        - name: order-execution-service
+          image: quant/order-execution-service:1.0.0-SNAPSHOT
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef: { name: quant-config }
+            - secretRef: { name: quant-secrets }
+          ports: [{ containerPort: 8084 }]
+          readinessProbe:
+            httpGet: { path: /api/order/actuator/health, port: 8084 }
+            initialDelaySeconds: 40
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata: { name: order-execution-service, namespace: quant }
+spec:
+  type: 
+  selector: { app: order-execution-service }
+  ports: [{ port: 8084, targetPort: 8084 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: risk-service, namespace: quant }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: risk-service } }
+  template:
+    metadata: { labels: { app: risk-service } }
+    spec:
+      containers:
+        - name: risk-service
+          image: quant/risk-service:1.0.0-SNAPSHOT
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef: { name: quant-config }
+            - secretRef: { name: quant-secrets }
+          ports: [{ containerPort: 8085 }]
+          readinessProbe:
+            httpGet: { path: /api/risk/actuator/health, port: 8085 }
+            initialDelaySeconds: 40
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata: { name: risk-service, namespace: quant }
+spec:
+  type: 
+  selector: { app: risk-service }
+  ports: [{ port: 8085, targetPort: 8085 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: account-service, namespace: quant }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: account-service } }
+  template:
+    metadata: { labels: { app: account-service } }
+    spec:
+      containers:
+        - name: account-service
+          image: quant/account-service:1.0.0-SNAPSHOT
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef: { name: quant-config }
+            - secretRef: { name: quant-secrets }
+          ports: [{ containerPort: 8096 }]
+          readinessProbe:
+            httpGet: { path: /api/account/actuator/health, port: 8096 }
+            initialDelaySeconds: 40
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata: { name: account-service, namespace: quant }
+spec:
+  type: 
+  selector: { app: account-service }
+  ports: [{ port: 8096, targetPort: 8096 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: backtest-service, namespace: quant }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: backtest-service } }
+  template:
+    metadata: { labels: { app: backtest-service } }
+    spec:
+      containers:
+        - name: backtest-service
+          image: quant/backtest-service:1.0.0-SNAPSHOT
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef: { name: quant-config }
+            - secretRef: { name: quant-secrets }
+          ports: [{ containerPort: 8087 }]
+          readinessProbe:
+            httpGet: { path: /api/backtest/actuator/health, port: 8087 }
+            initialDelaySeconds: 40
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata: { name: backtest-service, namespace: quant }
+spec:
+  type: 
+  selector: { app: backtest-service }
+  ports: [{ port: 8087, targetPort: 8087 }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: api-gateway-external, namespace: quant }
+spec:
+  type: NodePort
+  selector: { app: api-gateway }
+  ports: [{ port: 8080, targetPort: 8080, nodePort: 30080 }]

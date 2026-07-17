@@ -1,0 +1,91 @@
+server:
+  port: 8084
+  servlet:
+    context-path: /api/order
+
+spring:
+  application:
+    name: order-execution-service
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_ADDR:localhost:8848}
+        username: ${NACOS_USER:nacos}
+        password: ${NACOS_PASS:nacos}
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/quant
+    username: quant
+    password: quant
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: 6379
+  kafka:
+    bootstrap-servers: ${KAFKA_ADDR:localhost:9092}
+    consumer:
+      group-id: order-execution-db
+      auto-offset-reset: latest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "com.quant.common.*"
+        spring.json.value.default.type: com.quant.common.event.OrderEvent
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+
+trading:
+  dry-run: ${TRADING_DRY_RUN:true}
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      riskClient:
+        sliding-window-size: 20
+        failure-rate-threshold: 50
+
+binance:
+  env: ${BINANCE_ENV:testnet}
+  rest-base-url: ${BINANCE_REST:https://testnet.binance.vision}
+  mainnet-rest-url: ${BINANCE_MAINNET_REST:https://api.binance.com}
+  mainnet-api-key: ${BINANCE_MAINNET_API_KEY:}
+  mainnet-api-secret: ${BINANCE_MAINNET_API_SECRET:}
+  mainnet-futures-rest-url: ${BINANCE_MAINNET_FUTURES_REST:https://fapi.binance.com}
+  mainnet-futures-api-key: ${BINANCE_MAINNET_FUTURES_API_KEY:}
+  mainnet-futures-api-secret: ${BINANCE_MAINNET_FUTURES_API_SECRET:}
+  ws-base-url: ${BINANCE_WS:wss://stream.testnet.binance.vision}
+  api-key: ${BINANCE_API_KEY:}        # 空 = 不送真實單；填入 testnet 金鑰並設 trading.dry-run=false 才會下單
+  api-secret: ${BINANCE_API_SECRET:}
+  recv-window: 5000
+  ws-api-url: ${BINANCE_WS_API:wss://ws-api.testnet.binance.vision/ws-api/v3}
+  ed25519-api-key: ${BINANCE_ED25519_API_KEY:}
+  ed25519-key-path: ${BINANCE_ED25519_KEY_PATH:}
+  user-data-stream-enabled: ${BINANCE_UDS_ENABLED:false}
+  futures-rest-url: ${BINANCE_FUTURES_REST:https://testnet.binancefuture.com}
+  futures-api-key: ${BINANCE_FUTURES_API_KEY:}
+  futures-api-secret: ${BINANCE_FUTURES_API_SECRET:}
+
+# 讀寫分離（預設關閉；設 enabled=true 並填主/副庫即啟用，見 ReadWriteDataSourceConfig）
+datasource:
+  readwrite-split:
+    enabled: ${DB_RW_SPLIT:false}
+app:
+  datasource:
+    write:
+      jdbc-url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/quant
+      username: quant
+      password: quant
+    read:
+      jdbc-url: jdbc:postgresql://${DB_READ_HOST:localhost}:${DB_READ_PORT:5433}/quant
+      username: quant
+      password: quant

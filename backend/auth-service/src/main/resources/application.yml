@@ -1,0 +1,35 @@
+server:
+  port: 8081
+  servlet:
+    context-path: /api/auth
+
+spring:
+  application:
+    name: auth-service
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_ADDR:localhost:8848}
+        username: ${NACOS_USER:nacos}
+        password: ${NACOS_PASS:nacos}
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/quant
+    username: quant
+    password: quant
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  kafka:
+    bootstrap-servers: ${KAFKA_ADDR:localhost:9092}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+
+jwt:
+  secret: ${JWT_SECRET:change-me-in-prod-please-use-a-long-random-secret-key}
+  access-token-ttl-seconds: 1800
+  refresh-token-ttl-seconds: 604800

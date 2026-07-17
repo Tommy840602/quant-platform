@@ -1,0 +1,34 @@
+server:
+  port: 8098
+  servlet:
+    context-path: /api/notify
+
+spring:
+  application:
+    name: notification-service
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_ADDR:localhost:8848}
+        username: ${NACOS_USER:nacos}
+        password: ${NACOS_PASS:nacos}
+  kafka:
+    bootstrap-servers: ${KAFKA_ADDR:localhost:9092}
+    consumer:
+      group-id: notification-service
+      auto-offset-reset: latest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "com.quant.common.*"
+        spring.json.value.default.type: com.quant.common.event.OrderEvent
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+
+notification:
+  slack:
+    webhook-url: ${SLACK_WEBHOOK_URL:}

@@ -1,0 +1,178 @@
+# 正式部署（單機 docker-compose）。所有服務同一 docker 網路，以服務名互連。
+# 金鑰等機密由同目錄 .env 提供（見 .env.prod 範本）。
+# 啟動： docker compose -f docker-compose.prod.yml up -d --build
+
+x-backend-env: &backend-env
+  NACOS_ADDR: nacos:8848
+  KAFKA_ADDR: kafka:9092
+  REDIS_HOST: redis
+  DB_HOST: timescaledb
+  DB_PORT: "5432"
+  JWT_ENABLED: ${JWT_ENABLED:-false}
+  JWT_SECRET: ${JWT_SECRET:-}
+  BINANCE_ENV: ${BINANCE_ENV:-testnet}
+  BINANCE_REST: ${BINANCE_REST:-https://testnet.binance.vision}
+  MARKET_REST: ${MARKET_REST:-https://api.binance.com}
+  BINANCE_API_KEY: ${BINANCE_API_KEY:-}
+  BINANCE_API_SECRET: ${BINANCE_API_SECRET:-}
+  BINANCE_MAINNET_REST: ${BINANCE_MAINNET_REST:-https://api.binance.com}
+  BINANCE_MAINNET_API_KEY: ${BINANCE_MAINNET_API_KEY:-}
+  BINANCE_MAINNET_API_SECRET: ${BINANCE_MAINNET_API_SECRET:-}
+  BINANCE_FUTURES_REST: ${BINANCE_FUTURES_REST:-https://testnet.binancefuture.com}
+  TRADING_DRY_RUN: ${TRADING_DRY_RUN:-true}
+  SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+  BINANCE_UDS_ENABLED: ${BINANCE_UDS_ENABLED:-false}
+
+services:
+  # ---------- 基礎設施 ----------
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: qp-timescaledb
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: quant
+      POSTGRES_PASSWORD: quant
+      POSTGRES_DB: quant
+    volumes:
+      - ts_data:/var/lib/postgresql/data
+      - ./infra/init/timescale-init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  redis:
+    image: redis:7-alpine
+    container_name: qp-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "no", "--save", ""]
+
+  kafka:
+    image: apache/kafka:3.7.1
+    container_name: qp-kafka
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      # 用服務名 kafka，容器間才連得到
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+  nacos:
+    image: nacos/nacos-server:v2.3.2
+    container_name: qp-nacos
+    restart: unless-stopped
+    environment:
+      MODE: standalone
+      NACOS_AUTH_ENABLE: "false"
+      JVM_XMS: 512m
+      JVM_XMX: 512m
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: qp-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: qp-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASS:-admin}
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning
+    ports: ["127.0.0.1:3000:3000"]
+    depends_on: [prometheus]
+
+  # ---------- 後端微服務（同一 image，以 SERVICE 選擇） ----------
+  api-gateway:
+    image: quant-backend:latest
+    build: { context: ./backend, dockerfile: Dockerfile.prod }
+    container_name: qp-api-gateway
+    restart: unless-stopped
+    environment: { <<: *backend-env, SERVICE: api-gateway }
+    depends_on: [nacos, kafka, redis, timescaledb]
+
+  market-data-service:
+    image: quant-backend:latest
+    container_name: qp-market-data-service
+    restart: unless-stopped
+    environment: { <<: *backend-env, SERVICE: market-data-service }
+    depends_on: [api-gateway]
+
+  strategy-service:
+    image: quant-backend:latest
+    container_name: qp-strategy-service
+    restart: unless-stopped
+    environment: { <<: *backend-env, SERVICE: strategy-service }
+    depends_on: [api-gateway]
+
+  order-execution-service:
+    image: quant-backend:latest
+    container_name: qp-order-execution-service
+    restart: unless-stopped
+    environment: { <<: *backend-env, SERVICE: order-execution-service }
+    depends_on: [api-gateway]
+
+  risk-service:
+    image: quant-backend:latest
+    container_name: qp-risk-service
+    restart: unless-stopped
+    environment: { <<: *backend-env, SERVICE: risk-service }
+    depends_on: [api-gateway]
+
+  account-service:
+    image: quant-backend:latest
+    container_name: qp-account-service
+    restart: unless-stopped
+    environment: { <<: *backend-env, SERVICE: account-service }
+    depends_on: [api-gateway]
+
+  auth-service:
+    image: quant-backend:latest
+    container_name: qp-auth-service
+    restart: unless-stopped
+    environment: { <<: *backend-env, SERVICE: auth-service }
+    depends_on: [api-gateway]
+
+  backtest-service:
+    image: quant-backend:latest
+    container_name: qp-backtest-service
+    restart: unless-stopped
+    environment: { <<: *backend-env, SERVICE: backtest-service }
+    depends_on: [api-gateway]
+
+  notification-service:
+    image: quant-backend:latest
+    container_name: qp-notification-service
+    restart: unless-stopped
+    environment: { <<: *backend-env, SERVICE: notification-service }
+    depends_on: [api-gateway]
+
+  # ---------- Python 研究/回測 ----------
+  research:
+    build: { context: ./research }
+    container_name: qp-research
+    restart: unless-stopped
+    environment:
+      DB_HOST: timescaledb
+      DB_PORT: "5432"
+    depends_on: [timescaledb]
+
+  # ---------- 前端（nginx 靜態 + 反代 /api、/research） ----------
+  frontend:
+    build: { context: ./frontend }
+    container_name: qp-frontend
+    restart: unless-stopped
+    ports: ["${FRONTEND_PORT:-8088}:80"]
+    depends_on: [api-gateway, research]
+
+volumes:
+  ts_data:

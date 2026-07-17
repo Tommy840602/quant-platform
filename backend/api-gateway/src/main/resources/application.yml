@@ -1,0 +1,60 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_ADDR:localhost:8848}
+        username: ${NACOS_USER:nacos}
+        password: ${NACOS_PASS:nacos}
+    gateway:
+      discovery:
+        locator:
+          enabled: true
+          lower-case-service-id: true
+      routes:
+        - id: auth-service
+          uri: lb://auth-service
+          predicates: [Path=/api/auth/**]
+        - id: market-data-service
+          uri: lb://market-data-service
+          predicates: [Path=/api/market/**]
+        - id: strategy-service
+          uri: lb://strategy-service
+          predicates: [Path=/api/strategy/**]
+        - id: order-execution-service
+          uri: lb://order-execution-service
+          predicates: [Path=/api/order/**]
+        - id: risk-service
+          uri: lb://risk-service
+          predicates: [Path=/api/risk/**]
+        - id: account-service
+          uri: lb://account-service
+          predicates: [Path=/api/account/**]
+        - id: backtest-service
+          uri: lb://backtest-service
+          predicates: [Path=/api/backtest/**]
+        - id: notification-service
+          uri: lb://notification-service
+          predicates: [Path=/api/notify/**]
+      # 全域限流可搭配 RequestRateLimiter + Redis（見架構文件 §4）
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: 6379
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway,prometheus,metrics
+
+security:
+  jwt:
+    enabled: ${JWT_ENABLED:false}   # 本機開發放行；正式環境設 true 才強制驗證
+
+jwt:
+  secret: ${JWT_SECRET:change-me-in-prod-please-use-a-long-random-secret-key}

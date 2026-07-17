@@ -1,0 +1,33 @@
+:root { color-scheme: light; }
+html.dark { color-scheme: dark; }
+
+body { margin: 0; background: var(--el-bg-color); color: var(--el-text-color-primary); }
+
+/* 深色 TradingView 風格 */
+html.dark body { background: #0e0f14; }
+html.dark {
+  --el-bg-color: #131722;
+  --el-bg-color-page: #0e0f14;
+  --el-bg-color-overlay: #1c2030;
+  --el-border-color: #2a2e39;
+  --el-border-color-light: #2a2e39;
+  --el-fill-color-blank: #1c2030;
+  --el-text-color-primary: #d1d4dc;
+  --el-text-color-regular: #b2b5be;
+  --el-text-color-secondary: #787b86;
+}
+html.dark .el-card { background: #1c2030; border-color: #2a2e39; }
+html.dark .el-card__header { border-bottom-color: #2a2e39; }
+html.dark .el-table { --el-table-bg-color: #1c2030; --el-table-tr-bg-color: #1c2030;
+  --el-table-border-color: #2a2e39; --el-table-header-bg-color: #171b26; --el-table-row-hover-bg-color: #232838; }
+html.dark .el-input__wrapper, html.dark .el-select__wrapper { background: #171b26; }
+html.dark .el-button:not(.is-text):not([type]) { background: #1c2030; border-color: #2a2e39; color: #d1d4dc; }
+html.dark .el-tag { background: #232838; }
+
+/* 圖表圖例 / 十字準星浮框 */
+.chart-wrap { position: relative; }
+.chart-legend { position: absolute; top: 8px; left: 10px; z-index: 5; font-size: 12px;
+  line-height: 1.6; pointer-events: none; color: var(--el-text-color-regular);
+  background: color-mix(in srgb, var(--el-bg-color) 70%, transparent); padding: 4px 8px; border-radius: 4px; }
+.chart-legend b { color: var(--el-text-color-primary); }
+.chart-legend .up { color: #26a69a; } .chart-legend .dn { color: #ef5350; }

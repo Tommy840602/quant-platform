@@ -1,0 +1,195 @@
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::                (v3.3.2)
+
+2026-07-17T21:59:16.775+08:00  INFO 62125 --- [account-service] [           main] com.quant.account.AccountApplication     : Starting AccountApplication v1.0.0-SNAPSHOT using Java 21.0.2 with PID 62125 (/Users/huangyanwei/trade/quant-platform/backend/account-service/target/account-service-1.0.0-SNAPSHOT.jar started by huangyanwei in /Users/huangyanwei/trade/quant-platform/backend)
+2026-07-17T21:59:16.778+08:00  INFO 62125 --- [account-service] [           main] com.quant.account.AccountApplication     : No active profile set, falling back to 1 default profile: "default"
+2026-07-17T21:59:18.847+08:00  INFO 62125 --- [account-service] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Multiple Spring Data modules found, entering strict repository configuration mode
+2026-07-17T21:59:18.849+08:00  INFO 62125 --- [account-service] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2026-07-17T21:59:18.996+08:00  INFO 62125 --- [account-service] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 141 ms. Found 2 JPA repository interfaces.
+2026-07-17T21:59:19.022+08:00  INFO 62125 --- [account-service] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Multiple Spring Data modules found, entering strict repository configuration mode
+2026-07-17T21:59:19.023+08:00  INFO 62125 --- [account-service] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data Redis repositories in DEFAULT mode.
+2026-07-17T21:59:19.038+08:00  INFO 62125 --- [account-service] [           main] .RepositoryConfigurationExtensionSupport : Spring Data Redis - Could not safely identify store assignment for repository candidate interface com.quant.account.repository.PositionRepository; If you want this repository to be a Redis repository, consider annotating your entities with one of these annotations: org.springframework.data.redis.core.RedisHash (preferred), or consider extending one of the following types with your repository: org.springframework.data.keyvalue.repository.KeyValueRepository
+2026-07-17T21:59:19.038+08:00  INFO 62125 --- [account-service] [           main] .RepositoryConfigurationExtensionSupport : Spring Data Redis - Could not safely identify store assignment for repository candidate interface com.quant.account.repository.EquityRepository; If you want this repository to be a Redis repository, consider annotating your entities with one of these annotations: org.springframework.data.redis.core.RedisHash (preferred), or consider extending one of the following types with your repository: org.springframework.data.keyvalue.repository.KeyValueRepository
+2026-07-17T21:59:19.038+08:00  INFO 62125 --- [account-service] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 3 ms. Found 0 Redis repository interfaces.
+2026-07-17T21:59:19.792+08:00  INFO 62125 --- [account-service] [           main] o.s.cloud.context.scope.GenericScope     : BeanFactory id=e7e1f306-5b38-3ec2-b2f1-b6d5788d966f
+2026-07-17T21:59:20.438+08:00  WARN 62125 --- [account-service] [           main] trationDelegate$BeanPostProcessorChecker : Bean 'org.springframework.cloud.client.loadbalancer.LoadBalancerAutoConfiguration$DeferringLoadBalancerInterceptorConfig' of type [org.springframework.cloud.client.loadbalancer.LoadBalancerAutoConfiguration$DeferringLoadBalancerInterceptorConfig] is not eligible for getting processed by all BeanPostProcessors (for example: not eligible for auto-proxying). The currently created BeanPostProcessor [lbRestClientPostProcessor] is declared through a non-static factory method on that class; consider declaring it as static instead.
+2026-07-17T21:59:20.442+08:00  WARN 62125 --- [account-service] [           main] trationDelegate$BeanPostProcessorChecker : Bean 'deferringLoadBalancerInterceptor' of type [org.springframework.cloud.client.loadbalancer.DeferringLoadBalancerInterceptor] is not eligible for getting processed by all BeanPostProcessors (for example: not eligible for auto-proxying). Is this bean getting eagerly injected into a currently created BeanPostProcessor [lbRestClientPostProcessor]? Check the corresponding BeanPostProcessor declaration and its dependencies.
+2026-07-17T21:59:21.016+08:00  INFO 62125 --- [account-service] [           main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port 8096 (http)
+2026-07-17T21:59:21.034+08:00  INFO 62125 --- [account-service] [           main] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
+2026-07-17T21:59:21.034+08:00  INFO 62125 --- [account-service] [           main] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/10.1.26]
+2026-07-17T21:59:21.067+08:00  INFO 62125 --- [account-service] [           main] o.a.c.c.C.[.[localhost].[/api/account]   : Initializing Spring embedded WebApplicationContext
+2026-07-17T21:59:21.067+08:00  INFO 62125 --- [account-service] [           main] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 4164 ms
+2026-07-17T21:59:21.748+08:00  INFO 62125 --- [account-service] [           main] o.hibernate.jpa.internal.util.LogHelper  : HHH000204: Processing PersistenceUnitInfo [name: default]
+2026-07-17T21:59:21.859+08:00  INFO 62125 --- [account-service] [           main] org.hibernate.Version                    : HHH000412: Hibernate ORM core version 6.5.2.Final
+2026-07-17T21:59:21.902+08:00  INFO 62125 --- [account-service] [           main] o.h.c.internal.RegionFactoryInitiator    : HHH000026: Second-level cache disabled
+2026-07-17T21:59:22.283+08:00  INFO 62125 --- [account-service] [           main] o.s.o.j.p.SpringPersistenceUnitInfo      : No LoadTimeWeaver setup: ignoring JPA class transformer
+2026-07-17T21:59:22.322+08:00  INFO 62125 --- [account-service] [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Starting...
+2026-07-17T21:59:22.571+08:00  INFO 62125 --- [account-service] [           main] com.zaxxer.hikari.pool.HikariPool        : HikariPool-1 - Added connection org.postgresql.jdbc.PgConnection@1cb929a9
+2026-07-17T21:59:22.572+08:00  INFO 62125 --- [account-service] [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Start completed.
+2026-07-17T21:59:23.737+08:00  INFO 62125 --- [account-service] [           main] o.h.e.t.j.p.i.JtaPlatformInitiator       : HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
+2026-07-17T21:59:23.826+08:00  INFO 62125 --- [account-service] [           main] j.LocalContainerEntityManagerFactoryBean : Initialized JPA EntityManagerFactory for persistence unit 'default'
+2026-07-17T21:59:25.438+08:00  INFO 62125 --- [account-service] [           main] o.s.c.openfeign.FeignClientFactoryBean   : For 'risk-service' URL not provided. Will try picking an instance via load-balancing.
+2026-07-17T21:59:25.552+08:00  INFO 62125 --- [account-service] [           main] o.s.c.openfeign.FeignClientFactoryBean   : For 'notification-service' URL not provided. Will try picking an instance via load-balancing.
+2026-07-17T21:59:25.726+08:00  WARN 62125 --- [account-service] [           main] c.q.a.service.BinanceAccountService      : BINANCE_ENV=mainnet ｜ 正在使用【正式網真實帳戶】REST=https://api.binance.com ｜ 下單/查詢皆為真錢，請謹慎
+2026-07-17T21:59:25.744+08:00  INFO 62125 --- [account-service] [           main] o.s.c.openfeign.FeignClientFactoryBean   : For 'order-execution-service' URL not provided. Will try picking an instance via load-balancing.
+2026-07-17T21:59:29.922+08:00  WARN 62125 --- [account-service] [           main] iguration$LoadBalancerCaffeineWarnLogger : Spring Cloud LoadBalancer is currently working with the default cache. While this cache implementation is useful for development and tests, it's recommended to use Caffeine cache in production.You can switch to using Caffeine cache, by adding it and org.springframework.cache.caffeine.CaffeineCacheManager to the classpath.
+2026-07-17T21:59:29.965+08:00  INFO 62125 --- [account-service] [           main] o.s.b.a.e.web.EndpointLinksResolver      : Exposing 4 endpoints beneath base path '/actuator'
+2026-07-17T21:59:30.149+08:00  INFO 62125 --- [account-service] [           main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port 8096 (http) with context path '/api/account'
+2026-07-17T21:59:30.161+08:00  INFO 62125 --- [account-service] [           main] com.alibaba.nacos.client.naming          : initializer namespace from ans.namespace attribute : null
+2026-07-17T21:59:30.162+08:00  INFO 62125 --- [account-service] [           main] com.alibaba.nacos.client.naming          : initializer namespace from ALIBABA_ALIWARE_NAMESPACE attribute :null
+2026-07-17T21:59:30.163+08:00  INFO 62125 --- [account-service] [           main] com.alibaba.nacos.client.naming          : initializer namespace from namespace attribute :null
+2026-07-17T21:59:30.183+08:00  INFO 62125 --- [account-service] [           main] com.alibaba.nacos.client.naming          : FailoverDataSource type is class com.alibaba.nacos.client.naming.backups.datasource.DiskFailoverDataSource
+2026-07-17T21:59:30.192+08:00  INFO 62125 --- [account-service] [       Thread-3] c.a.n.c.a.r.identify.CredentialWatcher   : null No credential found
+2026-07-17T21:59:30.197+08:00  INFO 62125 --- [account-service] [           main] c.alibaba.nacos.client.utils.ParamUtil   : [settings] [req-serv] nacos-server port:8848
+2026-07-17T21:59:30.197+08:00  INFO 62125 --- [account-service] [           main] c.alibaba.nacos.client.utils.ParamUtil   : [settings] [http-client] connect timeout:1000
+2026-07-17T21:59:30.199+08:00  INFO 62125 --- [account-service] [           main] c.alibaba.nacos.client.utils.ParamUtil   : PER_TASK_CONFIG_SIZE: 3000.0
+2026-07-17T21:59:30.205+08:00  INFO 62125 --- [account-service] [           main] c.a.n.p.a.s.c.ClientAuthPluginManager    : [ClientAuthPluginManager] Load ClientAuthService com.alibaba.nacos.client.auth.impl.NacosClientAuthServiceImpl success.
+2026-07-17T21:59:30.205+08:00  INFO 62125 --- [account-service] [           main] c.a.n.p.a.s.c.ClientAuthPluginManager    : [ClientAuthPluginManager] Load ClientAuthService com.alibaba.nacos.client.auth.ram.RamClientAuthServiceImpl success.
+2026-07-17T21:59:30.438+08:00  INFO 62125 --- [account-service] [           main] com.alibaba.nacos.common.remote.client   : [RpcClientFactory] create a new rpc client of fe9f5107-2508-4bd8-b899-7dacae720eae
+2026-07-17T21:59:30.460+08:00  INFO 62125 --- [account-service] [           main] com.alibaba.nacos.client.naming          : Create naming rpc client for uuid->fe9f5107-2508-4bd8-b899-7dacae720eae
+2026-07-17T21:59:30.461+08:00  INFO 62125 --- [account-service] [           main] com.alibaba.nacos.common.remote.client   : [fe9f5107-2508-4bd8-b899-7dacae720eae] RpcClient init, ServerListFactory = com.alibaba.nacos.client.naming.core.ServerListManager
+2026-07-17T21:59:30.461+08:00  INFO 62125 --- [account-service] [           main] com.alibaba.nacos.common.remote.client   : [fe9f5107-2508-4bd8-b899-7dacae720eae] Registry connection listener to current client:com.alibaba.nacos.client.naming.remote.gprc.redo.NamingGrpcRedoService
+2026-07-17T21:59:30.462+08:00  INFO 62125 --- [account-service] [           main] com.alibaba.nacos.common.remote.client   : [fe9f5107-2508-4bd8-b899-7dacae720eae] Register server push request handler:com.alibaba.nacos.client.naming.remote.gprc.NamingPushRequestHandler
+2026-07-17T21:59:30.465+08:00  INFO 62125 --- [account-service] [           main] com.alibaba.nacos.common.remote.client   : [fe9f5107-2508-4bd8-b899-7dacae720eae] Try to connect to server on start up, server: {serverIp = 'localhost', server main port = 8848}
+2026-07-17T21:59:30.518+08:00  INFO 62125 --- [account-service] [           main] c.a.n.c.remote.client.grpc.GrpcClient    : grpc client connection server:localhost ip,serverPort:9848,grpcTslConfig:{"sslProvider":"","enableTls":false,"mutualAuthEnable":false,"trustAll":false}
+2026-07-17T21:59:31.752+08:00  INFO 62125 --- [account-service] [           main] c.a.n.c.a.AbstractAbilityControlManager  : Ready to get current node abilities...
+2026-07-17T21:59:31.755+08:00  INFO 62125 --- [account-service] [           main] c.a.n.c.a.AbstractAbilityControlManager  : Ready to initialize current node abilities, support modes: [SDK_CLIENT]
+2026-07-17T21:59:31.757+08:00  INFO 62125 --- [account-service] [           main] c.a.n.c.a.AbstractAbilityControlManager  : Initialize current abilities finish...
+2026-07-17T21:59:31.759+08:00  INFO 62125 --- [account-service] [           main] c.a.n.c.a.d.NacosAbilityManagerHolder    : [AbilityControlManager] Successfully initialize AbilityControlManager
+2026-07-17T21:59:31.808+08:00  INFO 62125 --- [account-service] [           main] com.alibaba.nacos.common.remote.client   : [fe9f5107-2508-4bd8-b899-7dacae720eae] Success to connect to server [localhost:8848] on start up, connectionId = 1784296771077_142.250.196.219_60492
+2026-07-17T21:59:31.809+08:00  INFO 62125 --- [account-service] [           main] com.alibaba.nacos.common.remote.client   : [fe9f5107-2508-4bd8-b899-7dacae720eae] Register server push request handler:com.alibaba.nacos.common.remote.client.RpcClient$ConnectResetRequestHandler
+2026-07-17T21:59:31.810+08:00  INFO 62125 --- [account-service] [           main] com.alibaba.nacos.common.remote.client   : [fe9f5107-2508-4bd8-b899-7dacae720eae] Register server push request handler:com.alibaba.nacos.common.remote.client.RpcClient$$Lambda/0x0000000401daa150
+2026-07-17T21:59:31.811+08:00  INFO 62125 --- [account-service] [           main] com.alibaba.nacos.client.naming          : [REGISTER-SERVICE] public registering service account-service with instance Instance{instanceId='null', ip='192.168.1.146', port=8096, weight=1.0, healthy=true, enabled=true, ephemeral=true, clusterName='', serviceName='null', metadata={IPv6=null, preserved.register.source=SPRING_CLOUD}}
+2026-07-17T21:59:31.811+08:00  INFO 62125 --- [account-service] [remote.worker.0] com.alibaba.nacos.common.remote.client   : [fe9f5107-2508-4bd8-b899-7dacae720eae] Notify connected event to listeners.
+2026-07-17T21:59:31.812+08:00  INFO 62125 --- [account-service] [remote.worker.0] com.alibaba.nacos.client.naming          : Grpc connection connect
+2026-07-17T21:59:31.858+08:00  INFO 62125 --- [account-service] [           main] c.a.c.n.registry.NacosServiceRegistry    : nacos registry, DEFAULT_GROUP account-service 192.168.1.146:8096 register finished
+2026-07-17T21:59:31.942+08:00  INFO 62125 --- [account-service] [           main] o.a.k.clients.consumer.ConsumerConfig    : ConsumerConfig values: 
+	allow.auto.create.topics = true
+	auto.commit.interval.ms = 5000
+	auto.include.jmx.reporter = true
+	auto.offset.reset = latest
+	bootstrap.servers = [localhost:9092]
+	check.crcs = true
+	client.dns.lookup = use_all_dns_ips
+	client.id = consumer-account-service-1
+	client.rack = 
+	connections.max.idle.ms = 540000
+	default.api.timeout.ms = 60000
+	enable.auto.commit = false
+	enable.metrics.push = true
+	exclude.internal.topics = true
+	fetch.max.bytes = 52428800
+	fetch.max.wait.ms = 500
+	fetch.min.bytes = 1
+	group.id = account-service
+	group.instance.id = null
+	group.protocol = classic
+	group.remote.assignor = null
+	heartbeat.interval.ms = 3000
+	interceptor.classes = []
+	internal.leave.group.on.close = true
+	internal.throw.on.fetch.stable.offset.unsupported = false
+	isolation.level = read_uncommitted
+	key.deserializer = class org.apache.kafka.common.serialization.StringDeserializer
+	max.partition.fetch.bytes = 1048576
+	max.poll.interval.ms = 300000
+	max.poll.records = 500
+	metadata.max.age.ms = 300000
+	metric.reporters = []
+	metrics.num.samples = 2
+	metrics.recording.level = INFO
+	metrics.sample.window.ms = 30000
+	partition.assignment.strategy = [class org.apache.kafka.clients.consumer.RangeAssignor, class org.apache.kafka.clients.consumer.CooperativeStickyAssignor]
+	receive.buffer.bytes = 65536
+	reconnect.backoff.max.ms = 1000
+	reconnect.backoff.ms = 50
+	request.timeout.ms = 30000
+	retry.backoff.max.ms = 1000
+	retry.backoff.ms = 100
+	sasl.client.callback.handler.class = null
+	sasl.jaas.config = null
+	sasl.kerberos.kinit.cmd = /usr/bin/kinit
+	sasl.kerberos.min.time.before.relogin = 60000
+	sasl.kerberos.service.name = null
+	sasl.kerberos.ticket.renew.jitter = 0.05
+	sasl.kerberos.ticket.renew.window.factor = 0.8
+	sasl.login.callback.handler.class = null
+	sasl.login.class = null
+	sasl.login.connect.timeout.ms = null
+	sasl.login.read.timeout.ms = null
+	sasl.login.refresh.buffer.seconds = 300
+	sasl.login.refresh.min.period.seconds = 60
+	sasl.login.refresh.window.factor = 0.8
+	sasl.login.refresh.window.jitter = 0.05
+	sasl.login.retry.backoff.max.ms = 10000
+	sasl.login.retry.backoff.ms = 100
+	sasl.mechanism = GSSAPI
+	sasl.oauthbearer.clock.skew.seconds = 30
+	sasl.oauthbearer.expected.audience = null
+	sasl.oauthbearer.expected.issuer = null
+	sasl.oauthbearer.jwks.endpoint.refresh.ms = 3600000
+	sasl.oauthbearer.jwks.endpoint.retry.backoff.max.ms = 10000
+	sasl.oauthbearer.jwks.endpoint.retry.backoff.ms = 100
+	sasl.oauthbearer.jwks.endpoint.url = null
+	sasl.oauthbearer.scope.claim.name = scope
+	sasl.oauthbearer.sub.claim.name = sub
+	sasl.oauthbearer.token.endpoint.url = null
+	security.protocol = PLAINTEXT
+	security.providers = null
+	send.buffer.bytes = 131072
+	session.timeout.ms = 45000
+	socket.connection.setup.timeout.max.ms = 30000
+	socket.connection.setup.timeout.ms = 10000
+	ssl.cipher.suites = null
+	ssl.enabled.protocols = [TLSv1.2, TLSv1.3]
+	ssl.endpoint.identification.algorithm = https
+	ssl.engine.factory.class = null
+	ssl.key.password = null
+	ssl.keymanager.algorithm = SunX509
+	ssl.keystore.certificate.chain = null
+	ssl.keystore.key = null
+	ssl.keystore.location = null
+	ssl.keystore.password = null
+	ssl.keystore.type = JKS
+	ssl.protocol = TLSv1.3
+	ssl.provider = null
+	ssl.secure.random.implementation = null
+	ssl.trustmanager.algorithm = PKIX
+	ssl.truststore.certificates = null
+	ssl.truststore.location = null
+	ssl.truststore.password = null
+	ssl.truststore.type = JKS
+	value.deserializer = class org.springframework.kafka.support.serializer.JsonDeserializer
+
+2026-07-17T21:59:32.029+08:00  INFO 62125 --- [account-service] [           main] o.a.k.c.t.i.KafkaMetricsCollector        : initializing Kafka metrics collector
+2026-07-17T21:59:32.208+08:00  INFO 62125 --- [account-service] [           main] o.a.kafka.common.utils.AppInfoParser     : Kafka version: 3.7.1
+2026-07-17T21:59:32.208+08:00  INFO 62125 --- [account-service] [           main] o.a.kafka.common.utils.AppInfoParser     : Kafka commitId: e2494e6ffb89f828
+2026-07-17T21:59:32.208+08:00  INFO 62125 --- [account-service] [           main] o.a.kafka.common.utils.AppInfoParser     : Kafka startTimeMs: 1784296772206
+2026-07-17T21:59:32.224+08:00  INFO 62125 --- [account-service] [           main] o.a.k.c.c.internals.LegacyKafkaConsumer  : [Consumer clientId=consumer-account-service-1, groupId=account-service] Subscribed to topic(s): order.events
+2026-07-17T21:59:32.271+08:00  INFO 62125 --- [account-service] [           main] com.quant.account.AccountApplication     : Started AccountApplication in 16.291 seconds (process running for 16.983)
+2026-07-17T21:59:32.990+08:00  INFO 62125 --- [account-service] [ntainer#0-0-C-1] org.apache.kafka.clients.Metadata        : [Consumer clientId=consumer-account-service-1, groupId=account-service] Cluster ID: 5L6g3nShT-eMCtK--X86sw
+2026-07-17T21:59:32.990+08:00  INFO 62125 --- [account-service] [ntainer#0-0-C-1] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=consumer-account-service-1, groupId=account-service] Discovered group coordinator localhost:9092 (id: 2147483646 rack: null)
+2026-07-17T21:59:32.992+08:00  INFO 62125 --- [account-service] [ntainer#0-0-C-1] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=consumer-account-service-1, groupId=account-service] (Re-)joining group
+2026-07-17T21:59:33.009+08:00  INFO 62125 --- [account-service] [ntainer#0-0-C-1] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=consumer-account-service-1, groupId=account-service] Request joining group due to: need to re-join with the given member-id: consumer-account-service-1-563571c4-b218-4f08-8d63-7ca19d327e1f
+2026-07-17T21:59:33.009+08:00  INFO 62125 --- [account-service] [ntainer#0-0-C-1] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=consumer-account-service-1, groupId=account-service] (Re-)joining group
+2026-07-17T21:59:38.102+08:00  INFO 62125 --- [account-service] [nio-8096-exec-1] o.a.c.c.C.[.[localhost].[/api/account]   : Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-07-17T21:59:38.103+08:00  INFO 62125 --- [account-service] [nio-8096-exec-1] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
+2026-07-17T21:59:38.105+08:00  INFO 62125 --- [account-service] [nio-8096-exec-1] o.s.web.servlet.DispatcherServlet        : Completed initialization in 2 ms
+2026-07-17T21:59:38.692+08:00  INFO 62125 --- [account-service] [ntainer#0-0-C-1] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=consumer-account-service-1, groupId=account-service] Successfully joined group with generation Generation{generationId=6, memberId='consumer-account-service-1-563571c4-b218-4f08-8d63-7ca19d327e1f', protocol='range'}
+2026-07-17T21:59:38.701+08:00  INFO 62125 --- [account-service] [ntainer#0-0-C-1] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=consumer-account-service-1, groupId=account-service] Finished assignment for group at generation 6: {consumer-account-service-1-563571c4-b218-4f08-8d63-7ca19d327e1f=Assignment(partitions=[order.events-0])}
+2026-07-17T21:59:38.706+08:00  INFO 62125 --- [account-service] [ntainer#0-0-C-1] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=consumer-account-service-1, groupId=account-service] Successfully synced group in generation Generation{generationId=6, memberId='consumer-account-service-1-563571c4-b218-4f08-8d63-7ca19d327e1f', protocol='range'}
+2026-07-17T21:59:38.706+08:00  INFO 62125 --- [account-service] [ntainer#0-0-C-1] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=consumer-account-service-1, groupId=account-service] Notifying assignor about the new Assignment(partitions=[order.events-0])
+2026-07-17T21:59:38.709+08:00  INFO 62125 --- [account-service] [ntainer#0-0-C-1] k.c.c.i.ConsumerRebalanceListenerInvoker : [Consumer clientId=consumer-account-service-1, groupId=account-service] Adding newly assigned partitions: order.events-0
+2026-07-17T21:59:38.719+08:00  INFO 62125 --- [account-service] [ntainer#0-0-C-1] o.a.k.c.c.internals.ConsumerUtils        : Setting offset for partition order.events-0 to the committed offset FetchPosition{offset=0, offsetEpoch=Optional.empty, currentLeader=LeaderAndEpoch{leader=Optional[localhost:9092 (id: 1 rack: null)], epoch=0}}
+2026-07-17T21:59:38.720+08:00  INFO 62125 --- [account-service] [ntainer#0-0-C-1] o.s.k.l.KafkaMessageListenerContainer    : account-service: partitions assigned: [order.events-0]
+2026-07-17T22:00:10.022+08:00  WARN 62125 --- [account-service] [nio-8096-exec-5] c.q.a.service.BinanceAccountService      : 套用連線設定：env=mainnet REST=https://api.binance.com keySet=true
+2026-07-17T22:00:22.700+08:00  WARN 62125 --- [account-service] [io-8096-exec-10] c.q.a.service.BinanceAccountService      : 套用連線設定：env=mainnet REST=https://api.binance.com keySet=true
+2026-07-17T22:08:33.306+08:00  INFO 62125 --- [account-service] [ntainer#0-0-C-1] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=consumer-account-service-1, groupId=account-service] Node -1 disconnected.
+2026-07-17T22:18:33.165+08:00  INFO 62125 --- [account-service] [ntainer#0-0-C-1] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=consumer-account-service-1, groupId=account-service] Node -1 disconnected.

@@ -1,0 +1,31 @@
+# 一次建置所有微服務，執行期以 SERVICE 環境變數選擇要跑哪一支。
+# 用法（docker-compose）：同一個 image，各服務設不同 SERVICE。
+FROM maven:3.9-eclipse-temurin-17 AS builder
+WORKDIR /build
+# 先複製 pom 以善用快取
+COPY pom.xml .
+COPY common/pom.xml common/pom.xml
+COPY api-gateway/pom.xml api-gateway/pom.xml
+COPY market-data-service/pom.xml market-data-service/pom.xml
+COPY strategy-service/pom.xml strategy-service/pom.xml
+COPY order-execution-service/pom.xml order-execution-service/pom.xml
+COPY risk-service/pom.xml risk-service/pom.xml
+COPY account-service/pom.xml account-service/pom.xml
+COPY auth-service/pom.xml auth-service/pom.xml
+COPY backtest-service/pom.xml backtest-service/pom.xml
+COPY notification-service/pom.xml notification-service/pom.xml
+RUN mvn -q -B dependency:go-offline || true
+# 複製原始碼並建置全部模組
+COPY . .
+RUN mvn -q -B -DskipTests package
+
+FROM eclipse-temurin:17-jre
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends curl netcat-openbsd \
+    && rm -rf /var/lib/apt/lists/*
+# 收集所有 fat jar（每支服務一個）
+COPY --from=builder /build/*/target/*-1.0.0-SNAPSHOT.jar /app/
+ENV JAVA_OPTS="-Xms128m -Xmx512m -XX:+UseSerialGC -Djava.net.preferIPv4Stack=true"
+ENV SERVICE=api-gateway
+# SERVICE 對應 jar 檔名（例如 account-service -> account-service-1.0.0-SNAPSHOT.jar）
+ENTRYPOINT ["sh","-c","exec java $JAVA_OPTS -jar /app/${SERVICE}-1.0.0-SNAPSHOT.jar"]
