@@ -19,8 +19,6 @@ public class EventConsumer {
         if (e.status() == OrderStatus.FILLED) {
             slack.send(String.format(":white_check_mark: 成交 [%s] %s 數量 %.4f @ %.2f",
                     e.account(), e.symbol(), e.filledQty(), e.avgPrice()));
-        } else if (e.status() == OrderStatus.REJECTED) {
-            slack.send(String.format(":x: 下單被拒 [%s] %s (%s)", e.account(), e.symbol(), e.clientOrderId()));
         } else if (e.status() == OrderStatus.CANCELED) {
             slack.send(String.format(":no_entry: 撤單 [%s] %s (%s)", e.account(), e.symbol(), e.clientOrderId()));
         }

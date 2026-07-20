@@ -38,6 +38,7 @@ public class OrderService {
     private final BinanceOrderGateway gateway;
     private final OrderRepository orders;
     private final AccountClient accountClient;
+    private final NotifyClient notifyClient;
 
     @Value("${trading.dry-run:true}") private boolean dryRun;
     @Value("${binance.user-data-stream-enabled:false}") private boolean udsEnabled;
@@ -46,13 +47,26 @@ public class OrderService {
 
     public OrderService(RiskClient riskClient, StringRedisTemplate redis,
                         KafkaTemplate<String, Object> kafka, BinanceOrderGateway gateway,
-                        OrderRepository orders, AccountClient accountClient) {
+                        OrderRepository orders, AccountClient accountClient, NotifyClient notifyClient) {
         this.riskClient = riskClient;
         this.redis = redis;
         this.kafka = kafka;
         this.gateway = gateway;
         this.orders = orders;
         this.accountClient = accountClient;
+        this.notifyClient = notifyClient;
+    }
+
+    /** 下單被拒推 Slack（含原因）。失敗不影響主流程。 */
+    private void notifyReject(OrderIntent intent, String reason) {
+        try {
+            notifyClient.send(Map.of("text", String.format(":x: 下單被拒 [%s] %s %s qty=%s ｜ %s",
+                    intent.accountOrDefault(), intent.symbol(), intent.side(),
+                    trimNum(intent.quantity()), reason)));
+        } catch (Exception e) { log.debug("被拒通知發送失敗（忽略）: {}", e.getMessage()); }
+    }
+    private static String trimNum(double d) {
+        return java.math.BigDecimal.valueOf(d).stripTrailingZeros().toPlainString();
     }
 
     private double lastPrice(String symbol) {
@@ -71,6 +85,7 @@ public class OrderService {
         if (!decision.approved()) {
             updateStatus(intent.clientOrderId(), OrderStatus.REJECTED, 0);
             publish(intent.clientOrderId(), intent.symbol(), OrderStatus.REJECTED, 0, 0, intent.accountOrDefault());
+            notifyReject(intent, "風控拒絕：" + decision.reason());
             return ApiResponse.error(403, "risk rejected: " + decision.reason());
         }
         // ── 名目金額上限 + 餘額檢查（事中風控補強）──
@@ -80,6 +95,7 @@ public class OrderService {
         if (preReject != null) {
             updateStatus(intent.clientOrderId(), OrderStatus.REJECTED, 0);
             publish(intent.clientOrderId(), intent.symbol(), OrderStatus.REJECTED, 0, 0, intent.accountOrDefault());
+            notifyReject(intent, preReject);
             return ApiResponse.error(403, preReject);
         }
 
@@ -104,6 +120,7 @@ public class OrderService {
             log.error("place order failed: {}", e.getMessage());
             updateStatus(intent.clientOrderId(), OrderStatus.REJECTED, 0);
             publish(intent.clientOrderId(), intent.symbol(), OrderStatus.REJECTED, 0, 0, intent.accountOrDefault());
+            notifyReject(intent, e.getMessage());
             return ApiResponse.error(500, e.getMessage());   // 把 filter/餘額/幣安錯誤訊息帶回前端
         }
     }
