@@ -16,6 +16,60 @@
 - **Slack 通知**：成交、下單被拒(含原因)、策略上下線、回撤預警/熔斷、每 6 小時淨值摘要(含當日成交/盈虧)。
 - **監控**：Prometheus + Grafana(預設關閉、`--profile monitoring` 開啟)。
 
+## 系統架構
+
+```mermaid
+flowchart TB
+  FE["前端 Vue 3 SPA<br/>看盤 / 策略 / 回測 / 風控 / 帳戶"]
+  PY["Python 研究·回測 :8000"]
+  GW["API Gateway :8080<br/>路由 + JWT"]
+
+  subgraph SVC["Spring Cloud 微服務"]
+    MD["market-data :8082"]
+    ST["strategy :8083<br/>30 策略 / 機器人"]
+    OE["order-execution :8084<br/>OMS · filter · 風控補強"]
+    RISK["risk :8085<br/>核可 · 熔斷"]
+    ACC["account :8096<br/>餘額 · 部位 · 回撤"]
+    NT["notification :8098"]
+    AUTH["auth :8081"]
+    BT["backtest :8087"]
+  end
+
+  subgraph INFRA["基礎設施"]
+    KAFKA[("Kafka")]
+    REDIS[("Redis")]
+    DB[("TimescaleDB")]
+    NACOS[("Nacos")]
+  end
+
+  BSTREAM["Binance 行情串流"]
+  BREST["Binance REST<br/>下單 / 帳戶"]
+  SLACK["Slack"]
+
+  FE -->|/api| GW
+  FE -->|/research| PY
+  FE -. 行情 WS .-> BSTREAM
+  GW --> MD & ST & OE & RISK & ACC & NT & AUTH & BT
+
+  BSTREAM --> MD
+  MD -->|market.kline| KAFKA
+  KAFKA --> ST
+  ST -->|下單意圖| OE
+  OE -->|核可| RISK
+  OE -->|簽名下單| BREST
+  OE -->|order.events| KAFKA
+  KAFKA --> ACC
+  OE --> NT
+  NT --> SLACK
+  ACC -->|查餘額| BREST
+  OE <--> REDIS
+  OE --> DB
+  ACC --> DB
+  AUTH -. 服務註冊/設定 .-> NACOS
+```
+
+*所有微服務皆向 Nacos 註冊並取得設定；行情走 Kafka 事件流，下單經風控核可後以 HMAC 簽名送幣安，成交事件回寫帳戶/部位並推 Slack。*
+
 ## 技術棧
 
 - **前端**：Vue 3 (JavaScript) + Vite + Pinia + Vue Router + Element Plus + ECharts + Lightweight Charts
