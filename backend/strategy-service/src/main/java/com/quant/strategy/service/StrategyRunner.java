@@ -6,6 +6,7 @@ import com.quant.common.strategy.*;
 import com.quant.strategy.core.StrategyContextImpl;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Service;
 
@@ -30,6 +31,9 @@ public class StrategyRunner {
     private final Map<String, String> symbolFilter = new ConcurrentHashMap<>();  // id -> symbol|null
     private final Set<String> running = ConcurrentHashMap.newKeySet();
 
+    @Value("${order.notional-usdt:0}")   // 每單目標名目(USDT)；0=用策略原始固定數量
+    private double orderNotional;
+
     public StrategyRunner(OrderClient orderClient, NotifyClient notifyClient) {
         this.orderClient = orderClient;
         this.notifyClient = notifyClient;
@@ -40,7 +44,7 @@ public class StrategyRunner {
 
     private void put(Strategy s, String name, String symbol) {
         strategies.put(s.id(), s);
-        contexts.putIfAbsent(s.id(), new StrategyContextImpl(s.id(), orderClient, prices));
+        contexts.putIfAbsent(s.id(), new StrategyContextImpl(s.id(), orderClient, prices, () -> orderNotional));
         names.put(s.id(), name);
         if (symbol != null) symbolFilter.put(s.id(), symbol.toUpperCase());
     }
@@ -91,6 +95,10 @@ public class StrategyRunner {
         try { notifyClient.send(Map.of("text", text)); }
         catch (Exception e) { log.debug("通知發送失敗（忽略）: {}", e.getMessage()); }
     }
+
+    /** 每單目標名目(USDT)：0=用策略原始固定數量。執行期可調(風控頁)。 */
+    public double getOrderNotional() { return orderNotional; }
+    public double setOrderNotional(double v) { orderNotional = Math.max(0, v); return orderNotional; }
 
     /** 資金配置：設定策略下單量倍率（見架構文件 §10 資金配置）。 */
     public String setAllocation(String id, double weight) {

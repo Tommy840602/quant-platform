@@ -14,7 +14,9 @@ export const strategyApi = {
   stop: (id) => http.post(`/strategy/strategies/${id}/stop`),
   create: (body) => http.post('/strategy/strategies', body),
   params: (id, body) => http.post(`/strategy/strategies/${id}/params`, body),
-  allocation: (id, weight) => http.post(`/strategy/strategies/${id}/allocation`, null, { params: { weight } })
+  allocation: (id, weight) => http.post(`/strategy/strategies/${id}/allocation`, null, { params: { weight } }),
+  getOrderNotional: () => http.get('/strategy/strategies/order-notional'),
+  setOrderNotional: (value) => http.post('/strategy/strategies/order-notional', null, { params: { value } })
 }
 export const orderApi = {
   submit: (intent) => http.post('/order/orders', intent),
@@ -25,7 +27,13 @@ export const orderApi = {
   attribution: () => http.get('/order/orders/attribution'),
   condCreate: (body) => http.post('/order/orders/conditional', body),
   condList: () => http.get('/order/orders/conditional'),
-  condCancel: (id) => http.delete(`/order/orders/conditional/${id}`)
+  condCancel: (id) => http.delete(`/order/orders/conditional/${id}`),
+  riskConfig: () => http.get('/order/orders/risk-config'),
+  setRiskConfig: (body) => http.post('/order/orders/risk-config', body)
+}
+export const riskApi = {
+  getKill: () => http.get('/risk/kill-switch'),
+  setKill: (on, reason = 'manual') => http.post('/risk/kill-switch', null, { params: { on, reason } })
 }
 export const accountApi = {
   balance: () => http.get('/account/balance'),

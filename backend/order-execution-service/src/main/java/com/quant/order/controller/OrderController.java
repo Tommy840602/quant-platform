@@ -41,6 +41,18 @@ public class OrderController {
     @GetMapping("/daily-stats")
     public ApiResponse<Map<String, Object>> dailyStats() { return orderService.dailyStats(); }
 
+    /** 下單風控設定：GET /api/order/orders/risk-config */
+    @GetMapping("/risk-config")
+    public ApiResponse<Map<String, Object>> riskConfig() { return ApiResponse.ok(orderService.riskConfig()); }
+
+    /** 調整下單風控：POST /api/order/orders/risk-config { maxNotionalUsdt, balanceCheck } */
+    @PostMapping("/risk-config")
+    public ApiResponse<Map<String, Object>> setRiskConfig(@RequestBody Map<String, Object> b) {
+        Double max = b.get("maxNotionalUsdt") == null ? null : Double.valueOf(b.get("maxNotionalUsdt").toString());
+        Boolean bc = b.get("balanceCheck") == null ? null : Boolean.valueOf(b.get("balanceCheck").toString());
+        return ApiResponse.ok(orderService.setRiskConfig(max, bc));
+    }
+
     /** 建立條件單/智慧單：POST /api/order/orders/conditional */
     @PostMapping("/conditional")
     public ApiResponse<Map<String, Object>> createCond(@RequestBody Map<String, Object> b) {

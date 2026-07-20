@@ -40,3 +40,6 @@ management:
     web:
       exposure:
         include: health,info,metrics,prometheus
+
+order:
+  notional-usdt: ${ORDER_NOTIONAL_USDT:0}   # 每單目標名目(USDT)；0=用策略原始固定數量

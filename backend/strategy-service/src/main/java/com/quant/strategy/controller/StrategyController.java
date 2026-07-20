@@ -38,6 +38,18 @@ public class StrategyController {
         return ApiResponse.ok(runner.setAllocation(id, weight));
     }
 
+    /** 每單名目金額：GET /api/strategy/strategies/order-notional */
+    @GetMapping("/order-notional")
+    public ApiResponse<Map<String, Object>> getOrderNotional() {
+        return ApiResponse.ok(Map.of("notionalUsdt", runner.getOrderNotional()));
+    }
+
+    /** 設定每單名目金額：POST /api/strategy/strategies/order-notional?value=6 */
+    @PostMapping("/order-notional")
+    public ApiResponse<Map<String, Object>> setOrderNotional(@RequestParam double value) {
+        return ApiResponse.ok(Map.of("notionalUsdt", runner.setOrderNotional(value)));
+    }
+
     /** 建立機器人：POST /api/strategy/strategies  body: {id, type: ma|rsi|grid, symbol, params:{...}} */
     @PostMapping
     @SuppressWarnings("unchecked")

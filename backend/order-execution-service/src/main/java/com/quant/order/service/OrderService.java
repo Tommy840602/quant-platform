@@ -108,6 +108,19 @@ public class OrderService {
         }
     }
 
+    /** 目前下單風控設定。 */
+    public Map<String, Object> riskConfig() {
+        return Map.of("maxNotionalUsdt", maxNotional, "balanceCheck", balanceCheck, "dryRun", dryRun);
+    }
+
+    /** 執行期調整下單風控（風控頁推送，免重啟）。null 表示不變更。 */
+    public synchronized Map<String, Object> setRiskConfig(Double maxNotionalUsdt, Boolean balanceCheck) {
+        if (maxNotionalUsdt != null && maxNotionalUsdt >= 0) this.maxNotional = maxNotionalUsdt;
+        if (balanceCheck != null) this.balanceCheck = balanceCheck;
+        log.warn("下單風控更新：maxNotional={} balanceCheck={}", maxNotional, this.balanceCheck);
+        return riskConfig();
+    }
+
     /** 事前檢查：名目金額上限 + （選配）可用餘額。通過回 null，否則回拒絕原因。 */
     private String preTradeCheck(OrderIntent intent, double ref, double notional) {
         if (maxNotional > 0 && ref > 0 && notional > maxNotional)
