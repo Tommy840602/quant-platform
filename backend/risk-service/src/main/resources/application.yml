@@ -38,5 +38,7 @@ management:
         include: health,info,metrics,prometheus
 
 risk:
-  max-order-qty: 1.0
+  # 以「個數」計的上限對便宜幣不適用；真正的尺度控制在 order-execution 的名目金額上限(RISK_MAX_NOTIONAL)。
+  # 這裡預設放很大，只擋離譜的胖手指。
+  max-order-qty: ${RISK_MAX_ORDER_QTY:1000000000}
   kill-switch: false
