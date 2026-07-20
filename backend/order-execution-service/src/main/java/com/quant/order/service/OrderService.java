@@ -37,18 +37,27 @@ public class OrderService {
     private final KafkaTemplate<String, Object> kafka;
     private final BinanceOrderGateway gateway;
     private final OrderRepository orders;
+    private final AccountClient accountClient;
 
     @Value("${trading.dry-run:true}") private boolean dryRun;
     @Value("${binance.user-data-stream-enabled:false}") private boolean udsEnabled;
+    @Value("${risk.max-notional-usdt:1000}") private double maxNotional;   // 單筆名目金額上限(USDT)
+    @Value("${risk.balance-check:false}") private boolean balanceCheck;    // BUY 前檢查可用餘額(會多打一次 account)
 
     public OrderService(RiskClient riskClient, StringRedisTemplate redis,
                         KafkaTemplate<String, Object> kafka, BinanceOrderGateway gateway,
-                        OrderRepository orders) {
+                        OrderRepository orders, AccountClient accountClient) {
         this.riskClient = riskClient;
         this.redis = redis;
         this.kafka = kafka;
         this.gateway = gateway;
         this.orders = orders;
+        this.accountClient = accountClient;
+    }
+
+    private double lastPrice(String symbol) {
+        try { String v = redis.opsForValue().get("price:" + symbol); return v == null ? 0 : Double.parseDouble(v); }
+        catch (Exception e) { return 0; }
     }
 
     public ApiResponse<String> submit(OrderIntent intent) {
@@ -64,6 +73,16 @@ public class OrderService {
             publish(intent.clientOrderId(), intent.symbol(), OrderStatus.REJECTED, 0, 0, intent.accountOrDefault());
             return ApiResponse.error(403, "risk rejected: " + decision.reason());
         }
+        // ── 名目金額上限 + 餘額檢查（事中風控補強）──
+        double ref = intent.price() != null && intent.price() > 0 ? intent.price() : lastPrice(intent.symbol());
+        double notional = intent.quantity() * ref;
+        String preReject = preTradeCheck(intent, ref, notional);
+        if (preReject != null) {
+            updateStatus(intent.clientOrderId(), OrderStatus.REJECTED, 0);
+            publish(intent.clientOrderId(), intent.symbol(), OrderStatus.REJECTED, 0, 0, intent.accountOrDefault());
+            return ApiResponse.error(403, preReject);
+        }
+
         publish(intent.clientOrderId(), intent.symbol(), OrderStatus.RISK_APPROVED, 0, 0, intent.accountOrDefault());
         updateStatus(intent.clientOrderId(), OrderStatus.RISK_APPROVED, 0);
 
@@ -72,7 +91,8 @@ public class OrderService {
             publish(intent.clientOrderId(), intent.symbol(), OrderStatus.SUBMITTED, 0, 0, intent.accountOrDefault());
             updateStatus(intent.clientOrderId(), OrderStatus.SUBMITTED, 0);
             if (dryRun) {
-                double price = intent.price() != null ? intent.price() : 0.0;
+                // dry-run 以最新市價成交（MARKET 單無 price），讓模擬盈虧/KPI 有意義
+                double price = intent.price() != null && intent.price() > 0 ? intent.price() : lastPrice(intent.symbol());
                 publish(intent.clientOrderId(), intent.symbol(), OrderStatus.FILLED, intent.quantity(), price, intent.accountOrDefault());
             } else if (!udsEnabled) {
                 emitFillFromResponse(intent, exchangeResp);
@@ -84,8 +104,27 @@ public class OrderService {
             log.error("place order failed: {}", e.getMessage());
             updateStatus(intent.clientOrderId(), OrderStatus.REJECTED, 0);
             publish(intent.clientOrderId(), intent.symbol(), OrderStatus.REJECTED, 0, 0, intent.accountOrDefault());
-            return ApiResponse.error(500, "exchange error");
+            return ApiResponse.error(500, e.getMessage());   // 把 filter/餘額/幣安錯誤訊息帶回前端
         }
+    }
+
+    /** 事前檢查：名目金額上限 + （選配）可用餘額。通過回 null，否則回拒絕原因。 */
+    private String preTradeCheck(OrderIntent intent, double ref, double notional) {
+        if (maxNotional > 0 && ref > 0 && notional > maxNotional)
+            return String.format("名目金額 %.2f USDT 超過單筆上限 %.0f USDT", notional, maxNotional);
+        if (balanceCheck && intent.side() == com.quant.common.enums.OrderSide.BUY && !intent.isFutures() && ref > 0) {
+            try {
+                Map<String, Object> bal = accountClient.balance("main").data();
+                Object freeObj = bal == null ? null : bal.get("free");
+                if (freeObj instanceof Number free) {
+                    if (notional > free.doubleValue())
+                        return String.format("餘額不足：需 %.2f USDT，可用 %.2f USDT", notional, free.doubleValue());
+                }
+            } catch (Exception e) {
+                log.warn("餘額檢查失敗，略過（不阻擋下單）: {}", e.getMessage());
+            }
+        }
+        return null;
     }
 
     private void emitFillFromResponse(OrderIntent intent, String exchangeResp) {

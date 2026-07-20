@@ -57,4 +57,4 @@ sleep 3
 echo
 echo "==> 完成。後端每支起來約需 1~2 分鐘，可用 ./status.sh 再確認。"
 echo "    前端： cd ../frontend && npm run dev"
-echo "    研究服務(選用)： cd ../research && uvicorn main:app --port 8000"
+echo "    研究服務(選用)： cd ../research && uvicorn app.main:app --port 8000"

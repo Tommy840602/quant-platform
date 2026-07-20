@@ -31,9 +31,19 @@ public class BinanceOrderGateway {
     private static final Logger log = LoggerFactory.getLogger(BinanceOrderGateway.class);
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
     private final NotifyClient notifyClient;
+    private final SymbolFilterService filters;
+    private final org.springframework.data.redis.core.StringRedisTemplate redis;
     private volatile long lastAuthAlert = 0;
 
-    public BinanceOrderGateway(NotifyClient notifyClient) { this.notifyClient = notifyClient; }
+    public BinanceOrderGateway(NotifyClient notifyClient, SymbolFilterService filters,
+                               org.springframework.data.redis.core.StringRedisTemplate redis) {
+        this.notifyClient = notifyClient; this.filters = filters; this.redis = redis;
+    }
+
+    private double lastPrice(String symbol) {
+        try { String v = redis.opsForValue().get("price:" + symbol); return v == null ? 0 : Double.parseDouble(v); }
+        catch (Exception e) { return 0; }
+    }
 
     private static boolean isAuthOrIpError(String msg) {
         if (msg == null) return false;
@@ -127,14 +137,28 @@ public class BinanceOrderGateway {
                     intent.symbol(), intent.side(), intent.type(), intent.quantity());
             return "DRYRUN-" + intent.clientOrderId();
         }
+        // ── 交易所 filter 對齊：數量→stepSize、價格→tickSize、檢查 minQty/minNotional ──
+        double[] f = filters.filters(baseUrl(intent), intent.symbol(), intent.isFutures());
+        double step = f[0], tick = f[1], minQty = f[2], minNotional = f[3];
+        double qty = step > 0 ? SymbolFilterService.floorToStep(intent.quantity(), step) : intent.quantity();
+        if (minQty > 0 && qty < minQty)
+            throw new RuntimeException("數量 " + trim(qty) + " 低於 minQty " + trim(minQty) + " (" + intent.symbol() + ")");
+        Double px = intent.price();
+        boolean isLimit = intent.type().name().equals("LIMIT");
+        if (isLimit && tick > 0 && px != null) px = SymbolFilterService.floorToStep(px, tick);
+        double ref = (px != null && px > 0) ? px : lastPrice(intent.symbol());
+        if (minNotional > 0 && ref > 0 && qty * ref < minNotional)
+            throw new RuntimeException("名目 " + trim(qty * ref) + " 低於 minNotional " + trim(minNotional)
+                    + " (" + intent.symbol() + ")，請加大下單量");
+
         Map<String, String> p = new LinkedHashMap<>();
         p.put("symbol", intent.symbol());
         p.put("side", intent.side().name());
         p.put("type", intent.type().name());
-        p.put("quantity", trim(intent.quantity()));
-        if (intent.type().name().equals("LIMIT")) {
+        p.put("quantity", trim(qty));
+        if (isLimit) {
             p.put("timeInForce", "GTC");
-            p.put("price", trim(intent.price()));
+            p.put("price", trim(px));
         }
         if (intent.isFutures() && intent.reduceOnly()) p.put("reduceOnly", "true");
         // 現貨用 newClientOrderId；合約亦支援

@@ -47,6 +47,10 @@ management:
 trading:
   dry-run: ${TRADING_DRY_RUN:true}
 
+risk:
+  max-notional-usdt: ${RISK_MAX_NOTIONAL:1000}   # 單筆名目金額上限(USDT)，0=不限
+  balance-check: ${RISK_BALANCE_CHECK:false}      # true=BUY 前查可用餘額(會多打一次 account-service)
+
 resilience4j:
   circuitbreaker:
     instances:

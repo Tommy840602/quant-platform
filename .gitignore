@@ -20,3 +20,6 @@ __pycache__/
 *-secret.yml
 application-local.yml
 *.pem
+
+# 執行期日誌與 PID
+backend/logs/

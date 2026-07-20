@@ -68,6 +68,18 @@ server {
 3. `docker compose -f docker-compose.prod.yml up -d`，先維持 `TRADING_DRY_RUN=true` 確認 `/account` 讀到真實餘額。
 4. 一切正常再把 `TRADING_DRY_RUN=false`（真送單），並先用小額。
 
+## 監控（預設關閉，省記憶體）
+Prometheus + Grafana 預設不啟動（放在 `monitoring` profile）。要看監控再開：
+```bash
+docker compose -f docker-compose.prod.yml --profile monitoring up -d
+# Grafana： http://127.0.0.1:3000（僅本機，建議用 SSH tunnel 連）
+```
+關掉：
+```bash
+docker compose -f docker-compose.prod.yml --profile monitoring stop prometheus grafana
+```
+> CX43（16GB）建議平時關監控，把記憶體留給交易邏輯；要排查再臨時開。
+
 ## 常用指令
 ```bash
 docker compose -f docker-compose.prod.yml ps           # 狀態
