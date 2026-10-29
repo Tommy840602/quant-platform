@@ -24,7 +24,7 @@ import java.util.List;
  * 全域 JWT 鑑權過濾器（見架構文件 §12.1）。
  * security.jwt.enabled 預設 true：所有 /api/** 都要 Bearer token；只有 login 與 actuator 匿名。
  * 顯式設 JWT_ENABLED=false 才放行（只適合本機開發），啟動時會大聲警告。
- * SSE（EventSource 不能帶 header）：僅對 */stream 路徑接受 ?access_token=。
+ * SSE（EventSource 不能帶 header）：僅對以 /stream 結尾的路徑接受 ?access_token=。
  * jwt.secret 必須與 auth-service 相同，且不得為範本佔位字串。
  */
 @Order(-100)
