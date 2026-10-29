@@ -269,7 +269,10 @@ public class BinanceOrderGateway {
             if (resp.statusCode() >= 500 || resp.statusCode() == 408 || resp.statusCode() == 429)
                 throw new TransportException("幣安" + action + "失敗 " + err, null);   // 伺服器端狀態不明
             int code = 0;
-            try { code = Integer.parseInt(resp.body().replaceAll("(?s).*\"code\"\s*:\s*(-?\d+).*", "$1")); } catch (Exception ignore) {}
+            try {
+                java.util.regex.Matcher mm = java.util.regex.Pattern.compile("\"code\"\\s*:\\s*(-?\\d+)").matcher(resp.body());
+                if (mm.find()) code = Integer.parseInt(mm.group(1));
+            } catch (Exception ignore) {}
             throw new ExchangeRejectedException(resp.statusCode(), code, "幣安" + action + "失敗 " + err);
         } catch (RuntimeException e) { throw e; }
         catch (Exception e) { throw new RuntimeException(action + "例外: " + e.getMessage(), e); }
