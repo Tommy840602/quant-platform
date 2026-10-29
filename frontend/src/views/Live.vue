@@ -188,10 +188,12 @@ loadConds()
 
 // SSE 即時推播（見架構文件 §11.3）：後端每 3 秒推部位/回撤，取代輪詢
 import { onMounted, onUnmounted } from 'vue'
+import { getToken } from '@/api/http'
 let es = null
 onMounted(() => {
   try {
-    es = new EventSource('/api/account/stream')
+    const tk = getToken()
+    es = new EventSource('/api/account/stream' + (tk ? '?access_token=' + encodeURIComponent(tk) : ''))
     es.addEventListener('snapshot', (ev) => {
       try {
         const d = JSON.parse(ev.data)

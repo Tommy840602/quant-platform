@@ -1,5 +1,6 @@
 package com.quant.auth.service;
 
+import com.quant.common.security.JwtSecretPolicy;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
@@ -17,11 +18,14 @@ public class JwtService {
     private final SecretKey key;
     private final long ttlSeconds;
 
-    public JwtService(@Value("${jwt.secret}") String secret,
-                      @Value("${jwt.access-token-ttl-seconds:1800}") long ttlSeconds) {
+    public JwtService(@Value("${jwt.secret:}") String secret,
+                      @Value("${jwt.access-token-ttl-seconds:14400}") long ttlSeconds) {
+        JwtSecretPolicy.assertStrong(secret);
         this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         this.ttlSeconds = ttlSeconds;
     }
+
+    public long ttlSeconds() { return ttlSeconds; }
 
     public String generate(String username, List<String> roles) {
         Date now = new Date();

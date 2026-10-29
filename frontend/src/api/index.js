@@ -2,7 +2,10 @@ import axios from 'axios'
 import http from './http'
 
 export const authApi = {
-  login: (body) => http.post('/auth/login', body)
+  login: (body) => http.post('/auth/login', body),
+  me: () => http.get('/auth/me'),
+  changePassword: (oldPassword, newPassword) => http.post('/auth/password', { oldPassword, newPassword }),
+  register: (username, password, roles = 'TRADER') => http.post('/auth/register', { username, password, roles })
 }
 export const marketApi = {
   klines: (symbol, interval = '1m', limit = 500) =>
