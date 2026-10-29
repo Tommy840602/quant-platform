@@ -30,6 +30,10 @@ management:
         include: health,info,metrics,prometheus
 
 jwt:
-  secret: ${JWT_SECRET:change-me-in-prod-please-use-a-long-random-secret-key}
-  access-token-ttl-seconds: 1800
-  refresh-token-ttl-seconds: 604800
+  secret: ${JWT_SECRET:}            # 必填；與 gateway 相同。`openssl rand -base64 48`
+  access-token-ttl-seconds: ${JWT_TTL_SECONDS:14400}   # 4h
+
+auth:
+  admin:
+    username: ${ADMIN_USERNAME:admin}
+    password: ${ADMIN_PASSWORD:}    # 空 = 首次啟動產生隨機密碼並印在 log

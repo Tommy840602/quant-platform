@@ -54,7 +54,7 @@ management:
 
 security:
   jwt:
-    enabled: ${JWT_ENABLED:false}   # 本機開發放行；正式環境設 true 才強制驗證
+    enabled: ${JWT_ENABLED:true}    # 預設強制驗證；只有本機開發可顯式設 false
 
 jwt:
-  secret: ${JWT_SECRET:change-me-in-prod-please-use-a-long-random-secret-key}
+  secret: ${JWT_SECRET:}            # 必填；`openssl rand -base64 48`。範本佔位字串會被拒絕啟動

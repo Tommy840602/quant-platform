@@ -8,8 +8,10 @@ x-backend-env: &backend-env
   REDIS_HOST: redis
   DB_HOST: timescaledb
   DB_PORT: "5432"
-  JWT_ENABLED: ${JWT_ENABLED:-false}
+  JWT_ENABLED: ${JWT_ENABLED:-true}
   JWT_SECRET: ${JWT_SECRET:-}
+  ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+  ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
   BINANCE_ENV: ${BINANCE_ENV:-testnet}
   BINANCE_REST: ${BINANCE_REST:-https://testnet.binance.vision}
   MARKET_REST: ${MARKET_REST:-https://api.binance.com}

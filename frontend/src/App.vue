@@ -46,7 +46,7 @@
             <span class="user">{{ auth.username }}</span>
             <el-button size="small" text @click="doLogout">登出</el-button>
           </template>
-          <el-button v-else size="small" text @click="$router.push('/login')">登入</el-button>
+          <el-button v-else size="small" text @click="$router.push('/signin')">登入</el-button>
         </div>
       </el-header>
       <el-main><router-view /></el-main>
@@ -74,7 +74,7 @@ const menuBg = computed(() => theme.dark ? '#131722' : '#ffffff')
 const menuText = computed(() => theme.dark ? '#a9b1c2' : '#303133')
 
 onMounted(() => market.connect())
-function doLogout() { auth.logout(); router.push('/login') }
+function doLogout() { auth.logout(); router.push('/signin') }
 </script>
 
 <style>
