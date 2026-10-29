@@ -329,6 +329,30 @@ public class OrderService {
     }
 
 
+    /**
+     * 各策略的「有號」部位與未結訂單，供 strategy-service 啟動時對帳。
+     * qty = Σ(BUY filled) − Σ(SELL filled)；openOrders = 尚未終結的單數（策略應視為 pending，不可再開同向新單）。
+     */
+    public ApiResponse<List<Map<String, Object>>> strategyPositions() {
+        Map<String, double[]> agg = new java.util.LinkedHashMap<>();   // key strategy|symbol -> [qty, open]
+        for (OrderEntity o : orders.findByStrategyIdIsNotNullOrderByIdAsc()) {
+            String key = o.getStrategyId() + "|" + o.getSymbol();
+            double[] a = agg.computeIfAbsent(key, k -> new double[2]);
+            OrderStatus st = safeStatus(o.getStatus());
+            double filled = o.getFilledQty() == null ? 0 : o.getFilledQty();
+            if (filled > 0) a[0] += "SELL".equals(o.getSide()) ? -filled : filled;
+            boolean open = st == OrderStatus.CREATED || st == OrderStatus.RISK_APPROVED || st == OrderStatus.SUBMITTED
+                    || st == OrderStatus.PARTIALLY_FILLED || st == OrderStatus.UNKNOWN;
+            if (open) a[1] += 1;
+        }
+        List<Map<String, Object>> rows = new java.util.ArrayList<>();
+        agg.forEach((k, a) -> {
+            String[] p = k.split("\\|", 2);
+            rows.add(Map.of("strategyId", p[0], "symbol", p[1], "qty", a[0], "openOrders", (int) a[1]));
+        });
+        return ApiResponse.ok(rows);
+    }
+
     /** 績效歸因：依 strategy_id 匯總已成交訂單（見架構文件 §11）。 */
     public ApiResponse<List<Map<String, Object>>> attribution() {
         List<Map<String, Object>> rows = new java.util.ArrayList<>();
