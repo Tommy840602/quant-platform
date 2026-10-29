@@ -28,11 +28,11 @@ public class RiskController {
     public Map<String, Object> setKill(@RequestParam boolean on,
                                        @RequestParam(required = false) String reason) {
         killSwitch.set(on, reason);
-        return Map.of("on", killSwitch.isOn(), "reason", killSwitch.reason());
+        return Map.of("on", killSwitch.isOn(), "reason", killSwitch.reason(), "persisted", killSwitch.redisHealthy());
     }
 
     @GetMapping("/kill-switch")
     public Map<String, Object> getKill() {
-        return Map.of("on", killSwitch.isOn(), "reason", killSwitch.reason());
+        return Map.of("on", killSwitch.isOn(), "reason", killSwitch.reason(), "persisted", killSwitch.redisHealthy());
     }
 }

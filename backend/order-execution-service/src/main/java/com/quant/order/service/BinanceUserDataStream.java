@@ -112,9 +112,11 @@ public class BinanceUserDataStream extends TextWebSocketHandler {
             OrderStatus status = mapStatus(e.get("X").asText());
             double lastQty = e.path("l").asDouble();
             double lastPx = e.path("L").asDouble();
+            com.quant.common.enums.OrderSide side = "SELL".equals(e.path("S").asText()) ? com.quant.common.enums.OrderSide.SELL : com.quant.common.enums.OrderSide.BUY;
+            String eventId = "uds|" + e.get("c").asText() + "|" + e.path("t").asLong(-1) + "|" + e.path("X").asText() + "|" + e.path("E").asLong(0);
             kafka.send(Topics.ORDER_EVENTS, symbol, new OrderEvent(
-                    e.get("c").asText(), e.get("i").asText(), symbol, status,
-                    lastQty > 0 ? lastQty : 0, lastPx, System.currentTimeMillis(), "main"));
+                    e.get("c").asText(), e.get("i").asText(), symbol, side, status,
+                    lastQty > 0 ? lastQty : 0, lastPx, System.currentTimeMillis(), "main", eventId));
             log.info("UDS 成交回報 {} {} l={} @ {}", symbol, status, lastQty, lastPx);
         } catch (Exception ex) { log.warn("解析 executionReport 失敗: {}", ex.getMessage()); }
     }

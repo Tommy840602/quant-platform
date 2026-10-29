@@ -17,6 +17,10 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
+import com.quant.common.enums.OrderSide;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.scheduling.annotation.Scheduled;
+
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
@@ -40,7 +44,6 @@ public class OrderService {
     private final AccountClient accountClient;
     private final NotifyClient notifyClient;
 
-    @Value("${trading.dry-run:true}") private boolean dryRun;
     @Value("${binance.user-data-stream-enabled:false}") private boolean udsEnabled;
     @Value("${risk.max-notional-usdt:1000}") private double maxNotional;   // 單筆名目金額上限(USDT)
     @Value("${risk.balance-check:false}") private boolean balanceCheck;    // BUY 前檢查可用餘額(會多打一次 account)
@@ -75,16 +78,25 @@ public class OrderService {
     }
 
     public ApiResponse<String> submit(OrderIntent intent) {
+        // 冪等：Redis 只是快路徑；DB 的 client_order_id UNIQUE 才是真相（Redis 無持久化、10 分鐘 TTL）
         Boolean first = redis.opsForValue()
                 .setIfAbsent("idem:" + intent.clientOrderId(), "1", 10, TimeUnit.MINUTES);
         if (Boolean.FALSE.equals(first)) return ApiResponse.error(409, "duplicate clientOrderId");
 
-        persistNew(intent);
+        // 送單前先落地；落地失敗就不送（崩潰安全：DB 裡沒有的單，交易所也不該有）
+        try {
+            persistNew(intent);
+        } catch (DataIntegrityViolationException dup) {
+            return ApiResponse.error(409, "duplicate clientOrderId (db)");
+        } catch (Exception ex) {
+            log.error("訂單落地失敗，拒絕送單 {}: {}", intent.clientOrderId(), ex.getMessage());
+            return ApiResponse.error(503, "訂單落地失敗，未送單: " + ex.getMessage());
+        }
 
         RiskClient.RiskDecision decision = riskClient.check(intent);
         if (!decision.approved()) {
             updateStatus(intent.clientOrderId(), OrderStatus.REJECTED, 0);
-            publish(intent.clientOrderId(), intent.symbol(), OrderStatus.REJECTED, 0, 0, intent.accountOrDefault());
+            publish(intent, OrderStatus.REJECTED, 0, 0);
             notifyReject(intent, "風控拒絕：" + decision.reason());
             return ApiResponse.error(403, "risk rejected: " + decision.reason());
         }
@@ -94,40 +106,129 @@ public class OrderService {
         String preReject = preTradeCheck(intent, ref, notional);
         if (preReject != null) {
             updateStatus(intent.clientOrderId(), OrderStatus.REJECTED, 0);
-            publish(intent.clientOrderId(), intent.symbol(), OrderStatus.REJECTED, 0, 0, intent.accountOrDefault());
+            publish(intent, OrderStatus.REJECTED, 0, 0);
             notifyReject(intent, preReject);
             return ApiResponse.error(403, preReject);
         }
 
-        publish(intent.clientOrderId(), intent.symbol(), OrderStatus.RISK_APPROVED, 0, 0, intent.accountOrDefault());
+        publish(intent, OrderStatus.RISK_APPROVED, 0, 0);
         updateStatus(intent.clientOrderId(), OrderStatus.RISK_APPROVED, 0);
 
         try {
             String exchangeResp = gateway.placeOrder(intent);
-            publish(intent.clientOrderId(), intent.symbol(), OrderStatus.SUBMITTED, 0, 0, intent.accountOrDefault());
+            publish(intent, OrderStatus.SUBMITTED, 0, 0);
             updateStatus(intent.clientOrderId(), OrderStatus.SUBMITTED, 0);
-            if (dryRun) {
+            if (gateway.isDryRun()) {
                 // dry-run 以最新市價成交（MARKET 單無 price），讓模擬盈虧/KPI 有意義
                 double price = intent.price() != null && intent.price() > 0 ? intent.price() : lastPrice(intent.symbol());
-                publish(intent.clientOrderId(), intent.symbol(), OrderStatus.FILLED, intent.quantity(), price, intent.accountOrDefault());
+                publish(intent, OrderStatus.FILLED, intent.quantity(), price);
             } else if (!udsEnabled) {
                 emitFillFromResponse(intent, exchangeResp);
             }
             log.info("下單完成 {}{} {} qty={} -> {}", intent.isFutures() ? "[合約]" : "[現貨]",
                     intent.symbol(), intent.side(), intent.quantity(), exchangeResp);
             return ApiResponse.ok(exchangeResp);
-        } catch (Exception e) {
-            log.error("place order failed: {}", e.getMessage());
+
+        } catch (BinanceOrderGateway.TransportException e) {
+            // 逾時 / 斷線 / 5xx：單子可能已在簿上。絕不標 REJECTED —— 標 UNKNOWN，立刻回查一次，查不到就交給排程持續對帳。
+            log.warn("送單狀態不明 {} {}: {} → 標 UNKNOWN 並回查", intent.symbol(), intent.clientOrderId(), e.getMessage());
+            updateStatus(intent.clientOrderId(), OrderStatus.UNKNOWN, 0);
+            publish(intent, OrderStatus.UNKNOWN, 0, 0);
+            notifyReject(intent, "送單狀態不明（" + e.getMessage() + "），已自動回查對帳，請勿重送");
+            OrderStatus resolved = reconcileOne(intent.clientOrderId(), intent.symbol(), intent.isFutures(), intent.side(), intent.accountOrDefault());
+            if (resolved == null) return ApiResponse.error(202, "送單狀態不明，對帳中（UNKNOWN）；勿重送 " + intent.clientOrderId());
+            return resolved == OrderStatus.REJECTED
+                    ? ApiResponse.error(500, "交易所未收到此單（回查確認），可重送")
+                    : ApiResponse.ok("{\"reconciled\":\"" + resolved + "\"}");
+
+        } catch (BinanceOrderGateway.ExchangeRejectedException | IllegalStateException | IllegalArgumentException e) {
+            // 交易所明確拒絕 / filter 未過 / 金鑰未設：確定沒進簿
+            log.error("place order rejected: {}", e.getMessage());
             updateStatus(intent.clientOrderId(), OrderStatus.REJECTED, 0);
-            publish(intent.clientOrderId(), intent.symbol(), OrderStatus.REJECTED, 0, 0, intent.accountOrDefault());
+            publish(intent, OrderStatus.REJECTED, 0, 0);
             notifyReject(intent, e.getMessage());
             return ApiResponse.error(500, e.getMessage());   // 把 filter/餘額/幣安錯誤訊息帶回前端
+        } catch (RuntimeException e) {
+            // 其他未知例外：保守當作狀態不明
+            log.error("place order unexpected: {}", e.getMessage(), e);
+            updateStatus(intent.clientOrderId(), OrderStatus.UNKNOWN, 0);
+            publish(intent, OrderStatus.UNKNOWN, 0, 0);
+            return ApiResponse.error(202, "送單例外，對帳中（UNKNOWN）；勿重送 " + intent.clientOrderId());
+        }
+    }
+
+    // ── 對帳：UNKNOWN 訂單以 origClientOrderId 回查交易所 ───────────────────────────────────
+
+    /** 回查一筆。回傳確定狀態；仍查不到回 null（留 UNKNOWN 給排程）。 */
+    OrderStatus reconcileOne(String clientOrderId, String symbol, boolean futures, OrderSide side, String account) {
+        try {
+            String resp = gateway.queryOrder(symbol, clientOrderId, futures);
+            JsonNode n = mapper.readTree(resp);
+            String st = n.path("status").asText("");
+            double executed = n.path("executedQty").asDouble(0);
+            double avg = 0;
+            if (executed > 0) {
+                if (n.has("avgPrice")) avg = n.path("avgPrice").asDouble(0);
+                else { double q = n.path("cummulativeQuoteQty").asDouble(0); avg = q > 0 ? q / executed : 0; }
+            }
+            OrderStatus mapped = switch (st) {
+                case "NEW" -> OrderStatus.SUBMITTED;
+                case "PARTIALLY_FILLED" -> OrderStatus.PARTIALLY_FILLED;
+                case "FILLED" -> OrderStatus.FILLED;
+                case "CANCELED", "PENDING_CANCEL" -> OrderStatus.CANCELED;
+                case "REJECTED" -> OrderStatus.REJECTED;
+                case "EXPIRED", "EXPIRED_IN_MATCH" -> OrderStatus.EXPIRED;
+                default -> null;
+            };
+            if (mapped == null) return null;
+            String exchId = n.path("orderId").asText(null);
+            // 只發「增量」：交易所累計成交量 − DB 已記成交量。eventId 綁累計量，重跑同一快照不會重複加。
+            double known = orders.findByClientOrderId(clientOrderId)
+                    .map(o -> o.getFilledQty() == null ? 0 : o.getFilledQty()).orElse(0.0);
+            double delta = Math.max(0, executed - known);
+            OrderStatus publishStatus = mapped;
+            if (delta <= 0 && (mapped == OrderStatus.FILLED || mapped == OrderStatus.PARTIALLY_FILLED)) {
+                // 成交已被 UDS 記過，只需同步狀態
+                updateStatus(clientOrderId, mapped, 0);
+            } else {
+                updateStatus(clientOrderId, mapped == OrderStatus.SUBMITTED ? OrderStatus.SUBMITTED : mapped, 0);
+                kafka.send(Topics.ORDER_EVENTS, symbol, new OrderEvent(clientOrderId, exchId, symbol, side, publishStatus,
+                        delta, avg, System.currentTimeMillis(), account,
+                        "reconcile|" + clientOrderId + "|" + mapped + "|" + executed));
+            }
+            log.info("對帳完成 {} -> {} executed={} known={} delta={} @ {}", clientOrderId, mapped, executed, known, delta, avg);
+            return mapped;
+        } catch (BinanceOrderGateway.ExchangeRejectedException e) {
+            if (e.code == -2013) {   // Order does not exist：交易所從未收到 → 安全標 REJECTED
+                updateStatus(clientOrderId, OrderStatus.REJECTED, 0);
+                kafka.send(Topics.ORDER_EVENTS, symbol, new OrderEvent(clientOrderId, null, symbol, side, OrderStatus.REJECTED,
+                        0, 0, System.currentTimeMillis(), account, "reconcile|" + clientOrderId + "|REJECTED|0"));
+                log.info("對帳：交易所無此單 {} → REJECTED", clientOrderId);
+                return OrderStatus.REJECTED;
+            }
+            log.warn("對帳回查被拒 {}: {}", clientOrderId, e.getMessage());
+            return null;
+        } catch (Exception e) {
+            log.warn("對帳回查失敗 {}: {}", clientOrderId, e.getMessage());
+            return null;
+        }
+    }
+
+    /** 每 10 秒掃一次 UNKNOWN 訂單對帳；SUBMITTED 超過 N 分鐘仍無成交回報也納入（UDS 漏事件保險）。 */
+    @Scheduled(fixedDelay = 10_000, initialDelay = 15_000)
+    public void reconcileUnknownOrders() {
+        if (gateway.isDryRun()) return;
+        List<OrderEntity> pending = orders.findTop50ByStatusOrderByUpdatedAtAsc(OrderStatus.UNKNOWN.name());
+        for (OrderEntity o : pending) {
+            OrderSide side = "SELL".equals(o.getSide()) ? OrderSide.SELL : OrderSide.BUY;
+            reconcileOne(o.getClientOrderId(), o.getSymbol(), "USDT_M".equalsIgnoreCase(o.getMarket()), side,
+                    o.getAccount() == null ? "main" : o.getAccount());
         }
     }
 
     /** 目前下單風控設定。 */
     public Map<String, Object> riskConfig() {
-        return Map.of("maxNotionalUsdt", maxNotional, "balanceCheck", balanceCheck, "dryRun", dryRun);
+        return Map.of("maxNotionalUsdt", maxNotional, "balanceCheck", balanceCheck, "dryRun", gateway.isDryRun());
     }
 
     /** 執行期調整下單風控（風控頁推送，免重啟）。null 表示不變更。 */
@@ -168,7 +269,7 @@ public class OrderService {
                 String st = n.path("status").asText("");
                 OrderStatus status = "PARTIALLY_FILLED".equals(st)
                         ? OrderStatus.PARTIALLY_FILLED : OrderStatus.FILLED;
-                publish(intent.clientOrderId(), intent.symbol(), status, executed, avg, intent.accountOrDefault());
+                publish(intent, status, executed, avg);
                 log.info("真實成交 {} {} qty={} @ {}", intent.symbol(), status, executed, avg);
             }
         } catch (Exception e) {
@@ -184,7 +285,12 @@ public class OrderService {
     public ApiResponse<String> cancel(String symbol, String clientOrderId, boolean futures) {
         try {
             String resp = gateway.cancelOrder(symbol, clientOrderId, futures);
-            publish(clientOrderId, symbol, OrderStatus.CANCELED, 0, 0, "main");
+            OrderSide side = orders.findByClientOrderId(clientOrderId)
+                    .map(o -> "SELL".equals(o.getSide()) ? OrderSide.SELL : OrderSide.BUY).orElse(null);
+            String account = orders.findByClientOrderId(clientOrderId).map(OrderEntity::getAccount).orElse("main");
+            long ts = System.currentTimeMillis();
+            kafka.send(Topics.ORDER_EVENTS, symbol, new OrderEvent(clientOrderId, null, symbol, side, OrderStatus.CANCELED,
+                    0, 0, ts, account, OrderEvent.eventId(clientOrderId, OrderStatus.CANCELED, 0, ts)));
             return ApiResponse.ok(resp);
         } catch (Exception e) { return ApiResponse.error(500, "cancel failed: " + e.getMessage()); }
     }
@@ -319,25 +425,31 @@ public class OrderService {
     }
 
     // ---- 落地 ----
+    /** 落地下單意圖。失敗要拋出（呼叫端據此拒絕送單），不可吞。 */
     private void persistNew(OrderIntent i) {
-        try {
-            OrderEntity e = new OrderEntity();
-            e.setClientOrderId(i.clientOrderId());
-            e.setSymbol(i.symbol());
-            e.setSide(i.side().name());
-            e.setType(i.type().name());
-            e.setPrice(i.price());
-            e.setQuantity(i.quantity());
-            e.setStatus(OrderStatus.CREATED.name());
-            e.setStrategyId(i.strategyId());
-            e.setAccount(i.accountOrDefault());
-            orders.save(e);
-        } catch (Exception ex) { log.warn("訂單落地失敗: {}", ex.getMessage()); }
+        OrderEntity e = new OrderEntity();
+        e.setClientOrderId(i.clientOrderId());
+        e.setSymbol(i.symbol());
+        e.setSide(i.side().name());
+        e.setType(i.type().name());
+        e.setPrice(i.price());
+        e.setQuantity(i.quantity());
+        e.setStatus(OrderStatus.CREATED.name());
+        e.setStrategyId(i.strategyId());
+        e.setAccount(i.accountOrDefault());
+        e.setMarket(i.isFutures() ? "USDT_M" : "SPOT");
+        orders.saveAndFlush(e);
     }
 
     private void updateStatus(String clientOrderId, OrderStatus status, double filled) {
         try {
             orders.findByClientOrderId(clientOrderId).ifPresent(e -> {
+                OrderStatus cur = safeStatus(e.getStatus());
+                // 同步路徑只能往前推；已被 UDS/對帳寫成 FILLED/CANCELED 的單，不可被晚到的 SUBMITTED 蓋回去
+                if (cur != null && cur != OrderStatus.UNKNOWN && !OrderStateMachine.canTransit(cur, status) && cur != status) {
+                    log.debug("略過狀態回退 {}: {} -> {}", clientOrderId, cur, status);
+                    return;
+                }
                 e.setStatus(status.name());
                 if (filled > 0) e.setFilledQty(filled);
                 e.setUpdatedAt(OffsetDateTime.now());
@@ -346,8 +458,14 @@ public class OrderService {
         } catch (Exception ex) { log.warn("訂單狀態更新失敗: {}", ex.getMessage()); }
     }
 
-    private void publish(String clientOrderId, String symbol, OrderStatus status, double filled, double avgPrice, String account) {
-        kafka.send(Topics.ORDER_EVENTS, symbol,
-                new OrderEvent(clientOrderId, null, symbol, status, filled, avgPrice, System.currentTimeMillis(), account));
+    static OrderStatus safeStatus(String s) {
+        try { return s == null ? null : OrderStatus.valueOf(s); } catch (IllegalArgumentException e) { return null; }
+    }
+
+    private void publish(OrderIntent i, OrderStatus status, double filled, double avgPrice) {
+        long ts = System.currentTimeMillis();
+        kafka.send(Topics.ORDER_EVENTS, i.symbol(),
+                new OrderEvent(i.clientOrderId(), null, i.symbol(), i.side(), status, filled, avgPrice, ts,
+                        i.accountOrDefault(), OrderEvent.eventId(i.clientOrderId(), status, filled, ts)));
     }
 }
