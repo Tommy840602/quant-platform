@@ -20,7 +20,14 @@ jobs:
           cache: maven
       - name: Build & test
         working-directory: backend
-        run: mvn -B clean verify
+        run: set -o pipefail; mvn -B clean verify 2>&1 | tee build.log
+      - name: Surface Maven errors as annotations
+        if: failure()
+        working-directory: backend
+        run: |
+          grep -E '\[ERROR\]|Tests run:.*Failures: [1-9]|Tests run:.*Errors: [1-9]|<<< (FAILURE|ERROR)!' build.log \
+            | grep -vE 'Re-run Maven|For more information|\[Help [0-9]\]|^\[ERROR\] *$' \
+            | head -60 | sed 's/^/::error::/'
 
   frontend:
     name: Frontend (Vue 3 / Vite)

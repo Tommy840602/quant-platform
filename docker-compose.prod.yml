@@ -41,7 +41,10 @@ services:
     image: redis:7-alpine
     container_name: qp-redis
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "no", "--save", ""]
+    # AOF 開啟：冪等鍵、事件去重、現金帳、熔斷狀態、回撤峰值都存這裡，重啟不可歸零
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    volumes:
+      - redis-data:/data
 
   kafka:
     image: apache/kafka:3.7.1
@@ -178,4 +181,5 @@ services:
     depends_on: [api-gateway, research]
 
 volumes:
+  redis-data:
   ts_data:

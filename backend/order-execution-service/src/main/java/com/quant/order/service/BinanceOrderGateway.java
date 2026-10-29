@@ -125,6 +125,19 @@ public class BinanceOrderGateway {
         return m;
     }
 
+    /** 唯一的 dry-run 真相來源：OrderService / UDS 必須讀這裡，不可各自持有 @Value 副本。 */
+    public boolean isDryRun() { return dryRun; }
+
+    /** 傳輸層失敗（逾時 / 斷線 / 5xx）：交易所「可能」已收到單，呼叫端必須回查而非直接標 REJECTED。 */
+    public static class TransportException extends RuntimeException {
+        public TransportException(String m, Throwable c) { super(m, c); }
+    }
+    /** 交易所明確拒絕（4xx，含 -2010 餘額不足 / -1013 filter 等）：單子確定沒進簿。 */
+    public static class ExchangeRejectedException extends RuntimeException {
+        public final int httpStatus; public final int code;
+        public ExchangeRejectedException(int httpStatus, int code, String m) { super(m); this.httpStatus = httpStatus; this.code = code; }
+    }
+
     private String baseUrl(OrderIntent i) { return i.isFutures() ? futUrl : spotUrl; }
     private String orderPath(OrderIntent i) { return i.isFutures() ? "/fapi/v1/order" : "/api/v3/order"; }
     private String key(boolean futures) { return futures ? futKey : spotKey; }
@@ -239,14 +252,28 @@ public class BinanceOrderGateway {
                  .header("Content-Type", "application/x-www-form-urlencoded")
                  .method(method, HttpRequest.BodyPublishers.ofString(full));
             }
-            HttpResponse<String> resp = http.send(b.build(), HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> resp;
+            try {
+                resp = http.send(b.build(), HttpResponse.BodyHandlers.ofString());
+            } catch (java.io.IOException | InterruptedException e) {
+                if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+                // 逾時 / 連線中斷：請求可能已到交易所 → 由呼叫端回查
+                throw new TransportException(action + "傳輸失敗: " + e.getMessage(), e);
+            }
             if (resp.statusCode() >= 200 && resp.statusCode() < 300) {
                 log.info("幣安{}成功: {}", action, resp.body());
                 return resp.body();
             }
             String err = "HTTP " + resp.statusCode() + ": " + resp.body();
             if (isAuthOrIpError(err)) alertAuth(action, err);
-            throw new RuntimeException("幣安" + action + "失敗 " + err);
+            if (resp.statusCode() >= 500 || resp.statusCode() == 408 || resp.statusCode() == 429)
+                throw new TransportException("幣安" + action + "失敗 " + err, null);   // 伺服器端狀態不明
+            int code = 0;
+            try {
+                java.util.regex.Matcher mm = java.util.regex.Pattern.compile("\"code\"\\s*:\\s*(-?\\d+)").matcher(resp.body());
+                if (mm.find()) code = Integer.parseInt(mm.group(1));
+            } catch (Exception ignore) {}
+            throw new ExchangeRejectedException(resp.statusCode(), code, "幣安" + action + "失敗 " + err);
         } catch (RuntimeException e) { throw e; }
         catch (Exception e) { throw new RuntimeException(action + "例外: " + e.getMessage(), e); }
     }

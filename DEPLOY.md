@@ -87,3 +87,6 @@ docker compose -f docker-compose.prod.yml logs -f X     # 日誌
 docker compose -f docker-compose.prod.yml restart X     # 重啟某服務
 docker compose -f docker-compose.prod.yml down          # 全停
 ```
+
+> **Redis 現在是有狀態的**：冪等鍵、事件去重、策略現金帳、熔斷開關、回撤峰值都存在 Redis（`--appendonly yes`，掛載 `redis-data` volume）。
+> 清空 Redis 等於清空熔斷狀態與現金帳；升級時請保留該 volume。

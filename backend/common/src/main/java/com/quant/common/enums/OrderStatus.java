@@ -9,5 +9,6 @@ public enum OrderStatus {
     FILLED,           // 完全成交
     CANCELED,         // 已撤銷
     REJECTED,         // 遭拒（風控/交易所）
-    EXPIRED           // 逾期
+    EXPIRED,          // 逾期
+    UNKNOWN           // 送單後未收到確定回應（逾時/斷線），待 origClientOrderId 回查對帳
 }
