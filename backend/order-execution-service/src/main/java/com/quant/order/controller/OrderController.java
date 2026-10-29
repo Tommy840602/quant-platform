@@ -64,6 +64,10 @@ public class OrderController {
     public ApiResponse<String> cancelCond(@PathVariable long id) { return ApiResponse.ok(conditional.cancel(id)); }
 
     /** 績效歸因：GET /api/order/orders/attribution */
+    /** 各策略有號部位 + 未結單數（strategy-service 啟動對帳用）。 */
+    @GetMapping("/strategy-positions")
+    public ApiResponse<List<Map<String, Object>>> strategyPositions() { return orderService.strategyPositions(); }
+
     @GetMapping("/attribution")
     public ApiResponse<List<Map<String, Object>>> attribution() {
         return orderService.attribution();

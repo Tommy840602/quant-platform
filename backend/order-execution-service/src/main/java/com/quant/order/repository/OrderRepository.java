@@ -13,6 +13,7 @@ public interface OrderRepository extends JpaRepository<OrderEntity, Long> {
     Optional<OrderEntity> findByClientOrderId(String clientOrderId);
     java.util.List<OrderEntity> findByStatusOrderByIdAsc(String status);
     List<OrderEntity> findTop50ByStatusOrderByUpdatedAtAsc(String status);
+    List<OrderEntity> findByStrategyIdIsNotNullOrderByIdAsc();
     Page<OrderEntity> findAllByOrderByIdDesc(Pageable pageable);
 
     @Query("select o.strategyId, count(o), coalesce(sum(o.filledQty),0) " +
