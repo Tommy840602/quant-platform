@@ -18,7 +18,7 @@ spring:
     password: quant
   jpa:
     hibernate:
-      ddl-auto: validate
+      ddl-auto: none      # users 表由 UserService.bootstrap 以 CREATE TABLE IF NOT EXISTS 建立；validate 會在第一次開機時先於 bootstrap 跑而失敗
     open-in-view: false
   kafka:
     bootstrap-servers: ${KAFKA_ADDR:localhost:9092}
