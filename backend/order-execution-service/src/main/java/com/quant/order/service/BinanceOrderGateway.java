@@ -1,5 +1,6 @@
 package com.quant.order.service;
 
+import com.quant.common.binance.BinanceClock;
 import com.quant.common.dto.OrderIntent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,6 +34,7 @@ public class BinanceOrderGateway {
     private final NotifyClient notifyClient;
     private final SymbolFilterService filters;
     private final org.springframework.data.redis.core.StringRedisTemplate redis;
+    private final BinanceClock clock = new BinanceClock();
     private volatile long lastAuthAlert = 0;
 
     public BinanceOrderGateway(NotifyClient notifyClient, SymbolFilterService filters,
@@ -127,7 +129,27 @@ public class BinanceOrderGateway {
         } else {
             log.info("BINANCE_ENV=testnet ｜ 測試網下單 spot={}（安全）", spotUrl);
         }
+        syncClock();
     }
+
+    /** 對時：啟動時一次、之後每 5 分鐘；失敗只記 log，簽名退回本機時間（-1021 時會再即時對一次）。 */
+    @org.springframework.scheduling.annotation.Scheduled(initialDelay = 300_000, fixedDelay = 300_000)
+    public void syncClock() {
+        for (String base : new String[]{spotUrl, futUrl}) {
+            if (base == null || base.isBlank()) continue;
+            try {
+                long off = clock.sync(base);
+                if (BinanceClock.skewTooLarge(off))
+                    log.warn("⚠️ 本機時鐘與幣安相差 {} ms（{}）：已自動校正，但請檢查主機 NTP", off, base);
+                else log.info("幣安對時完成 {} offset={}ms", base, off);
+            } catch (Exception e) {
+                log.warn("幣安對時失敗 {}: {}（沿用 offset={}ms）", base, e.getMessage(), clock.offset(base));
+            }
+        }
+    }
+
+    public BinanceClock clock() { return clock; }
+    public String spotRestUrl() { return spotUrl; }
 
     /** 執行期套用連線設定（登入頁推送）。keys 空字串代表不變更；dryRun 為 null 代表不變更。 */
     public synchronized Map<String, Object> applyConfig(String newEnv, Boolean newDryRun, String newKey, String newSecret) {
@@ -137,6 +159,7 @@ public class BinanceOrderGateway {
             spotUrl = m ? spotMainnetUrl : testnetSpotUrl;
             futUrl  = m ? futMainnetUrl  : testnetFutUrl;
             futWsUrl = m ? futMainnetWsUrl : testnetFutWsUrl;
+            syncClock();
         }
         if (newDryRun != null) dryRun = newDryRun;
         if (newKey != null && !newKey.isBlank())   { spotKey = newKey.trim(); }
@@ -150,6 +173,8 @@ public class BinanceOrderGateway {
         m.put("env", env); m.put("dryRun", dryRun); m.put("spotUrl", spotUrl);
         m.put("keySet", !spotKey.isBlank() && !spotSecret.isBlank());
         m.put("mainnet", "mainnet".equalsIgnoreCase(env));
+        m.put("clockOffsetMs", clock.offset(spotUrl));
+        m.put("clockSyncedAt", clock.syncedAt(spotUrl));
         return m;
     }
 
@@ -285,12 +310,26 @@ public class BinanceOrderGateway {
     // ---------- 通用簽名請求 ----------
     private String signed(String method, String base, String path, Map<String, String> params,
                           boolean futures, String action) {
+        try {
+            return signedOnce(method, base, path, params, futures, action);
+        } catch (ExchangeRejectedException e) {
+            // -1021 時間偏移：本機時鐘漂了。立刻重新對時後「同一組參數」再送一次（timestamp 會重算），仍失敗才往外丟。
+            if (!BinanceClock.isTimestampError(e.code, e.getMessage())) throw e;
+            Long off = clock.trySync(base);
+            log.warn("幣安回 -1021（時間偏移），重新對時 offset={}ms 後重送 {}", off, action);
+            if (off == null) throw e;
+            return signedOnce(method, base, path, params, futures, action);
+        }
+    }
+
+    private String signedOnce(String method, String base, String path, Map<String, String> params,
+                              boolean futures, String action) {
         String k = key(futures), sec = secret(futures);
         if (k.isBlank() || sec.isBlank())
             throw new IllegalStateException("未設定 " + (futures ? "合約" : "現貨") + " API 金鑰");
         try {
             params.put("recvWindow", String.valueOf(recvWindow));
-            params.put("timestamp", String.valueOf(System.currentTimeMillis()));
+            params.put("timestamp", String.valueOf(clock.now(base)));
             String query = params.entrySet().stream()
                     .map(e -> e.getKey() + "=" + enc(e.getValue()))
                     .collect(Collectors.joining("&"));

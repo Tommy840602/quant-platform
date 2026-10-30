@@ -104,7 +104,7 @@ public class BinanceWsApiUserDataStream extends TextWebSocketHandler {
     public void afterConnectionEstablished(WebSocketSession s) throws Exception {
         this.session = s;
         // 1) session.logon（Ed25519 簽名）
-        long ts = System.currentTimeMillis();
+        long ts = gateway.clock().now(gateway.spotRestUrl());   // 校正後的時間；本機漂移會讓 logon 回 -1021
         String payload = "apiKey=" + apiKey + "&timestamp=" + ts;   // 參數依字母序
         String signature = ed25519Sign(payload);
 
