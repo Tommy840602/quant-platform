@@ -45,7 +45,8 @@ public class OrderService {
     private final NotifyClient notifyClient;
 
     @Value("${binance.user-data-stream-enabled:false}") private boolean udsEnabled;
-    @Value("${risk.max-notional-usdt:1000}") private double maxNotional;   // 單筆名目金額上限(USDT)
+    @Value("${risk.max-notional-usdt:1000}") private double maxNotional = 1000;   // 單筆名目金額上限(USDT)；未注入時也要有安全預設
+    @Value("${risk.allow-unlimited-notional:false}") private boolean allowUnlimitedNotional;   // 顯式允許 0=不限
     @Value("${risk.balance-check:false}") private boolean balanceCheck;    // BUY 前檢查可用餘額(會多打一次 account)
 
     public OrderService(RiskClient riskClient, StringRedisTemplate redis,
@@ -100,8 +101,9 @@ public class OrderService {
             notifyReject(intent, "風控拒絕：" + decision.reason());
             return ApiResponse.error(403, "risk rejected: " + decision.reason());
         }
-        // ── 名目金額上限 + 餘額檢查（事中風控補強）──
-        double ref = intent.price() != null && intent.price() > 0 ? intent.price() : lastPrice(intent.symbol());
+        // ── 名目金額上限 + 餘額檢查（事中風控補強）。拿不到參考價 = 拒單，不是放行 ──
+        double ref = intent.price() != null && intent.price() > 0 ? intent.price()
+                : gateway.referencePrice(intent.symbol(), intent.isFutures());
         double notional = intent.quantity() * ref;
         String preReject = preTradeCheck(intent, ref, notional);
         if (preReject != null) {
@@ -233,17 +235,26 @@ public class OrderService {
 
     /** 執行期調整下單風控（風控頁推送，免重啟）。null 表示不變更。 */
     public synchronized Map<String, Object> setRiskConfig(Double maxNotionalUsdt, Boolean balanceCheck) {
-        if (maxNotionalUsdt != null && maxNotionalUsdt >= 0) this.maxNotional = maxNotionalUsdt;
+        if (maxNotionalUsdt != null) {
+            if (maxNotionalUsdt <= 0 && !allowUnlimitedNotional)
+                throw new IllegalArgumentException("單筆名目上限不可為 0（=不限）。若確定要關閉，請設 RISK_ALLOW_UNLIMITED_NOTIONAL=true 後重啟");
+            if (maxNotionalUsdt > 0) this.maxNotional = maxNotionalUsdt;
+            else this.maxNotional = 0;
+        }
         if (balanceCheck != null) this.balanceCheck = balanceCheck;
         log.warn("下單風控更新：maxNotional={} balanceCheck={}", maxNotional, this.balanceCheck);
         return riskConfig();
     }
 
     /** 事前檢查：名目金額上限 + （選配）可用餘額。通過回 null，否則回拒絕原因。 */
-    private String preTradeCheck(OrderIntent intent, double ref, double notional) {
-        if (maxNotional > 0 && ref > 0 && notional > maxNotional)
+    String preTradeCheck(OrderIntent intent, double ref, double notional) {
+        if (ref <= 0)
+            return "取不到 " + intent.symbol() + " 參考價，無法檢查名目上限，拒絕下單";
+        if (maxNotional <= 0 && !allowUnlimitedNotional)
+            return "單筆名目上限未設定（0），且未顯式允許不限額，拒絕下單";
+        if (maxNotional > 0 && notional > maxNotional)
             return String.format("名目金額 %.2f USDT 超過單筆上限 %.0f USDT", notional, maxNotional);
-        if (balanceCheck && intent.side() == com.quant.common.enums.OrderSide.BUY && !intent.isFutures() && ref > 0) {
+        if (balanceCheck && intent.side() == com.quant.common.enums.OrderSide.BUY && !intent.isFutures()) {
             try {
                 Map<String, Object> bal = accountClient.balance("main").data();
                 Object freeObj = bal == null ? null : bal.get("free");
@@ -296,15 +307,75 @@ public class OrderService {
     }
 
 
-    /** OCO 下單（現貨）：限價止盈 + 止損二擇一（見架構文件 §9）。 */
+    /**
+     * OCO 下單（現貨）：限價止盈 + 止損二擇一（見架構文件 §9）。
+     * 走與一般單相同的閘門：冪等（listClientOrderId）→ 風控核可 / 熔斷 → 名目上限（取兩腿較大者）
+     * → filter 對齊（gateway）→ 兩腿各落一列（-L / -S），成交由 UDS 以腿的 clientOrderId 回寫。
+     */
     public ApiResponse<String> submitOco(String symbol, String side, double quantity,
-                                         double price, double stopPrice, double stopLimitPrice) {
-        String lid = "oco-" + System.currentTimeMillis();
+                                         double price, double stopPrice, double stopLimitPrice, String listClientOrderId) {
+        String lid = listClientOrderId == null || listClientOrderId.isBlank()
+                ? "oco-" + java.util.UUID.randomUUID() : listClientOrderId;
+        if (quantity <= 0 || price <= 0 || stopPrice <= 0 || stopLimitPrice <= 0)
+            return ApiResponse.error(400, "OCO 參數必須皆大於 0");
+        OrderSide s;
+        try { s = OrderSide.valueOf(side.toUpperCase()); } catch (Exception e) { return ApiResponse.error(400, "side 必須是 BUY/SELL"); }
+
+        Boolean first = redis.opsForValue().setIfAbsent("idem:" + lid, "1", 10, TimeUnit.MINUTES);
+        if (Boolean.FALSE.equals(first)) return ApiResponse.error(409, "duplicate listClientOrderId");
+
+        // 以限價腿建一個 intent 走風控；兩腿共用數量，名目取較大者
+        OrderIntent limitLeg = new OrderIntent(lid + "-L", null, symbol, s, com.quant.common.enums.OrderType.LIMIT,
+                price, quantity, false, "SPOT", "main");
+        OrderIntent stopLeg = new OrderIntent(lid + "-S", null, symbol, s, com.quant.common.enums.OrderType.LIMIT,
+                stopLimitPrice, quantity, false, "SPOT", "main");
         try {
-            return ApiResponse.ok(gateway.placeOco(symbol, side, quantity, price, stopPrice, stopLimitPrice, lid));
-        } catch (Exception e) {
+            persistNew(limitLeg);
+            persistNew(stopLeg);
+        } catch (DataIntegrityViolationException dup) {
+            return ApiResponse.error(409, "duplicate OCO leg id");
+        } catch (Exception ex) {
+            return ApiResponse.error(503, "訂單落地失敗，未送單: " + ex.getMessage());
+        }
+
+        RiskClient.RiskDecision decision = riskClient.check(limitLeg);
+        if (!decision.approved()) {
+            rejectLegs(limitLeg, stopLeg, "風控拒絕：" + decision.reason());
+            return ApiResponse.error(403, "risk rejected: " + decision.reason());
+        }
+        double notional = quantity * Math.max(price, stopLimitPrice);
+        String preReject = preTradeCheck(limitLeg, Math.max(price, stopLimitPrice), notional);
+        if (preReject != null) {
+            rejectLegs(limitLeg, stopLeg, preReject);
+            return ApiResponse.error(403, preReject);
+        }
+        updateStatus(limitLeg.clientOrderId(), OrderStatus.RISK_APPROVED, 0);
+        updateStatus(stopLeg.clientOrderId(), OrderStatus.RISK_APPROVED, 0);
+
+        try {
+            String resp = gateway.placeOco(symbol, s.name(), quantity, price, stopPrice, stopLimitPrice, lid);
+            updateStatus(limitLeg.clientOrderId(), OrderStatus.SUBMITTED, 0);
+            updateStatus(stopLeg.clientOrderId(), OrderStatus.SUBMITTED, 0);
+            publish(limitLeg, OrderStatus.SUBMITTED, 0, 0);
+            publish(stopLeg, OrderStatus.SUBMITTED, 0, 0);
+            log.info("OCO 送出 {} {} qty={} limit={} stop={}/{} -> {}", symbol, s, quantity, price, stopPrice, stopLimitPrice, resp);
+            return ApiResponse.ok(resp);
+        } catch (BinanceOrderGateway.TransportException e) {
+            updateStatus(limitLeg.clientOrderId(), OrderStatus.UNKNOWN, 0);
+            updateStatus(stopLeg.clientOrderId(), OrderStatus.UNKNOWN, 0);
+            notifyReject(limitLeg, "OCO 送單狀態不明（" + e.getMessage() + "），對帳排程將回查兩腿");
+            return ApiResponse.error(202, "OCO 狀態不明，對帳中；勿重送 " + lid);
+        } catch (RuntimeException e) {
+            rejectLegs(limitLeg, stopLeg, e.getMessage());
             return ApiResponse.error(500, "oco failed: " + e.getMessage());
         }
+    }
+
+    private void rejectLegs(OrderIntent a, OrderIntent b, String reason) {
+        updateStatus(a.clientOrderId(), OrderStatus.REJECTED, 0);
+        updateStatus(b.clientOrderId(), OrderStatus.REJECTED, 0);
+        publish(a, OrderStatus.REJECTED, 0, 0);
+        notifyReject(a, "OCO " + reason);
     }
 
     public ApiResponse<String> setLeverage(String symbol, int leverage) {

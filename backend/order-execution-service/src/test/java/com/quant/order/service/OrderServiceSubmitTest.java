@@ -43,6 +43,7 @@ class OrderServiceSubmitTest {
         when(redis.opsForValue()).thenReturn(ops);
         when(ops.setIfAbsent(anyString(), anyString(), anyLong(), any())).thenReturn(true);
         when(ops.get("price:BTCUSDT")).thenReturn("60000");
+        when(gateway.referencePrice(eq("BTCUSDT"), anyBoolean())).thenReturn(60000.0);
         when(risk.check(any())).thenReturn(new RiskClient.RiskDecision(true, "ok", null));
         when(gateway.isDryRun()).thenReturn(false);
         OrderEntity row = new OrderEntity(); row.setClientOrderId("cid-1"); row.setStatus("CREATED"); row.setSide("BUY");
@@ -128,5 +129,52 @@ class OrderServiceSubmitTest {
         OrderEvent fill = cap.getAllValues().stream().map(o -> (OrderEvent) o)
                 .filter(e -> e.status() == OrderStatus.FILLED).findFirst().orElseThrow();
         assertEquals(60000, fill.avgPrice(), 1e-6);
+    }
+
+    // ── PR4: 名目上限 fail-closed ──
+    @Test
+    void missingReferencePriceRejectsInsteadOfPassing() {
+        when(gateway.referencePrice(any(), anyBoolean())).thenReturn(0.0);
+        ApiResponse<String> r = svc.submit(intent);
+        assertEquals(403, r.code());
+        assertTrue(r.message().contains("參考價"));
+        verify(gateway, never()).placeOrder(any());
+    }
+
+    @Test
+    void notionalAboveCapIsRejected() {
+        OrderIntent big = new OrderIntent("cid-1", "s1", "BTCUSDT", OrderSide.BUY, OrderType.MARKET, null, 1.0, false, "SPOT", "main"); // 60k > 1000
+        ApiResponse<String> r = svc.submit(big);
+        assertEquals(403, r.code());
+        verify(gateway, never()).placeOrder(any());
+    }
+
+    @Test
+    void zeroCapIsNotUnlimitedByDefault() {
+        assertThrows(IllegalArgumentException.class, () -> svc.setRiskConfig(0.0, null));
+    }
+
+    // ── PR4: OCO 走完整閘門 ──
+    @Test
+    void ocoGoesThroughRiskAndNotionalChecks() {
+        when(risk.check(any())).thenReturn(new RiskClient.RiskDecision(false, "熔斷已啟動", null));
+        ApiResponse<String> r = svc.submitOco("BTCUSDT", "SELL", 0.01, 61000, 59000, 58900, "oco-1");
+        assertEquals(403, r.code());
+        verify(gateway, never()).placeOco(any(), any(), anyDouble(), anyDouble(), anyDouble(), anyDouble(), any());
+        verify(orders, times(2)).saveAndFlush(any());   // 兩腿都先落地
+    }
+
+    @Test
+    void ocoPersistsBothLegsAndSubmits() {
+        when(gateway.placeOco(any(), any(), anyDouble(), anyDouble(), anyDouble(), anyDouble(), any())).thenReturn("{\"listOrderStatus\":\"EXECUTING\"}");
+        OrderEntity l = new OrderEntity(); l.setClientOrderId("oco-1-L"); l.setStatus("CREATED"); l.setSide("SELL");
+        OrderEntity st = new OrderEntity(); st.setClientOrderId("oco-1-S"); st.setStatus("CREATED"); st.setSide("SELL");
+        when(orders.findByClientOrderId("oco-1-L")).thenReturn(Optional.of(l));
+        when(orders.findByClientOrderId("oco-1-S")).thenReturn(Optional.of(st));
+        ApiResponse<String> r = svc.submitOco("BTCUSDT", "SELL", 0.01, 61000, 59000, 58900, "oco-1");
+        assertEquals(0, r.code());
+        assertEquals("SUBMITTED", l.getStatus());
+        assertEquals("SUBMITTED", st.getStatus());
+        verify(gateway).placeOco(eq("BTCUSDT"), eq("SELL"), eq(0.01), eq(61000.0), eq(59000.0), eq(58900.0), eq("oco-1"));
     }
 }
