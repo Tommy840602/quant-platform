@@ -44,6 +44,8 @@ jobs:
         run: |
           npm ci || npm install
           npm run build
+      - name: nginx.conf 語法檢查
+        run: docker run --rm -v "$PWD/frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro" nginx:alpine nginx -t
 
   research:
     name: Research (Python 3)
