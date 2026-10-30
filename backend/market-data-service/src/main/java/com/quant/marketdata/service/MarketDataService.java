@@ -24,7 +24,8 @@ public class MarketDataService {
     }
 
     public void onKline(Kline k) {
-        redis.opsForValue().set("price:" + k.symbol(), String.valueOf(k.close()));
+        // 10 分鐘 TTL：行情串流掛掉時不讓舊價一直留著當參考價（下單閘道拿不到會改打 REST ticker）
+        redis.opsForValue().set("price:" + k.symbol(), String.valueOf(k.close()), 10, TimeUnit.MINUTES);
         kafka.send(Topics.MARKET_KLINE, k.symbol(), new MarketDataEvent("kline", k, System.currentTimeMillis()));
         if (k.closed()) log.debug("persist closed kline {} {} close={}", k.symbol(), k.interval(), k.close());
     }
