@@ -46,6 +46,8 @@ jobs:
           npm run build
       - name: nginx.conf 語法檢查
         run: docker run --rm -v "$PWD/frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro" nginx:alpine nginx -t
+      - name: docker-compose.prod.yml 語法/合併檢查
+        run: docker compose -f docker-compose.prod.yml config -q
 
   research:
     name: Research (Python 3)
