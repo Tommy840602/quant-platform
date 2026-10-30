@@ -2,6 +2,20 @@
 # 金鑰等機密由同目錄 .env 提供（見 .env.prod 範本）。
 # 啟動： docker compose -f docker-compose.prod.yml up -d --build
 
+# 所有容器共用：日誌上限（json-file 預設不限大小，跑幾週就把磁碟吃光）
+x-logging: &logging
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+# 後端微服務共用：等基礎設施 healthy 才啟動；JVM + Nacos 註冊約 60-90 秒，start_period 內失敗不算
+x-backend-deps: &backend-deps
+  depends_on:
+    nacos:       { condition: service_healthy }
+    kafka:       { condition: service_healthy }
+    redis:       { condition: service_healthy }
+    timescaledb: { condition: service_healthy }
+
 x-backend-env: &backend-env
   NACOS_ADDR: nacos:8848
   KAFKA_ADDR: kafka:9092
@@ -45,10 +59,17 @@ services:
     image: timescale/timescaledb:latest-pg16
     container_name: qp-timescaledb
     restart: unless-stopped
+    <<: *logging
     environment:
       POSTGRES_USER: quant
       POSTGRES_PASSWORD: quant
       POSTGRES_DB: quant
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quant -d quant"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
     volumes:
       - ts_data:/var/lib/postgresql/data
       - ./infra/init/timescale-init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -58,7 +79,13 @@ services:
     container_name: qp-redis
     restart: unless-stopped
     # AOF 開啟：冪等鍵、事件去重、現金帳、熔斷狀態、回撤峰值都存這裡，重啟不可歸零
+    <<: *logging
     command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
     volumes:
       - redis-data:/data
 
@@ -66,6 +93,13 @@ services:
     image: apache/kafka:3.7.1
     container_name: qp-kafka
     restart: unless-stopped
+    <<: *logging
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
@@ -85,6 +119,15 @@ services:
     image: nacos/nacos-server:v2.3.2
     container_name: qp-nacos
     restart: unless-stopped
+    <<: *logging
+    # ⚠️ 官方映像只有 amd64，Apple Silicon 上走模擬，啟動 1-2 分鐘；start_period 給足
+    healthcheck:
+      # 映像內不一定有 curl：curl → wget → bash /dev/tcp 三段備援，避免探測工具缺席害後端永遠等不到 healthy
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8848/nacos/v1/console/health/readiness >/dev/null 2>&1 || wget -qO- http://localhost:8848/nacos/v1/console/health/readiness >/dev/null 2>&1 || bash -c 'exec 3<>/dev/tcp/127.0.0.1/8848'"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 120s
     environment:
       MODE: standalone
       NACOS_AUTH_ENABLE: "false"
@@ -97,6 +140,7 @@ services:
     container_name: qp-prometheus
     restart: unless-stopped
     profiles: ["monitoring"]
+    <<: *logging
     volumes:
       - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
 
@@ -105,6 +149,7 @@ services:
     container_name: qp-grafana
     restart: unless-stopped
     profiles: ["monitoring"]
+    <<: *logging
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASS:-admin}
@@ -120,21 +165,39 @@ services:
     container_name: qp-api-gateway
     restart: unless-stopped
     environment: { <<: *backend-env, SERVICE: api-gateway }
-    depends_on: [nacos, kafka, redis, timescaledb]
+    <<: [*logging, *backend-deps]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health | grep -q '\"UP\"'"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
 
   market-data-service:
     image: quant-backend:latest
     container_name: qp-market-data-service
     restart: unless-stopped
     environment: { <<: *backend-env, SERVICE: market-data-service }
-    depends_on: [api-gateway]
+    <<: [*logging, *backend-deps]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8082/api/market/actuator/health | grep -q '\"UP\"'"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
 
   strategy-service:
     image: quant-backend:latest
     container_name: qp-strategy-service
     restart: unless-stopped
     environment: { <<: *backend-env, SERVICE: strategy-service }
-    depends_on: [api-gateway]
+    <<: [*logging, *backend-deps]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8083/api/strategy/actuator/health | grep -q '\"UP\"'"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
 
   order-execution-service:
     image: quant-backend:latest
@@ -143,60 +206,113 @@ services:
     environment: { <<: *backend-env, SERVICE: order-execution-service }
     volumes:
       - ./secrets:/run/secrets:ro     # Ed25519 pem 放這裡（git 已忽略 *.pem）
-    depends_on: [api-gateway]
+    <<: [*logging, *backend-deps]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8084/api/order/actuator/health | grep -q '\"UP\"'"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
 
   risk-service:
     image: quant-backend:latest
     container_name: qp-risk-service
     restart: unless-stopped
     environment: { <<: *backend-env, SERVICE: risk-service }
-    depends_on: [api-gateway]
+    <<: [*logging, *backend-deps]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8085/api/risk/actuator/health | grep -q '\"UP\"'"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
 
   account-service:
     image: quant-backend:latest
     container_name: qp-account-service
     restart: unless-stopped
     environment: { <<: *backend-env, SERVICE: account-service }
-    depends_on: [api-gateway]
+    <<: [*logging, *backend-deps]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8096/api/account/actuator/health | grep -q '\"UP\"'"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
 
   auth-service:
     image: quant-backend:latest
     container_name: qp-auth-service
     restart: unless-stopped
     environment: { <<: *backend-env, SERVICE: auth-service }
-    depends_on: [api-gateway]
+    <<: [*logging, *backend-deps]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8081/api/auth/actuator/health | grep -q '\"UP\"'"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
 
   backtest-service:
     image: quant-backend:latest
     container_name: qp-backtest-service
     restart: unless-stopped
     environment: { <<: *backend-env, SERVICE: backtest-service }
-    depends_on: [api-gateway]
+    <<: [*logging, *backend-deps]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8087/api/backtest/actuator/health | grep -q '\"UP\"'"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
 
   notification-service:
     image: quant-backend:latest
     container_name: qp-notification-service
     restart: unless-stopped
     environment: { <<: *backend-env, SERVICE: notification-service }
-    depends_on: [api-gateway]
+    <<: [*logging, *backend-deps]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8098/api/notify/actuator/health | grep -q '\"UP\"'"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
 
   # ---------- Python 研究/回測 ----------
   research:
     build: { context: ./research }
     container_name: qp-research
     restart: unless-stopped
+    <<: *logging
     environment:
       DB_HOST: timescaledb
       DB_PORT: "5432"
-    depends_on: [timescaledb]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    depends_on:
+      timescaledb: { condition: service_healthy }
 
   # ---------- 前端（nginx 靜態 + 反代 /api、/research） ----------
   frontend:
     build: { context: ./frontend }
     container_name: qp-frontend
     restart: unless-stopped
+    <<: *logging
     ports: ["${FRONTEND_PORT:-8088}:80"]
-    depends_on: [api-gateway, research]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/ >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    # 前端只做反代，後端沒好也先起（nginx 已改動態解析，不會因上游未就緒而起不來）
+    depends_on:
+      api-gateway: { condition: service_started }
+      research:    { condition: service_started }
 
 volumes:
   redis-data:
