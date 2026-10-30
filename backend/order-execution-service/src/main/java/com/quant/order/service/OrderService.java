@@ -45,7 +45,7 @@ public class OrderService {
     private final NotifyClient notifyClient;
 
     @Value("${binance.user-data-stream-enabled:false}") private boolean udsEnabled;
-    @Value("${risk.max-notional-usdt:1000}") private double maxNotional;   // 單筆名目金額上限(USDT)
+    @Value("${risk.max-notional-usdt:1000}") private double maxNotional = 1000;   // 單筆名目金額上限(USDT)；未注入時也要有安全預設
     @Value("${risk.allow-unlimited-notional:false}") private boolean allowUnlimitedNotional;   // 顯式允許 0=不限
     @Value("${risk.balance-check:false}") private boolean balanceCheck;    // BUY 前檢查可用餘額(會多打一次 account)
 
