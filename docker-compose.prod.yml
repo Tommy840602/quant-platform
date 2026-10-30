@@ -21,9 +21,23 @@ x-backend-env: &backend-env
   BINANCE_MAINNET_API_KEY: ${BINANCE_MAINNET_API_KEY:-}
   BINANCE_MAINNET_API_SECRET: ${BINANCE_MAINNET_API_SECRET:-}
   BINANCE_FUTURES_REST: ${BINANCE_FUTURES_REST:-https://testnet.binancefuture.com}
+  BINANCE_FUTURES_WS: ${BINANCE_FUTURES_WS:-wss://stream.binancefuture.com}
+  BINANCE_FUTURES_API_KEY: ${BINANCE_FUTURES_API_KEY:-}
+  BINANCE_FUTURES_API_SECRET: ${BINANCE_FUTURES_API_SECRET:-}
+  BINANCE_MAINNET_FUTURES_REST: ${BINANCE_MAINNET_FUTURES_REST:-https://fapi.binance.com}
+  BINANCE_MAINNET_FUTURES_WS: ${BINANCE_MAINNET_FUTURES_WS:-wss://fstream.binance.com}
+  BINANCE_MAINNET_FUTURES_API_KEY: ${BINANCE_MAINNET_FUTURES_API_KEY:-}
+  BINANCE_MAINNET_FUTURES_API_SECRET: ${BINANCE_MAINNET_FUTURES_API_SECRET:-}
   TRADING_DRY_RUN: ${TRADING_DRY_RUN:-true}
   SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+  # ---- User Data Stream（即時成交回報）。以前 compose 沒傳 Ed25519 變數，UDS_ENABLED=true 也靜默不啟動 ----
   BINANCE_UDS_ENABLED: ${BINANCE_UDS_ENABLED:-false}
+  BINANCE_WS_API: ${BINANCE_WS_API:-wss://ws-api.testnet.binance.vision/ws-api/v3}
+  BINANCE_MAINNET_WS_API: ${BINANCE_MAINNET_WS_API:-wss://ws-api.binance.com:443/ws-api/v3}
+  BINANCE_ED25519_API_KEY: ${BINANCE_ED25519_API_KEY:-}
+  # 容器內路徑；pem 放在專案 ./secrets/ 目錄（掛載到 /run/secrets，唯讀）
+  BINANCE_ED25519_KEY_PATH: ${BINANCE_ED25519_KEY_PATH:-}
+  BINANCE_FUTURES_UDS_ENABLED: ${BINANCE_FUTURES_UDS_ENABLED:-false}
 
 services:
   # ---------- 基礎設施 ----------
@@ -127,6 +141,8 @@ services:
     container_name: qp-order-execution-service
     restart: unless-stopped
     environment: { <<: *backend-env, SERVICE: order-execution-service }
+    volumes:
+      - ./secrets:/run/secrets:ro     # Ed25519 pem 放這裡（git 已忽略 *.pem）
     depends_on: [api-gateway]
 
   risk-service:

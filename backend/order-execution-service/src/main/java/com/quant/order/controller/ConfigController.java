@@ -2,6 +2,7 @@ package com.quant.order.controller;
 
 import com.quant.common.dto.ApiResponse;
 import com.quant.order.service.BinanceOrderGateway;
+import com.quant.order.service.UdsRegistry;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -12,7 +13,12 @@ import java.util.Map;
 public class ConfigController {
 
     private final BinanceOrderGateway gateway;
-    public ConfigController(BinanceOrderGateway gateway) { this.gateway = gateway; }
+    private final UdsRegistry uds;
+    public ConfigController(BinanceOrderGateway gateway, UdsRegistry uds) { this.gateway = gateway; this.uds = uds; }
+
+    /** User Data Stream 連線狀態：GET /api/order/config/uds（expected=應連、connected=真的連著）。 */
+    @GetMapping("/uds")
+    public ApiResponse<Map<String, Object>> uds() { return ApiResponse.ok(uds.status()); }
 
     /** 目前設定：GET /api/order/config */
     @GetMapping

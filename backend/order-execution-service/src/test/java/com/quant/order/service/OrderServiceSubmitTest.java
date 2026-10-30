@@ -177,4 +177,79 @@ class OrderServiceSubmitTest {
         assertEquals("SUBMITTED", st.getStatus());
         verify(gateway).placeOco(eq("BTCUSDT"), eq("SELL"), eq(0.01), eq(61000.0), eq(59000.0), eq(58900.0), eq("oco-1"));
     }
+
+    // ── PR5: 合約成交回報 + UDS 未連線時的退路 ──
+    private List<OrderEvent> events() {
+        ArgumentCaptor<Object> cap = ArgumentCaptor.forClass(Object.class);
+        verify(kafka, atLeastOnce()).send(anyString(), anyString(), cap.capture());
+        return cap.getAllValues().stream().map(o -> (OrderEvent) o).toList();
+    }
+
+    @Test
+    void futuresResultResponseFillIsRecordedWithAvgPrice() {
+        OrderIntent fut = new OrderIntent("cid-1", "s1", "BTCUSDT", OrderSide.BUY, OrderType.MARKET, null, 0.01, false, "USDT_M", "main");
+        when(gateway.placeOrder(any())).thenReturn(
+                "{\"orderId\":77,\"status\":\"FILLED\",\"executedQty\":\"0.010\",\"avgPrice\":\"60100.5\",\"cumQuote\":\"601.005\"}");
+        assertEquals(0, svc.submit(fut).code());
+        OrderEvent fill = events().stream().filter(e -> e.status() == OrderStatus.FILLED).findFirst().orElseThrow();
+        assertEquals(0.01, fill.filledQty(), 1e-12);
+        assertEquals(60100.5, fill.avgPrice(), 1e-6);
+        assertEquals("77", fill.exchangeOrderId());
+        assertTrue(fill.eventId().startsWith("resp|cid-1|"));
+    }
+
+    @Test
+    void ackStyleResponseWithoutExecutedQtyRecordsNoFill() {
+        // 合約預設 ACK：沒有 executedQty 欄位 → 不可假造成交，等對帳補記
+        when(gateway.placeOrder(any())).thenReturn("{\"orderId\":77,\"clientOrderId\":\"cid-1\",\"status\":\"NEW\"}");
+        assertEquals(0, svc.submit(intent).code());
+        assertFalse(events().stream().anyMatch(e -> e.status() == OrderStatus.FILLED || e.status() == OrderStatus.PARTIALLY_FILLED));
+    }
+
+    @Test
+    void streamConnectedMeansResponseFillIsNotDoubleCounted() {
+        UdsRegistry uds = new UdsRegistry(notify);
+        uds.expect(UdsRegistry.SPOT); uds.markConnected(UdsRegistry.SPOT);
+        svc.setUdsRegistry(uds);
+        when(gateway.placeOrder(any())).thenReturn(
+                "{\"orderId\":1,\"status\":\"FILLED\",\"executedQty\":\"0.01\",\"cummulativeQuoteQty\":\"600\"}");
+        assertEquals(0, svc.submit(intent).code());
+        assertFalse(events().stream().anyMatch(e -> e.status() == OrderStatus.FILLED), "串流活著 → 成交由 executionReport 記，不從回應重複記");
+    }
+
+    @Test
+    void streamExpectedButDownFallsBackToResponseFill() {
+        UdsRegistry uds = new UdsRegistry(notify);
+        uds.expect(UdsRegistry.SPOT);   // 設定開了，但此刻沒連上（以前：永遠不記成交）
+        svc.setUdsRegistry(uds);
+        when(gateway.placeOrder(any())).thenReturn(
+                "{\"orderId\":1,\"status\":\"FILLED\",\"executedQty\":\"0.01\",\"cummulativeQuoteQty\":\"600\"}");
+        assertEquals(0, svc.submit(intent).code());
+        OrderEvent fill = events().stream().filter(e -> e.status() == OrderStatus.FILLED).findFirst().orElseThrow();
+        assertEquals(60000, fill.avgPrice(), 1e-6);
+    }
+
+    @Test
+    void futuresStreamStateDoesNotAffectSpotDecision() {
+        UdsRegistry uds = new UdsRegistry(notify);
+        uds.expect(UdsRegistry.FUTURES); uds.markConnected(UdsRegistry.FUTURES);
+        svc.setUdsRegistry(uds);
+        when(gateway.placeOrder(any())).thenReturn(
+                "{\"orderId\":1,\"status\":\"FILLED\",\"executedQty\":\"0.01\",\"cummulativeQuoteQty\":\"600\"}");
+        svc.submit(intent);   // 現貨單
+        assertTrue(events().stream().anyMatch(e -> e.status() == OrderStatus.FILLED), "合約串流連著不代表現貨有回報");
+    }
+
+    @Test
+    void reconcileOpenOrdersPublishesOnlyIncrementalFill() {
+        OrderEntity open = new OrderEntity(); open.setClientOrderId("cid-9"); open.setSymbol("BTCUSDT");
+        open.setSide("BUY"); open.setStatus("PARTIALLY_FILLED"); open.setFilledQty(0.004); open.setMarket("USDT_M");
+        when(orders.findTop200ByStatusInAndMarketOrderByUpdatedAtAsc(anyList(), eq("USDT_M"))).thenReturn(List.of(open));
+        when(orders.findByClientOrderId("cid-9")).thenReturn(Optional.of(open));
+        when(gateway.queryOrder("BTCUSDT", "cid-9", true))
+                .thenReturn("{\"orderId\":9,\"status\":\"FILLED\",\"executedQty\":\"0.010\",\"avgPrice\":\"60000\"}");
+        assertEquals(1, svc.reconcileOpenOrders(true));
+        OrderEvent fill = events().stream().filter(e -> e.status() == OrderStatus.FILLED).findFirst().orElseThrow();
+        assertEquals(0.006, fill.filledQty(), 1e-9, "只補 0.010 − 0.004 的增量");
+    }
 }

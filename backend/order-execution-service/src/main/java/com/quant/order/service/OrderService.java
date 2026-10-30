@@ -44,7 +44,10 @@ public class OrderService {
     private final AccountClient accountClient;
     private final NotifyClient notifyClient;
 
-    @Value("${binance.user-data-stream-enabled:false}") private boolean udsEnabled;
+    /** UDS 連線狀態（可為 null：單元測試）。送單後成交回報靠串流還是靠回應解析，看「當下是否真的連著」而不是設定旗標。 */
+    private UdsRegistry uds;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setUdsRegistry(UdsRegistry uds) { this.uds = uds; }
     @Value("${risk.max-notional-usdt:1000}") private double maxNotional = 1000;   // 單筆名目金額上限(USDT)；未注入時也要有安全預設
     @Value("${risk.allow-unlimited-notional:false}") private boolean allowUnlimitedNotional;   // 顯式允許 0=不限
     @Value("${risk.balance-check:false}") private boolean balanceCheck;    // BUY 前檢查可用餘額(會多打一次 account)
@@ -124,8 +127,16 @@ public class OrderService {
                 // dry-run 以最新市價成交（MARKET 單無 price），讓模擬盈虧/KPI 有意義
                 double price = intent.price() != null && intent.price() > 0 ? intent.price() : lastPrice(intent.symbol());
                 publish(intent, OrderStatus.FILLED, intent.quantity(), price);
-            } else if (!udsEnabled) {
-                emitFillFromResponse(intent, exchangeResp);
+            } else {
+                // 串流活著 → 成交由 executionReport / ORDER_TRADE_UPDATE 回報；
+                // 串流沒開或此刻斷線 → 解析下單回應（RESULT 帶 executedQty），掛單後才成交的部分交給對帳補記。
+                String market = intent.isFutures() ? UdsRegistry.FUTURES : UdsRegistry.SPOT;
+                boolean streamLive = uds != null && uds.isConnected(market);
+                if (!streamLive) {
+                    if (uds != null && uds.isExpected(market))
+                        log.warn("UDS[{}] 此刻未連線，{} 成交改由下單回應解析", market, intent.clientOrderId());
+                    emitFillFromResponse(intent, exchangeResp);
+                }
             }
             log.info("下單完成 {}{} {} qty={} -> {}", intent.isFutures() ? "[合約]" : "[現貨]",
                     intent.symbol(), intent.side(), intent.quantity(), exchangeResp);
@@ -228,6 +239,29 @@ public class OrderService {
         }
     }
 
+    /**
+     * 未完成訂單對帳（SUBMITTED / PARTIALLY_FILLED / UNKNOWN）：UDS 重連後呼叫，補回斷線期間漏掉的成交。
+     * reconcileOne 只發「交易所累計 − DB 已記」的增量，已記過的不會重複入帳。
+     */
+    public int reconcileOpenOrders(boolean futures) {
+        if (gateway.isDryRun()) return 0;
+        String market = futures ? "USDT_M" : "SPOT";
+        List<OrderEntity> open = orders.findTop200ByStatusInAndMarketOrderByUpdatedAtAsc(
+                List.of(OrderStatus.SUBMITTED.name(), OrderStatus.PARTIALLY_FILLED.name(), OrderStatus.UNKNOWN.name()), market);
+        int n = 0;
+        for (OrderEntity o : open) {
+            OrderSide side = "SELL".equals(o.getSide()) ? OrderSide.SELL : OrderSide.BUY;
+            try {
+                reconcileOne(o.getClientOrderId(), o.getSymbol(), futures, side, o.getAccount() == null ? "main" : o.getAccount());
+                n++;
+            } catch (Exception e) {
+                log.warn("開單對帳失敗 {}: {}", o.getClientOrderId(), e.getMessage());
+            }
+        }
+        if (n > 0) log.info("UDS 重連後對帳 {} 筆未完成{}單", n, futures ? "合約" : "現貨");
+        return n;
+    }
+
     /** 目前下單風控設定。 */
     public Map<String, Object> riskConfig() {
         return Map.of("maxNotionalUsdt", maxNotional, "balanceCheck", balanceCheck, "dryRun", gateway.isDryRun());
@@ -269,18 +303,31 @@ public class OrderService {
         return null;
     }
 
-    private void emitFillFromResponse(OrderIntent intent, String exchangeResp) {
+    /**
+     * 解析下單回應（newOrderRespType=RESULT）取得立即成交。
+     * 合約：avgPrice；現貨：cummulativeQuoteQty / executedQty。eventId 綁 "resp|cid|executedQty"，與 UDS / 對帳事件互不重複。
+     * 回應是 ACK 型（沒有 executedQty 欄位）時記 warn —— 代表閘道忘了帶 RESULT，成交會等對帳排程才補。
+     */
+    void emitFillFromResponse(OrderIntent intent, String exchangeResp) {
         try {
             JsonNode n = mapper.readTree(exchangeResp);
+            if (!n.has("executedQty")) {
+                log.warn("下單回應無 executedQty（ACK 型），{} 成交需等對帳補記: {}", intent.clientOrderId(), exchangeResp);
+                return;
+            }
             double executed = n.path("executedQty").asDouble(0);
             if (executed > 0) {
                 double avg;
-                if (n.has("avgPrice")) avg = n.path("avgPrice").asDouble(0);           // 合約
-                else { double q = n.path("cummulativeQuoteQty").asDouble(0); avg = q > 0 ? q / executed : 0; } // 現貨
+                if (n.hasNonNull("avgPrice") && n.path("avgPrice").asDouble(0) > 0) avg = n.path("avgPrice").asDouble(0);   // 合約
+                else { double q = n.path("cummulativeQuoteQty").asDouble(0); avg = q > 0 ? q / executed : 0; }               // 現貨
                 String st = n.path("status").asText("");
                 OrderStatus status = "PARTIALLY_FILLED".equals(st)
                         ? OrderStatus.PARTIALLY_FILLED : OrderStatus.FILLED;
-                publish(intent, status, executed, avg);
+                String exchId = n.path("orderId").asText(null);
+                kafka.send(Topics.ORDER_EVENTS, intent.symbol(), new OrderEvent(
+                        intent.clientOrderId(), exchId, intent.symbol(), intent.side(), status, executed, avg,
+                        System.currentTimeMillis(), intent.accountOrDefault(),
+                        "resp|" + intent.clientOrderId() + "|" + executed));
                 log.info("真實成交 {} {} qty={} @ {}", intent.symbol(), status, executed, avg);
             }
         } catch (Exception e) {
