@@ -107,13 +107,17 @@ public class BinanceOrderGateway {
     @Value("${binance.mainnet-futures-api-key:}") private String futMainnetKey;
     @Value("${binance.mainnet-futures-api-secret:}") private String futMainnetSecret;
 
-    private String testnetSpotUrl, testnetFutUrl;   // 保留測試網位址以便切回
+    // 合約 User Data Stream（listenKey 版，合約仍支援）
+    @Value("${binance.futures-ws-url:wss://stream.binancefuture.com}") private String futWsUrl;
+    @Value("${binance.mainnet-futures-ws-url:wss://fstream.binance.com}") private String futMainnetWsUrl;
+
+    private String testnetSpotUrl, testnetFutUrl, testnetFutWsUrl;   // 保留測試網位址以便切回
 
     @PostConstruct
     void resolveEnv() {
-        testnetSpotUrl = spotUrl;  testnetFutUrl = futUrl;   // 先記住 testnet 位址
+        testnetSpotUrl = spotUrl;  testnetFutUrl = futUrl;  testnetFutWsUrl = futWsUrl;   // 先記住 testnet 位址
         if ("mainnet".equalsIgnoreCase(env)) {
-            spotUrl = spotMainnetUrl;  futUrl = futMainnetUrl;
+            spotUrl = spotMainnetUrl;  futUrl = futMainnetUrl;  futWsUrl = futMainnetWsUrl;
             if (!spotMainnetKey.isBlank())    spotKey = spotMainnetKey;
             if (!spotMainnetSecret.isBlank()) spotSecret = spotMainnetSecret;
             if (!futMainnetKey.isBlank())     futKey = futMainnetKey;
@@ -132,6 +136,7 @@ public class BinanceOrderGateway {
             boolean m = "mainnet".equals(env);
             spotUrl = m ? spotMainnetUrl : testnetSpotUrl;
             futUrl  = m ? futMainnetUrl  : testnetFutUrl;
+            futWsUrl = m ? futMainnetWsUrl : testnetFutWsUrl;
         }
         if (newDryRun != null) dryRun = newDryRun;
         if (newKey != null && !newKey.isBlank())   { spotKey = newKey.trim(); }
@@ -150,6 +155,12 @@ public class BinanceOrderGateway {
 
     /** 唯一的 dry-run 真相來源：OrderService / UDS 必須讀這裡，不可各自持有 @Value 副本。 */
     public boolean isDryRun() { return dryRun; }
+
+    /** 給合約 UDS 用：依目前 env 解析後的合約 REST / WS 位址與 API key（listenKey 只需 key，不需簽名）。 */
+    public String futuresRestUrl() { return futUrl; }
+    public String futuresWsUrl()   { return futWsUrl; }
+    public String futuresApiKey()  { return futKey == null ? "" : futKey; }
+    public String currentEnv()     { return env; }
 
     /** 傳輸層失敗（逾時 / 斷線 / 5xx）：交易所「可能」已收到單，呼叫端必須回查而非直接標 REJECTED。 */
     public static class TransportException extends RuntimeException {
@@ -202,6 +213,9 @@ public class BinanceOrderGateway {
         if (intent.isFutures() && intent.reduceOnly()) p.put("reduceOnly", "true");
         // 現貨用 newClientOrderId；合約亦支援
         p.put("newClientOrderId", intent.clientOrderId());
+        // RESULT：回應帶 status / executedQty / avgPrice(合約) / cummulativeQuoteQty(現貨)。
+        // 合約預設 ACK 只回 executedQty=0，市價單立刻成交也記不到 → 一律要求 RESULT。
+        p.put("newOrderRespType", "RESULT");
         return signed("POST", baseUrl(intent), orderPath(intent), p, intent.isFutures(), "下單");
     }
 

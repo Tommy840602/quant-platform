@@ -72,13 +72,20 @@ binance:
   api-key: ${BINANCE_API_KEY:}        # 空 = 不送真實單；填入 testnet 金鑰並設 trading.dry-run=false 才會下單
   api-secret: ${BINANCE_API_SECRET:}
   recv-window: 5000
+  # ---- 現貨 User Data Stream（新版 WS API，需 Ed25519 金鑰）。開了卻缺金鑰 → 服務拒絕啟動 ----
   ws-api-url: ${BINANCE_WS_API:wss://ws-api.testnet.binance.vision/ws-api/v3}
+  mainnet-ws-api-url: ${BINANCE_MAINNET_WS_API:wss://ws-api.binance.com:443/ws-api/v3}
   ed25519-api-key: ${BINANCE_ED25519_API_KEY:}
   ed25519-key-path: ${BINANCE_ED25519_KEY_PATH:}
   user-data-stream-enabled: ${BINANCE_UDS_ENABLED:false}
+  # ---- 合約 USDT-M ----
   futures-rest-url: ${BINANCE_FUTURES_REST:https://testnet.binancefuture.com}
+  futures-ws-url: ${BINANCE_FUTURES_WS:wss://stream.binancefuture.com}
+  mainnet-futures-ws-url: ${BINANCE_MAINNET_FUTURES_WS:wss://fstream.binance.com}
   futures-api-key: ${BINANCE_FUTURES_API_KEY:}
   futures-api-secret: ${BINANCE_FUTURES_API_SECRET:}
+  # 合約 User Data Stream（listenKey 版，合約仍支援；用 HMAC 合約金鑰即可）。開了卻缺金鑰 → 服務拒絕啟動
+  futures-user-data-stream-enabled: ${BINANCE_FUTURES_UDS_ENABLED:false}
 
 # 讀寫分離（預設關閉；設 enabled=true 並填主/副庫即啟用，見 ReadWriteDataSourceConfig）
 datasource:
