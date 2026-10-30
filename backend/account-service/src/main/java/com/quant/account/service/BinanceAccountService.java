@@ -29,7 +29,19 @@ public class BinanceAccountService {
     private final ObjectMapper mapper = new ObjectMapper();
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
     private final NotifyClient notifyClient;
+    private final com.quant.common.binance.BinanceClock clock = new com.quant.common.binance.BinanceClock();
     private volatile long lastAuthAlert = 0;   // 節流：金鑰/IP 告警冷卻
+
+    /** 對時：啟動後 10 秒一次、之後每 5 分鐘。簽名請求用校正後時間，避免 -1021。 */
+    @org.springframework.scheduling.annotation.Scheduled(initialDelay = 10_000, fixedDelay = 300_000)
+    public void syncClock() {
+        if (!live()) return;
+        try {
+            long off = clock.sync(restUrl);
+            if (com.quant.common.binance.BinanceClock.skewTooLarge(off))
+                log.warn("⚠️ 本機時鐘與幣安相差 {} ms：已自動校正，請檢查主機 NTP", off);
+        } catch (Exception e) { log.warn("幣安對時失敗: {}", e.getMessage()); }
+    }
 
     public BinanceAccountService(NotifyClient notifyClient) { this.notifyClient = notifyClient; }
 
@@ -99,17 +111,26 @@ public class BinanceAccountService {
 
     public boolean live() { return !apiKey.isBlank() && !apiSecret.isBlank(); }
 
+    private HttpResponse<String> signedAccountGet() throws Exception {
+        String query = "recvWindow=5000&timestamp=" + clock.now(restUrl);
+        String sig = hmac(query, apiSecret);
+        HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create(restUrl + "/api/v3/account?" + query + "&signature=" + sig))
+                .header("X-MBX-APIKEY", apiKey).timeout(Duration.ofSeconds(10)).GET().build();
+        return http.send(req, HttpResponse.BodyHandlers.ofString());
+    }
+
     public Map<String, Object> balance() {
         if (!live()) return Map.of("asset", "USDT", "free", 10000.0, "locked", 0.0,
                 "real", false, "totalUsdt", 10000.0, "balances", List.of());
         try {
             Map<String, Double> px = allPrices();   // SYMBOL -> price（正式網公開行情估值）
-            String query = "recvWindow=5000&timestamp=" + System.currentTimeMillis();
-            String sig = hmac(query, apiSecret);
-            HttpRequest req = HttpRequest.newBuilder()
-                    .uri(URI.create(restUrl + "/api/v3/account?" + query + "&signature=" + sig))
-                    .header("X-MBX-APIKEY", apiKey).timeout(Duration.ofSeconds(10)).GET().build();
-            HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> resp = signedAccountGet();
+            if (resp.statusCode() != 200 && com.quant.common.binance.BinanceClock.isTimestampError(0, resp.body())) {
+                // -1021：重新對時後再試一次
+                clock.trySync(restUrl);
+                resp = signedAccountGet();
+            }
             if (resp.statusCode() != 200) throw new RuntimeException("HTTP " + resp.statusCode() + ": " + resp.body());
 
             JsonNode acc = mapper.readTree(resp.body());
