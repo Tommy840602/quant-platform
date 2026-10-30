@@ -31,7 +31,7 @@ public class SymbolFilterService {
 
     /** 取得該 symbol 的 filters；失敗回 {0,0,0,0}（代表未知，呼叫端不強制 round）。 */
     public double[] filters(String base, String symbol, boolean futures) {
-        String key = (futures ? "F:" : "S:") + symbol.toUpperCase();
+        String key = (futures ? "F:" : "S:") + base + ":" + symbol.toUpperCase();   // 切換 testnet/mainnet 不可沿用舊 filter
         double[] c = cache.get(key);
         if (c != null) return c;
         double[] f = fetch(base, symbol, futures);

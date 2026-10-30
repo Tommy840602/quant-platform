@@ -45,6 +45,29 @@ public class BinanceOrderGateway {
         catch (Exception e) { return 0; }
     }
 
+    /**
+     * 參考價：Redis 行情快取 → 交易所公開 ticker。回 0 代表「拿不到」，呼叫端必須拒單而不是放行。
+     * 以前只看 Redis，20 個串流以外的幣 / 合約 / Redis 剛重啟都會是 0，名目上限因此 fail-open。
+     */
+    public double referencePrice(String symbol, boolean futures) {
+        double p = lastPrice(symbol);
+        if (p > 0) return p;
+        try {
+            String base = futures ? futUrl : spotUrl;
+            String path = futures ? "/fapi/v1/ticker/price" : "/api/v3/ticker/price";
+            HttpRequest req = HttpRequest.newBuilder(URI.create(base + path + "?symbol=" + symbol))
+                    .timeout(Duration.ofSeconds(5)).GET().build();
+            HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
+            if (resp.statusCode() / 100 == 2) {
+                java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"price\"\\s*:\\s*\"([0-9.]+)\"").matcher(resp.body());
+                if (m.find()) return Double.parseDouble(m.group(1));
+            }
+        } catch (Exception e) {
+            log.warn("參考價查詢失敗 {}: {}", symbol, e.getMessage());
+        }
+        return 0;
+    }
+
     private static boolean isAuthOrIpError(String msg) {
         if (msg == null) return false;
         String m = msg.toLowerCase();
@@ -152,6 +175,8 @@ public class BinanceOrderGateway {
         }
         // ── 交易所 filter 對齊：數量→stepSize、價格→tickSize、檢查 minQty/minNotional ──
         double[] f = filters.filters(baseUrl(intent), intent.symbol(), intent.isFutures());
+        if (f == null || (f[0] == 0 && f[1] == 0 && f[3] == 0))
+            throw new IllegalStateException("取不到 " + intent.symbol() + " 的交易規則（exchangeInfo），拒絕送未對齊的真單");
         double step = f[0], tick = f[1], minQty = f[2], minNotional = f[3];
         double qty = step > 0 ? SymbolFilterService.floorToStep(intent.quantity(), step) : intent.quantity();
         if (minQty > 0 && qty < minQty)
@@ -159,8 +184,9 @@ public class BinanceOrderGateway {
         Double px = intent.price();
         boolean isLimit = intent.type().name().equals("LIMIT");
         if (isLimit && tick > 0 && px != null) px = SymbolFilterService.floorToStep(px, tick);
-        double ref = (px != null && px > 0) ? px : lastPrice(intent.symbol());
-        if (minNotional > 0 && ref > 0 && qty * ref < minNotional)
+        double ref = (px != null && px > 0) ? px : referencePrice(intent.symbol(), intent.isFutures());
+        if (ref <= 0) throw new IllegalStateException("取不到 " + intent.symbol() + " 參考價，無法檢查 minNotional，拒絕送單");
+        if (minNotional > 0 && qty * ref < minNotional)
             throw new RuntimeException("名目 " + trim(qty * ref) + " 低於 minNotional " + trim(minNotional)
                     + " (" + intent.symbol() + ")，請加大下單量");
 
@@ -216,15 +242,29 @@ public class BinanceOrderGateway {
                            double price, double stopPrice, double stopLimitPrice, String listClientOrderId) {
         if (dryRun) return "{\"symbol\":\"" + symbol + "\",\"listClientOrderId\":\"" + listClientOrderId
                 + "\",\"listOrderStatus\":\"EXECUTING\",\"dryRun\":true}";
+        double[] f = filters.filters(spotUrl, symbol, false);
+        if (f == null || (f[0] == 0 && f[1] == 0 && f[3] == 0))
+            throw new IllegalStateException("取不到 " + symbol + " 的交易規則，拒絕送 OCO");
+        double step = f[0], tick = f[1], minQty = f[2], minNotional = f[3];
+        double qty = step > 0 ? SymbolFilterService.floorToStep(quantity, step) : quantity;
+        if (minQty > 0 && qty < minQty) throw new IllegalStateException("數量 " + trim(qty) + " 低於 minQty " + trim(minQty));
+        double px = tick > 0 ? SymbolFilterService.floorToStep(price, tick) : price;
+        double sp = tick > 0 ? SymbolFilterService.floorToStep(stopPrice, tick) : stopPrice;
+        double slp = tick > 0 ? SymbolFilterService.floorToStep(stopLimitPrice, tick) : stopLimitPrice;
+        if (minNotional > 0 && Math.min(qty * px, qty * slp) < minNotional)
+            throw new IllegalStateException("OCO 任一腿名目低於 minNotional " + trim(minNotional));
+
         Map<String, String> p = new LinkedHashMap<>();
         p.put("symbol", symbol);
         p.put("side", side);
-        p.put("quantity", trim(quantity));
-        p.put("price", trim(price));                 // 限價腿
-        p.put("stopPrice", trim(stopPrice));         // 觸發價
-        p.put("stopLimitPrice", trim(stopLimitPrice));
+        p.put("quantity", trim(qty));
+        p.put("price", trim(px));                   // 限價腿
+        p.put("stopPrice", trim(sp));               // 觸發價
+        p.put("stopLimitPrice", trim(slp));
         p.put("stopLimitTimeInForce", "GTC");
         p.put("listClientOrderId", listClientOrderId);
+        p.put("limitClientOrderId", listClientOrderId + "-L");   // 讓 UDS executionReport 能對回我們的訂單列
+        p.put("stopClientOrderId", listClientOrderId + "-S");
         return signed("POST", spotUrl, "/api/v3/order/oco", p, false, "OCO下單");
     }
 

@@ -50,7 +50,8 @@ public class OrderController {
     public ApiResponse<Map<String, Object>> setRiskConfig(@RequestBody Map<String, Object> b) {
         Double max = b.get("maxNotionalUsdt") == null ? null : Double.valueOf(b.get("maxNotionalUsdt").toString());
         Boolean bc = b.get("balanceCheck") == null ? null : Boolean.valueOf(b.get("balanceCheck").toString());
-        return ApiResponse.ok(orderService.setRiskConfig(max, bc));
+        try { return ApiResponse.ok(orderService.setRiskConfig(max, bc)); }
+        catch (IllegalArgumentException e) { return ApiResponse.error(400, e.getMessage()); }
     }
 
     /** 建立條件單/智慧單：POST /api/order/orders/conditional */
@@ -93,12 +94,17 @@ public class OrderController {
     /** OCO 下單（現貨）：POST /api/order/orders/oco */
     @PostMapping("/oco")
     public ApiResponse<String> oco(@RequestBody Map<String, Object> b) {
-        return orderService.submitOco(
-                (String) b.get("symbol"), (String) b.get("side"),
-                ((Number) b.get("quantity")).doubleValue(),
-                ((Number) b.get("price")).doubleValue(),
-                ((Number) b.get("stopPrice")).doubleValue(),
-                ((Number) b.get("stopLimitPrice")).doubleValue());
+        try {
+            return orderService.submitOco(
+                    (String) b.get("symbol"), (String) b.get("side"),
+                    ((Number) b.get("quantity")).doubleValue(),
+                    ((Number) b.get("price")).doubleValue(),
+                    ((Number) b.get("stopPrice")).doubleValue(),
+                    ((Number) b.get("stopLimitPrice")).doubleValue(),
+                    b.get("listClientOrderId") == null ? null : String.valueOf(b.get("listClientOrderId")));
+        } catch (NullPointerException | ClassCastException e) {
+            return ApiResponse.error(400, "OCO 需要 symbol/side/quantity/price/stopPrice/stopLimitPrice");
+        }
     }
 
     /** 設定合約槓桿：POST /api/order/orders/leverage?symbol=BTCUSDT&leverage=5 */
