@@ -95,7 +95,7 @@ services:
     restart: unless-stopped
     <<: *logging
     healthcheck:
-      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server 127.0.0.1:9092 >/dev/null 2>&1"]
       interval: 15s
       timeout: 10s
       retries: 10
@@ -123,7 +123,7 @@ services:
     # ⚠️ 官方映像只有 amd64，Apple Silicon 上走模擬，啟動 1-2 分鐘；start_period 給足
     healthcheck:
       # 映像內不一定有 curl：curl → wget → bash /dev/tcp 三段備援，避免探測工具缺席害後端永遠等不到 healthy
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8848/nacos/v1/console/health/readiness >/dev/null 2>&1 || wget -qO- http://localhost:8848/nacos/v1/console/health/readiness >/dev/null 2>&1 || bash -c 'exec 3<>/dev/tcp/127.0.0.1/8848'"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8848/nacos/v1/console/health/readiness >/dev/null 2>&1 || wget -qO- http://127.0.0.1:8848/nacos/v1/console/health/readiness >/dev/null 2>&1 || bash -c 'exec 3<>/dev/tcp/127.0.0.1/8848'"]
       interval: 15s
       timeout: 10s
       retries: 20
@@ -167,7 +167,7 @@ services:
     environment: { <<: *backend-env, SERVICE: api-gateway }
     <<: [*logging, *backend-deps]
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health | grep -q '\"UP\"'"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/actuator/health | grep -q '\"UP\"'"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -180,7 +180,7 @@ services:
     environment: { <<: *backend-env, SERVICE: market-data-service }
     <<: [*logging, *backend-deps]
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8082/api/market/actuator/health | grep -q '\"UP\"'"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8082/api/market/actuator/health | grep -q '\"UP\"'"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -193,7 +193,7 @@ services:
     environment: { <<: *backend-env, SERVICE: strategy-service }
     <<: [*logging, *backend-deps]
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8083/api/strategy/actuator/health | grep -q '\"UP\"'"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8083/api/strategy/actuator/health | grep -q '\"UP\"'"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -208,7 +208,7 @@ services:
       - ./secrets:/run/secrets:ro     # Ed25519 pem 放這裡（git 已忽略 *.pem）
     <<: [*logging, *backend-deps]
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8084/api/order/actuator/health | grep -q '\"UP\"'"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8084/api/order/actuator/health | grep -q '\"UP\"'"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -221,7 +221,7 @@ services:
     environment: { <<: *backend-env, SERVICE: risk-service }
     <<: [*logging, *backend-deps]
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8085/api/risk/actuator/health | grep -q '\"UP\"'"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8085/api/risk/actuator/health | grep -q '\"UP\"'"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -234,7 +234,7 @@ services:
     environment: { <<: *backend-env, SERVICE: account-service }
     <<: [*logging, *backend-deps]
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8096/api/account/actuator/health | grep -q '\"UP\"'"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8096/api/account/actuator/health | grep -q '\"UP\"'"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -247,7 +247,7 @@ services:
     environment: { <<: *backend-env, SERVICE: auth-service }
     <<: [*logging, *backend-deps]
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8081/api/auth/actuator/health | grep -q '\"UP\"'"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8081/api/auth/actuator/health | grep -q '\"UP\"'"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -260,7 +260,7 @@ services:
     environment: { <<: *backend-env, SERVICE: backtest-service }
     <<: [*logging, *backend-deps]
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8087/api/backtest/actuator/health | grep -q '\"UP\"'"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8087/api/backtest/actuator/health | grep -q '\"UP\"'"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -273,7 +273,7 @@ services:
     environment: { <<: *backend-env, SERVICE: notification-service }
     <<: [*logging, *backend-deps]
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8098/api/notify/actuator/health | grep -q '\"UP\"'"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8098/api/notify/actuator/health | grep -q '\"UP\"'"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -289,7 +289,7 @@ services:
       DB_HOST: timescaledb
       DB_PORT: "5432"
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health >/dev/null"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/health >/dev/null"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -305,7 +305,7 @@ services:
     <<: *logging
     ports: ["${FRONTEND_PORT:-8088}:80"]
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost/ >/dev/null"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null"]
       interval: 15s
       timeout: 5s
       retries: 3
