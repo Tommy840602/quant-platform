@@ -89,14 +89,15 @@ import { storeToRefs } from 'pinia'
 import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
 import { useAccountStore } from '@/store/account'
-import { accountApi, tradeConfigApi } from '@/api'
+import { accountApi } from '@/api'
+import { useTradeStore } from '@/store/trade'
 
 const store = useAccountStore()
 const { balance, positions } = storeToRefs(store)
 const rate = ref(Number(localStorage.getItem('qp-usdtwd')) || 32.5)
 const summarizing = ref(false)
-const trade = ref({})
-async function loadTrade() { try { trade.value = (await tradeConfigApi.get()).data || {} } catch { trade.value = {} } }
+const tradeStore = useTradeStore()
+const { cfg: trade } = storeToRefs(tradeStore)
 async function pushSummary() {
   summarizing.value = true
   try { await accountApi.summaryNow(); ElMessage.success('已推送摘要到 Slack') }
@@ -133,5 +134,5 @@ async function loadRate() {
 }
 
 watch(assets, async () => { await nextTick(); drawPie() })
-onMounted(() => { store.refresh().catch(() => {}); loadRate(); loadTrade() })
+onMounted(() => { store.refresh().catch(() => {}); loadRate(); tradeStore.load() })
 </script>

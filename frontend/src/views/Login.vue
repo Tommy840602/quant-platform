@@ -48,8 +48,10 @@ import { reactive, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { accountApi, tradeConfigApi } from '@/api'
+import { useTradeStore } from '@/store/trade'
 
 const router = useRouter()
+const tradeStore = useTradeStore()
 const loading = ref(false)
 const status = ref(null)
 const cfg = reactive({
@@ -78,7 +80,7 @@ async function apply() {
   try {
     const body = { env: cfg.env, apiKey: cfg.apiKey, apiSecret: cfg.apiSecret }
     await accountApi.setConfig(body)
-    await tradeConfigApi.set({ ...body, dryRun: cfg.dryRun })
+    await tradeStore.save({ ...body, dryRun: cfg.dryRun })   // 寫進共用 store，右上角 / 帳戶頁立即同步
     localStorage.setItem('qp-env', cfg.env)
     localStorage.setItem('qp-dryrun', String(cfg.dryRun))
     ElMessage.success('設定已套用')
