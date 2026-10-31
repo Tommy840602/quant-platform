@@ -25,7 +25,9 @@
         <el-descriptions-item label="匯率 USDT/TWD">
           {{ rate ? rate.toFixed(3) : '…' }} <el-button link size="small" @click="loadRate">更新</el-button>
         </el-descriptions-item>
-        <el-descriptions-item label="估值來源">幣安正式網行情</el-descriptions-item>
+        <el-descriptions-item label="估值來源">
+          幣安正式網公開行情<span class="hint" v-if="balance.real && !balance.mainnet">（餘額來自測試網，數量是測試幣，估值用正式網價格換算）</span>
+        </el-descriptions-item>
       </el-descriptions>
     </el-card>
 
@@ -136,3 +138,7 @@ async function loadRate() {
 watch(assets, async () => { await nextTick(); drawPie() })
 onMounted(() => { store.refresh().catch(() => {}); loadRate(); tradeStore.load() })
 </script>
+
+<style scoped>
+.hint { color:#999; font-size:12px; margin-left:6px; }
+</style>
