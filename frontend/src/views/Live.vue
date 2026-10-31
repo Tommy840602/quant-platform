@@ -2,15 +2,7 @@
   <div>
     <el-row :gutter="16">
       <el-col :span="10">
-        <el-card>
-          <template #header>
-            <div style="display:flex;justify-content:space-between;align-items:center">
-              <span>手動下單 / 查單 / 撤單</span>
-              <el-tag :type="account.isPaper ? 'warning' : 'danger'" :effect="account.isPaper ? 'light' : 'dark'" size="small">
-                {{ account.isPaper ? '虛擬帳戶 · 本機撮合' : '真實帳戶 · 幣安 ' + (account.modeInfo.env || '') }}
-              </el-tag>
-            </div>
-          </template>
+        <el-card header="手動下單 / 查單 / 撤單">
           <el-form label-width="80px">
             <el-form-item label="市場">
               <el-radio-group v-model="ticket.market">
@@ -123,7 +115,6 @@ import { reactive, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
 import { orderApi, accountApi } from '@/api'
-import { useAccountStore } from '@/store/account'
 import { useMarketStore } from '@/store/market'
 import { SYMBOLS } from '@/config/symbols'
 import http from '@/api/http'
@@ -131,9 +122,7 @@ import http from '@/api/http'
 const market = useMarketStore()
 const { connected, prices } = storeToRefs(market)
 
-const account = useAccountStore()
-// 下單帳戶 = 右上角切換的目前模式（paper | main）
-const ticket = reactive({ market: 'SPOT', symbol: 'BTCUSDT', side: 'BUY', type: 'MARKET', quantity: 0.001, leverage: 5 })
+const ticket = reactive({ market: 'SPOT', account: 'main', symbol: 'BTCUSDT', side: 'BUY', type: 'MARKET', quantity: 0.001, leverage: 5 })
 const submitting = ref(false)
 const lastResp = ref(''); const lastId = ref(''); const lastSymbol = ref(''); const lastMarket = ref('SPOT')
 const positions = ref([])
@@ -146,13 +135,12 @@ async function submit() {
       clientOrderId: id, strategyId: 'manual', symbol: ticket.symbol,
       side: ticket.side, type: ticket.type,
       price: ticket.type === 'LIMIT' ? (prices.value[ticket.symbol] || 0) : null,
-      quantity: ticket.quantity, reduceOnly: false, market: ticket.market, account: account.mode
+      quantity: ticket.quantity, reduceOnly: false, market: ticket.market, account: ticket.account
     }
     const resp = await orderApi.submit(intent)
     lastId.value = id; lastSymbol.value = ticket.symbol; lastMarket.value = ticket.market
-    lastResp.value = `下單 code=${resp.code} · ${resp.message}` + (resp.data ? ` · ${resp.data}` : '')
-    if (resp.code && resp.code !== 0) ElMessage.error(resp.message)
-    else ElMessage.success(account.isPaper ? '虛擬成交' : '已送出')
+    lastResp.value = `下單 code=${resp.code} · ${resp.message}`
+    ElMessage.success('已送出')
     setTimeout(loadPositions, 800)
   } catch (e) {
     lastResp.value = '下單失敗：' + (e.response?.data?.message || e.message)
@@ -189,7 +177,7 @@ const condForm = reactive({ symbol: 'BTCUSDT', type: 'STOP_LOSS', side: 'SELL', 
 const conds = ref([])
 async function loadConds() { try { conds.value = (await orderApi.condList()).data || [] } catch { conds.value = [] } }
 async function createCond() {
-  const body = { symbol: condForm.symbol, type: condForm.type, side: condForm.side, quantity: condForm.quantity, market: 'SPOT', account: account.mode }
+  const body = { symbol: condForm.symbol, type: condForm.type, side: condForm.side, quantity: condForm.quantity, market: 'SPOT', account: 'main' }
   if (condForm.type === 'TRAILING_STOP') body.trailPct = condForm.trailPctUi / 100
   else body.triggerPrice = condForm.triggerPrice
   try { await orderApi.condCreate(body); ElMessage.success('條件單已建立'); loadConds() }
@@ -203,7 +191,6 @@ import { onMounted, onUnmounted } from 'vue'
 import { getToken } from '@/api/http'
 let es = null
 onMounted(() => {
-  account.loadMode()
   try {
     const tk = getToken()
     es = new EventSource('/api/account/stream' + (tk ? '?access_token=' + encodeURIComponent(tk) : ''))

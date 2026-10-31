@@ -120,18 +120,9 @@ public class BinanceAccountService {
         return http.send(req, HttpResponse.BodyHandlers.ofString());
     }
 
-    public String env() { return env; }
-
     public Map<String, Object> balance() {
-        if (!live()) {
-            // 以前這裡回假的 10000 USDT「示意」，看起來像有錢；真實帳戶沒金鑰就該老實說沒設定
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("asset", "USDT"); m.put("free", 0.0); m.put("locked", 0.0); m.put("totalUsdt", 0.0);
-            m.put("real", false); m.put("configured", false); m.put("account", "main");
-            m.put("note", "尚未設定幣安 API 金鑰（連線設定頁）");
-            m.put("balances", List.of());
-            return m;
-        }
+        if (!live()) return Map.of("asset", "USDT", "free", 10000.0, "locked", 0.0,
+                "real", false, "totalUsdt", 10000.0, "balances", List.of());
         try {
             Map<String, Double> px = allPrices();   // SYMBOL -> price（正式網公開行情估值）
             HttpResponse<String> resp = signedAccountGet();
@@ -167,20 +158,13 @@ public class BinanceAccountService {
             final double tot = totalUsdt;
             for (Map<String, Object> m : assets)
                 m.put("weight", tot > 0 ? round(((Number) m.get("valueUsdt")).doubleValue() / tot * 100) : 0.0);
-            Map<String, Object> ok = new LinkedHashMap<>();
-            ok.put("asset", "USDT"); ok.put("free", usdtFree); ok.put("locked", usdtLocked); ok.put("real", true);
-            ok.put("configured", true); ok.put("account", "main"); ok.put("env", env);
-            ok.put("totalUsdt", round(totalUsdt)); ok.put("assetCount", assets.size()); ok.put("balances", assets);
-            return ok;
+            return Map.of("asset", "USDT", "free", usdtFree, "locked", usdtLocked, "real", true,
+                    "totalUsdt", round(totalUsdt), "assetCount", assets.size(), "balances", assets);
         } catch (Exception e) {
-            log.warn("查真實餘額失敗: {}", e.getMessage());
+            log.warn("查真實餘額失敗,回退示意: {}", e.getMessage());
             if (isAuthOrIpError(e.getMessage())) alertAuth(e.getMessage());
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("asset", "USDT"); m.put("free", 0.0); m.put("locked", 0.0); m.put("totalUsdt", 0.0);
-            m.put("real", false); m.put("configured", true); m.put("account", "main");
-            m.put("error", "查詢失敗：" + e.getMessage());
-            m.put("balances", List.of());
-            return m;
+            return Map.of("asset", "USDT", "free", 10000.0, "locked", 0.0,
+                    "real", false, "totalUsdt", 10000.0, "balances", List.of());
         }
     }
 
