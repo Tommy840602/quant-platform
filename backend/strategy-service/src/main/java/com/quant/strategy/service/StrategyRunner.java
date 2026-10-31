@@ -45,20 +45,37 @@ public class StrategyRunner {
     @Value("${order.notional-usdt:0}")   // 每單目標名目(USDT)；0=用策略原始固定數量
     private double orderNotional;
 
-    public StrategyRunner(OrderClient orderClient, NotifyClient notifyClient, OmsClient omsClient, StrategyPositionBook book) {
+    private final org.springframework.data.redis.core.StringRedisTemplate redis;
+    private volatile String cachedMode = com.quant.common.account.Accounts.DEFAULT_MODE;
+    private volatile long cachedModeAt = 0;
+
+    public StrategyRunner(OrderClient orderClient, NotifyClient notifyClient, OmsClient omsClient, StrategyPositionBook book,
+                          org.springframework.data.redis.core.StringRedisTemplate redis) {
         this.orderClient = orderClient;
         this.notifyClient = notifyClient;
         this.omsClient = omsClient;
         this.book = book;
+        this.redis = redis;
         put("ma-fast", () -> new MovingAverageStrategy("ma-fast", 3, 8, 0.001), "雙均線 3/8（快）", null);
         put("ma-mid",  () -> new MovingAverageStrategy("ma-mid", 5, 20, 0.001), "雙均線 5/20（中）", null);
         put("ma-slow", () -> new MovingAverageStrategy("ma-slow", 10, 30, 0.001), "雙均線 10/30（慢）", null);
     }
 
+    /** 目前啟用帳戶（Redis account:mode，2 秒快取）；讀不到一律虛擬，安全。 */
+    public String activeAccount() {
+        long now = System.currentTimeMillis();
+        if (now - cachedModeAt > 2000) {
+            try { cachedMode = com.quant.common.account.Accounts.modeOrDefault(redis.opsForValue().get(com.quant.common.account.Accounts.MODE_KEY)); }
+            catch (Exception e) { cachedMode = com.quant.common.account.Accounts.DEFAULT_MODE; }
+            cachedModeAt = now;
+        }
+        return cachedMode;
+    }
+
     private void put(String id, Supplier<Strategy> factory, String name, String symbol) {
         factories.put(id, factory);
         instances.put(id, new ConcurrentHashMap<>());
-        contexts.putIfAbsent(id, new StrategyContextImpl(id, orderClient, prices, () -> orderNotional, book));
+        contexts.putIfAbsent(id, new StrategyContextImpl(id, orderClient, prices, () -> orderNotional, book, this::activeAccount));
         names.put(id, name);
         if (symbol != null) symbolFilter.put(id, symbol.toUpperCase());
     }

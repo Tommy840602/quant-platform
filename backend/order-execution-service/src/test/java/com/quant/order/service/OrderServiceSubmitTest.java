@@ -120,15 +120,60 @@ class OrderServiceSubmitTest {
     }
 
     @Test
-    void dryRunReadsGatewayFlagNotItsOwnCopy() {
+    void realAccountUnderDryRunIsRejectedNotSimulated() {
         when(gateway.isDryRun()).thenReturn(true);
-        when(gateway.placeOrder(any())).thenReturn("DRYRUN-cid-1");
-        svc.submit(intent);
+        ApiResponse<String> r = svc.submit(intent);
+        assertEquals(409, r.code());
+        assertTrue(r.message().contains("Dry-Run"));
+        verify(gateway, never()).placeOrder(any());
         ArgumentCaptor<Object> cap = ArgumentCaptor.forClass(Object.class);
         verify(kafka, atLeastOnce()).send(anyString(), anyString(), cap.capture());
-        OrderEvent fill = cap.getAllValues().stream().map(o -> (OrderEvent) o)
-                .filter(e -> e.status() == OrderStatus.FILLED).findFirst().orElseThrow();
+        assertFalse(cap.getAllValues().stream().map(o -> (OrderEvent) o).anyMatch(e -> e.status() == OrderStatus.FILLED),
+                "以前 dry-run 會假裝 main 成交，現在不行");
+    }
+
+    // ── 虛擬帳戶：本機撮合 ──
+    private final OrderIntent paper = new OrderIntent("cid-1", "s1", "BTCUSDT", OrderSide.BUY, OrderType.MARKET, null, 0.01, false, "SPOT", "paper");
+
+    @Test
+    void paperMarketOrderFillsAtReferencePriceWithoutTouchingExchange() {
+        when(gateway.isDryRun()).thenReturn(false);
+        ApiResponse<String> r = svc.submit(paper);
+        assertEquals(0, r.code());
+        assertTrue(r.data().contains("\"simulated\":true"));
+        verify(gateway, never()).placeOrder(any());
+        ArgumentCaptor<Object> cap = ArgumentCaptor.forClass(Object.class);
+        verify(kafka, atLeastOnce()).send(anyString(), anyString(), cap.capture());
+        OrderEvent fill = cap.getAllValues().stream().map(o -> (OrderEvent) o).filter(e -> e.status() == OrderStatus.FILLED).findFirst().orElseThrow();
         assertEquals(60000, fill.avgPrice(), 1e-6);
+        assertEquals(0.01, fill.filledQty(), 1e-12);
+        assertEquals("paper", fill.account(), "成交事件掛在 paper 帳戶，現金帳 / 部位才會分開");
+        assertTrue(fill.eventId().startsWith("paper|"));
+    }
+
+    @Test
+    void paperLimitOrderFillsAtLimitPrice() {
+        OrderIntent lim = new OrderIntent("cid-1", "s1", "BTCUSDT", OrderSide.SELL, OrderType.LIMIT, 61000.0, 0.01, false, "SPOT", "paper");
+        svc.submit(lim);
+        ArgumentCaptor<Object> cap = ArgumentCaptor.forClass(Object.class);
+        verify(kafka, atLeastOnce()).send(anyString(), anyString(), cap.capture());
+        OrderEvent fill = cap.getAllValues().stream().map(o -> (OrderEvent) o).filter(e -> e.status() == OrderStatus.FILLED).findFirst().orElseThrow();
+        assertEquals(61000, fill.avgPrice(), 1e-6);
+    }
+
+    @Test
+    void paperStillGoesThroughRiskAndNotionalGates() {
+        when(risk.check(any())).thenReturn(new RiskClient.RiskDecision(false, "kill switch", null));
+        assertEquals(403, svc.submit(paper).code());
+        when(risk.check(any())).thenReturn(new RiskClient.RiskDecision(true, "ok", null));
+        svc.setRiskConfig(100.0, null);                       // 0.01 × 60000 = 600 > 100
+        assertEquals(403, svc.submit(paper).code());
+    }
+
+    @Test
+    void paperEvenWhenDryRunIsOn() {
+        when(gateway.isDryRun()).thenReturn(true);
+        assertEquals(0, svc.submit(paper).code(), "虛擬帳戶不受 Dry-Run 鎖影響");
     }
 
     // ── PR4: 名目上限 fail-closed ──

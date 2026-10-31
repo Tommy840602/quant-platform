@@ -26,16 +26,24 @@ public class StrategyContextImpl implements StrategyContext {
     private final Map<String, Double> sharedPrices;
     private final DoubleSupplier orderNotional;   // 每單目標名目(USDT)，0=用策略原始數量
     private final StrategyPositionBook book;
+    private final java.util.function.Supplier<String> accountSupplier;   // 目前啟用的帳戶（paper | main）
     private volatile double allocation = 1.0;   // 資金配置倍率
 
     public StrategyContextImpl(String strategyId, OrderClient orderClient,
                                Map<String, Double> sharedPrices, DoubleSupplier orderNotional,
                                StrategyPositionBook book) {
+        this(strategyId, orderClient, sharedPrices, orderNotional, book, () -> com.quant.common.account.Accounts.DEFAULT_MODE);
+    }
+
+    public StrategyContextImpl(String strategyId, OrderClient orderClient,
+                               Map<String, Double> sharedPrices, DoubleSupplier orderNotional,
+                               StrategyPositionBook book, java.util.function.Supplier<String> accountSupplier) {
         this.strategyId = strategyId;
         this.orderClient = orderClient;
         this.sharedPrices = sharedPrices;
         this.orderNotional = orderNotional;
         this.book = book;
+        this.accountSupplier = accountSupplier;
     }
 
     public void setAllocation(double a) { this.allocation = Math.max(0, a); }
@@ -60,8 +68,9 @@ public class StrategyContextImpl implements StrategyContext {
             qty = intent.quantity() * allocation; // 沿用策略原始數量
         }
         if (qty <= 0) return;
+        // 策略類別裡寫死的 "main" 不算數：機器人跟著平台目前切換的帳戶（虛擬 / 真實）下單
         OrderIntent scaled = new OrderIntent(intent.clientOrderId(), strategyId, intent.symbol(),
-                intent.side(), intent.type(), intent.price(), qty, intent.reduceOnly(), intent.market(), intent.account());
+                intent.side(), intent.type(), intent.price(), qty, intent.reduceOnly(), intent.market(), accountSupplier.get());
         try {
             var resp = orderClient.submit(scaled);
             if (resp == null || resp.code() != 0) {

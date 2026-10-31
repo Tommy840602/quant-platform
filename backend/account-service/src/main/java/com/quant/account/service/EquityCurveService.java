@@ -79,8 +79,15 @@ public class EquityCurveService {
      * 權益 = 真實帳戶總值（若已接金鑰且允許）；否則 = 現金帳 + Σ 部位市值。
      * 絕不是「起始資金 + 部位市值」：那會把每筆買入的名目額當成獲利。
      */
+    private String activeAccount() {
+        try { return com.quant.common.account.Accounts.modeOrDefault(redis.opsForValue().get(com.quant.common.account.Accounts.MODE_KEY)); }
+        catch (Exception e) { return com.quant.common.account.Accounts.DEFAULT_MODE; }
+    }
+
+    /** 權益跟著目前帳戶模式：paper → 虛擬現金 + 虛擬部位；main → 幣安真實餘額（拿不到退回 main 現金帳 + 部位）。 */
     double computeEquity() {
-        if (preferRealEquity) {
+        String acct = activeAccount();
+        if (preferRealEquity && !com.quant.common.account.Accounts.isPaper(acct)) {
             try {
                 Map<String, Object> bal = binanceAccount.balance();
                 if (Boolean.TRUE.equals(bal.get("real")) && bal.get("totalUsdt") instanceof Number n) {
@@ -89,9 +96,10 @@ public class EquityCurveService {
                 }
             } catch (Exception ignore) {}
         }
-        equitySource = "策略權益";
-        double eq = cash.get("main");
+        equitySource = com.quant.common.account.Accounts.isPaper(acct) ? "虛擬帳戶" : "策略權益";
+        double eq = cash.get(acct);
         for (PositionEntity p : positions.findAll()) {
+            if (!acct.equals(p.getAccount())) continue;
             if (p.getQuantity() == null || p.getQuantity() == 0) continue;
             String px = redis.opsForValue().get("price:" + p.getSymbol());
             if (px != null) eq += p.getQuantity() * Double.parseDouble(px);
@@ -156,6 +164,14 @@ public class EquityCurveService {
     }
 
     /** 手動解除熔斷並以目前權益重置峰值（見架構文件 §10.3）。 */
+    /** 帳戶模式切換時只重置回撤峰值（兩個帳戶權益數字不同，不重置會誤判回撤），不動熔斷狀態。 */
+    public void rebasePeak() {
+        peak = computeEquity();
+        warned = false;
+        persist(K_PEAK, String.valueOf(peak));
+        log.info("帳戶模式切換，回撤峰值重置為 {}", Math.round(peak));
+    }
+
     public void resetBreaker() {
         tripped = false; warned = false;
         peak = computeEquity();

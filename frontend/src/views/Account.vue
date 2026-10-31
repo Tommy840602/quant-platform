@@ -3,13 +3,16 @@
     <el-card>
       <template #header>
         <div style="display:flex;justify-content:space-between;align-items:center">
-          <span>帳戶餘額</span>
-          <el-button size="small" :loading="summarizing" @click="pushSummary">推送摘要到 Slack</el-button>
+          <span>帳戶餘額 · <el-tag :type="balance?.paper ? 'warning' : (balance?.real ? 'success' : 'info')" size="small">{{ balance?.paper ? '虛擬帳戶' : (balance?.real ? '真實帳戶' : '真實帳戶（未設定金鑰）') }}</el-tag></span>
+          <span>
+            <el-button v-if="balance?.paper" size="small" type="warning" plain @click="resetPaper">重置虛擬資金</el-button>
+            <el-button size="small" :loading="summarizing" @click="pushSummary">推送摘要到 Slack</el-button>
+          </span>
         </div>
       </template>
       <el-descriptions :column="4" border v-if="balance">
         <el-descriptions-item label="狀態">
-          <el-tag :type="balance.real ? 'success' : 'info'" size="small">{{ balance.real ? '真實帳戶' : '示意' }}</el-tag>
+          <el-tag :type="balance.paper ? 'warning' : (balance.real ? 'success' : 'danger')" size="small">{{ balance.paper ? '虛擬撮合' : (balance.real ? '幣安 ' + (balance.env || '') : (balance.error || balance.note || '未設定')) }}</el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="USDT 可用">{{ fmt(balance.free) }}</el-descriptions-item>
         <el-descriptions-item label="USDT 凍結">{{ fmt(balance.locked) }}</el-descriptions-item>
@@ -81,7 +84,7 @@
 import { onMounted, ref, computed, watch, nextTick } from 'vue'
 import { storeToRefs } from 'pinia'
 import * as echarts from 'echarts'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAccountStore } from '@/store/account'
 import { accountApi } from '@/api'
 
@@ -89,6 +92,13 @@ const store = useAccountStore()
 const { balance, positions } = storeToRefs(store)
 const rate = ref(Number(localStorage.getItem('qp-usdtwd')) || 32.5)
 const summarizing = ref(false)
+async function resetPaper() {
+  try {
+    await ElMessageBox.confirm('虛擬帳戶現金回初始值、部位全部清零，訂單紀錄保留。確定？', '重置虛擬資金', { type: 'warning' })
+  } catch { return }
+  try { await accountApi.resetPaper(); await store.refresh(); ElMessage.success('虛擬帳戶已重置') }
+  catch (e) { ElMessage.error('重置失敗：' + (e?.message || '')) }
+}
 async function pushSummary() {
   summarizing.value = true
   try { await accountApi.summaryNow(); ElMessage.success('已推送摘要到 Slack') }
