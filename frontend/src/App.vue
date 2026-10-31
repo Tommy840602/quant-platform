@@ -66,7 +66,8 @@ import { useRouter } from 'vue-router'
 import { useMarketStore } from '@/store/market'
 import { useAuthStore } from '@/store/auth'
 import { useThemeStore } from '@/store/theme'
-import { tradeConfigApi } from '@/api'
+import { useTradeStore } from '@/store/trade'
+import { watch } from 'vue'
 
 const router = useRouter()
 const market = useMarketStore()
@@ -79,9 +80,11 @@ const { connected: wsConnected } = storeToRefs(market)
 const menuBg = computed(() => theme.dark ? '#131722' : '#ffffff')
 const menuText = computed(() => theme.dark ? '#a9b1c2' : '#303133')
 
-const trade = ref({})
-async function loadTrade() { try { trade.value = (await tradeConfigApi.get()).data || {} } catch { trade.value = {} } }
-onMounted(() => { market.connect(); if (auth.loggedIn) { loadTrade(); setInterval(loadTrade, 30000) } })
+const tradeStore = useTradeStore()
+const { cfg: trade } = storeToRefs(tradeStore)
+// 開頁、換頁、每 30 秒都重讀；連線設定頁存檔會直接寫進同一個 store
+onMounted(() => { market.connect(); if (auth.loggedIn) { tradeStore.load(); setInterval(() => auth.loggedIn && tradeStore.load(), 30000) } })
+watch(() => router.currentRoute.value.path, () => { if (auth.loggedIn) tradeStore.load() })
 function doLogout() { auth.logout(); router.push('/signin') }
 </script>
 
