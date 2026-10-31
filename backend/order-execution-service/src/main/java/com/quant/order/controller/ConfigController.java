@@ -16,6 +16,15 @@ public class ConfigController {
     private final UdsRegistry uds;
     public ConfigController(BinanceOrderGateway gateway, UdsRegistry uds) { this.gateway = gateway; this.uds = uds; }
 
+    /** 重新上膛 / 延長真實送單時效：POST /api/order/config/arm（需 env=mainnet 且 dryRun=false） */
+    @PostMapping("/arm")
+    public ApiResponse<Map<String, Object>> arm() {
+        Map<String, Object> st = gateway.configStatus();
+        if (!Boolean.TRUE.equals(st.get("mainnet"))) return ApiResponse.error(400, "測試網不需要上膛");
+        if (Boolean.TRUE.equals(st.get("dryRun"))) return ApiResponse.error(409, "Dry-Run 開著；請先在連線設定關閉 Dry-Run");
+        return ApiResponse.ok(gateway.arm("手動延長"));
+    }
+
     /** User Data Stream 連線狀態：GET /api/order/config/uds（expected=應連、connected=真的連著）。 */
     @GetMapping("/uds")
     public ApiResponse<Map<String, Object>> uds() { return ApiResponse.ok(uds.status()); }

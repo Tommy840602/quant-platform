@@ -37,9 +37,9 @@
         <span class="title">{{ $route.meta.title || '量化交易平台' }}</span>
         <div class="right">
           <!-- 全站常駐：env + 是否真送單，避免在正式網關了 Dry-Run 卻沒意識到 -->
-          <el-tag v-if="trade.env" :type="trade.mainnet ? (trade.dryRun ? 'warning' : 'danger') : 'info'"
-                  :effect="trade.mainnet && !trade.dryRun ? 'dark' : 'light'" size="small" @click="$router.push('/login')" style="cursor:pointer">
-            {{ trade.mainnet ? '正式網' : '測試網' }} · {{ trade.dryRun ? 'Dry-Run 不送單' : '真實送單' }}
+          <el-tag v-if="trade.env" :type="trade.mainnet ? (effDry ? 'warning' : 'danger') : 'info'"
+                  :effect="trade.mainnet && !effDry ? 'dark' : 'light'" size="small" @click="$router.push('/login')" style="cursor:pointer">
+            {{ trade.mainnet ? '正式網' : '測試網' }} · {{ effDry ? 'Dry-Run 不送單' : '真實送單' }}<span v-if="trade.mainnet && !effDry && trade.armRemainingSec > 0"> · 剩 {{ fmtRemain(trade.armRemainingSec) }}</span>
           </el-tag>
           <el-tag :type="wsConnected ? 'success' : 'danger'" size="small">
             {{ wsConnected ? '行情已連線' : '行情斷線' }}
@@ -82,6 +82,9 @@ const menuText = computed(() => theme.dark ? '#a9b1c2' : '#303133')
 
 const tradeStore = useTradeStore()
 const { cfg: trade } = storeToRefs(tradeStore)
+// effectiveDryRun = 後端算好的「現在到底會不會真送單」（含上膛時效）；舊後端沒有就退回 dryRun
+const effDry = computed(() => trade.value.effectiveDryRun ?? trade.value.dryRun)
+const fmtRemain = s => s >= 3600 ? Math.floor(s / 3600) + 'h' + String(Math.floor(s % 3600 / 60)).padStart(2, '0') + 'm' : Math.floor(s / 60) + 'm'
 // 開頁、換頁、每 30 秒都重讀；連線設定頁存檔會直接寫進同一個 store
 onMounted(() => { market.connect(); if (auth.loggedIn) { tradeStore.load(); setInterval(() => auth.loggedIn && tradeStore.load(), 30000) } })
 watch(() => router.currentRoute.value.path, () => { if (auth.loggedIn) tradeStore.load() })

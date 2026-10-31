@@ -49,3 +49,6 @@ risk:
   max-daily-notional-usdt: ${RISK_MAX_DAILY_NOTIONAL:0}     # 每日名目總額
   max-price-deviation-pct: ${RISK_MAX_PRICE_DEVIATION:0.05} # 限價偏離現價 > 5% 拒（胖手指）
   fail-closed: ${RISK_FAIL_CLOSED:true}                     # 帳戶權益拿不到 → 拒絕 BUY
+  mainnet-default-daily-notional-usdt: ${RISK_MAINNET_DEFAULT_DAILY_NOTIONAL:1000}   # 正式網未設每日名目時的預設
+binance:
+  env: ${BINANCE_ENV:testnet}
