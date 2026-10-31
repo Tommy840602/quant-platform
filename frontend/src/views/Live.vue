@@ -25,6 +25,12 @@
                 <el-option label="LIMIT" value="LIMIT" />
               </el-select>
             </el-form-item>
+            <el-form-item v-if="ticket.type==='LIMIT'" label="限價">
+              <el-input-number v-model="ticket.price" :step="priceStep" :min="0" :precision="pricePrecision" style="width:180px" />
+              <el-button size="small" style="margin-left:8px" @click="ticket.price = prices[ticket.symbol] || 0">帶入現價</el-button>
+              <span class="hint" v-if="prices[ticket.symbol]">現價 {{ prices[ticket.symbol] }}
+                <template v-if="ticket.price > 0">｜ {{ ((ticket.price / prices[ticket.symbol] - 1) * 100).toFixed(2) }}%</template></span>
+            </el-form-item>
             <el-form-item label="數量">
               <el-input-number v-model="ticket.quantity" :step="0.001" :min="0.001" />
             </el-form-item>
@@ -111,7 +117,7 @@
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
+import { reactive, ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
 import { orderApi, accountApi } from '@/api'
@@ -122,19 +128,25 @@ import http from '@/api/http'
 const market = useMarketStore()
 const { connected, prices } = storeToRefs(market)
 
-const ticket = reactive({ market: 'SPOT', account: 'main', symbol: 'BTCUSDT', side: 'BUY', type: 'MARKET', quantity: 0.001, leverage: 5 })
+const ticket = reactive({ market: 'SPOT', account: 'main', symbol: 'BTCUSDT', side: 'BUY', type: 'MARKET', quantity: 0.001, leverage: 5, price: 0 })
+// 限價輸入的步進 / 小數位依現價量級（BTC 0.1、小幣 0.0001）
+const pricePrecision = computed(() => { const p = prices.value[ticket.symbol] || 0; return p >= 1000 ? 1 : p >= 10 ? 2 : p >= 1 ? 3 : 5 })
+const priceStep = computed(() => Math.pow(10, -pricePrecision.value))
+// 切成 LIMIT 或換標的時預設帶現價，之後由使用者改
+watch(() => [ticket.type, ticket.symbol], () => { if (ticket.type === 'LIMIT' && !(ticket.price > 0)) ticket.price = prices.value[ticket.symbol] || 0 })
 const submitting = ref(false)
 const lastResp = ref(''); const lastId = ref(''); const lastSymbol = ref(''); const lastMarket = ref('SPOT')
 const positions = ref([])
 
 async function submit() {
+  if (ticket.type === 'LIMIT' && !(ticket.price > 0)) { ElMessage.warning('請輸入限價'); return }
   submitting.value = true
   try {
     const id = 'ui-' + Date.now()
     const intent = {
       clientOrderId: id, strategyId: 'manual', symbol: ticket.symbol,
       side: ticket.side, type: ticket.type,
-      price: ticket.type === 'LIMIT' ? (prices.value[ticket.symbol] || 0) : null,
+      price: ticket.type === 'LIMIT' ? ticket.price : null,
       quantity: ticket.quantity, reduceOnly: false, market: ticket.market, account: ticket.account
     }
     const resp = await orderApi.submit(intent)

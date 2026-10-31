@@ -124,9 +124,18 @@ public class OrderService {
             publish(intent, OrderStatus.SUBMITTED, 0, 0);
             updateStatus(intent.clientOrderId(), OrderStatus.SUBMITTED, 0);
             if (gateway.isDryRun()) {
-                // dry-run 以最新市價成交（MARKET 單無 price），讓模擬盈虧/KPI 有意義
-                double price = intent.price() != null && intent.price() > 0 ? intent.price() : lastPrice(intent.symbol());
-                publish(intent, OrderStatus.FILLED, intent.quantity(), price);
+                // Dry-Run 模擬撮合：市價單以現價成交；限價單只有「現價觸及限價」才成交，否則掛著等排程
+                orders.findByClientOrderId(intent.clientOrderId()).ifPresent(e -> { e.setExchangeOrderId(DRYRUN_MARK); orders.save(e); });
+                double last = lastPrice(intent.symbol());
+                boolean limit = intent.type() == com.quant.common.enums.OrderType.LIMIT && intent.price() != null && intent.price() > 0;
+                if (!limit) {
+                    double price = last > 0 ? last : ref;
+                    fillDryRun(intent.clientOrderId(), intent.symbol(), intent.side(), intent.quantity(), price, intent.accountOrDefault());
+                } else if (limitTouched(intent.side(), intent.price(), last)) {
+                    fillDryRun(intent.clientOrderId(), intent.symbol(), intent.side(), intent.quantity(), intent.price(), intent.accountOrDefault());
+                } else {
+                    log.info("[DRY-RUN] 限價單掛簿 {} {} {}@{}（現價 {}）", intent.symbol(), intent.side(), intent.quantity(), intent.price(), last);
+                }
             } else {
                 // 串流活著 → 成交由 executionReport / ORDER_TRADE_UPDATE 回報；
                 // 串流沒開或此刻斷線 → 解析下單回應（RESULT 帶 executedQty），掛單後才成交的部分交給對帳補記。
@@ -170,6 +179,55 @@ public class OrderService {
         }
     }
 
+    // ── Dry-Run 模擬撮合 ──────────────────────────────────────────────────────────────────
+    static final String DRYRUN_MARK = "DRYRUN";
+
+    /** BUY 限價 ≥ 現價、SELL 限價 ≤ 現價 → 可成交（簡化：不模擬排隊與部分成交）。 */
+    static boolean limitTouched(OrderSide side, double limit, double last) {
+        if (last <= 0 || limit <= 0) return false;
+        return side == OrderSide.BUY ? last <= limit : last >= limit;
+    }
+
+    private void fillDryRun(String cid, String symbol, OrderSide side, double qty, double price, String account) {
+        updateStatus(cid, OrderStatus.FILLED, qty);
+        orders.findByClientOrderId(cid).ifPresent(e -> { e.setAvgPrice(price); orders.save(e); });
+        long ts = System.currentTimeMillis();
+        kafka.send(Topics.ORDER_EVENTS, symbol, new OrderEvent(cid, DRYRUN_MARK + "-" + cid, symbol, side, OrderStatus.FILLED,
+                qty, price, ts, account, "dryfill|" + cid + "|" + qty));
+        log.info("[DRY-RUN] 成交 {} {} qty={} @ {}", symbol, side, qty, price);
+    }
+
+    /** 每 3 秒掃 Dry-Run 掛著的限價單，現價觸及就成交。 */
+    @Scheduled(fixedDelay = 3000)
+    public void matchDryRunRestingOrders() {
+        if (!gateway.isDryRun()) return;
+        List<OrderEntity> resting;
+        try { resting = orders.findTop200ByStatusAndExchangeOrderIdOrderByIdAsc(OrderStatus.SUBMITTED.name(), DRYRUN_MARK); }
+        catch (Exception e) { return; }
+        for (OrderEntity o : resting) {
+            if (o.getPrice() == null || o.getPrice() <= 0) continue;
+            OrderSide side = "SELL".equals(o.getSide()) ? OrderSide.SELL : OrderSide.BUY;
+            double last = lastPrice(o.getSymbol());
+            if (limitTouched(side, o.getPrice(), last))
+                fillDryRun(o.getClientOrderId(), o.getSymbol(), side, o.getQuantity() == null ? 0 : o.getQuantity(), o.getPrice(),
+                        o.getAccount() == null ? "main" : o.getAccount());
+        }
+    }
+
+    /**
+     * 真單掛簿後的成交補記：UDS 沒開 / 斷線時，每 30 秒回查 SUBMITTED / PARTIALLY_FILLED 的真單。
+     * 以前只掃 UNKNOWN，限價單在簿上成交後 DB 永遠停在 SUBMITTED、持倉與現金帳不動。
+     */
+    @Scheduled(initialDelay = 30_000, fixedDelay = 30_000)
+    public void reconcileRestingRealOrders() {
+        if (gateway.isDryRun()) return;
+        for (boolean futures : new boolean[]{false, true}) {
+            String market = futures ? UdsRegistry.FUTURES : UdsRegistry.SPOT;
+            if (uds != null && uds.isConnected(market)) continue;   // 串流活著由 executionReport 記，不重複回查
+            try { reconcileOpenOrders(futures); } catch (Exception e) { log.warn("掛單對帳失敗 {}: {}", market, e.getMessage()); }
+        }
+    }
+
     // ── 對帳：UNKNOWN 訂單以 origClientOrderId 回查交易所 ───────────────────────────────────
 
     /** 回查一筆。回傳確定狀態；仍查不到回 null（留 UNKNOWN 給排程）。 */
@@ -200,9 +258,12 @@ public class OrderService {
                     .map(o -> o.getFilledQty() == null ? 0 : o.getFilledQty()).orElse(0.0);
             double delta = Math.max(0, executed - known);
             OrderStatus publishStatus = mapped;
+            OrderStatus current = orders.findByClientOrderId(clientOrderId).map(o -> safeStatus(o.getStatus())).orElse(null);
             if (delta <= 0 && (mapped == OrderStatus.FILLED || mapped == OrderStatus.PARTIALLY_FILLED)) {
                 // 成交已被 UDS 記過，只需同步狀態
                 updateStatus(clientOrderId, mapped, 0);
+            } else if (delta <= 0 && mapped == OrderStatus.SUBMITTED && current == OrderStatus.SUBMITTED) {
+                // 掛著沒動：每 30 秒回查一次，不要每次都發 SUBMITTED 事件
             } else {
                 updateStatus(clientOrderId, mapped == OrderStatus.SUBMITTED ? OrderStatus.SUBMITTED : mapped, 0);
                 kafka.send(Topics.ORDER_EVENTS, symbol, new OrderEvent(clientOrderId, exchId, symbol, side, publishStatus,
@@ -250,6 +311,7 @@ public class OrderService {
                 List.of(OrderStatus.SUBMITTED.name(), OrderStatus.PARTIALLY_FILLED.name(), OrderStatus.UNKNOWN.name()), market);
         int n = 0;
         for (OrderEntity o : open) {
+            if (DRYRUN_MARK.equals(o.getExchangeOrderId())) continue;   // 模擬單不回查交易所
             OrderSide side = "SELL".equals(o.getSide()) ? OrderSide.SELL : OrderSide.BUY;
             try {
                 reconcileOne(o.getClientOrderId(), o.getSymbol(), futures, side, o.getAccount() == null ? "main" : o.getAccount());

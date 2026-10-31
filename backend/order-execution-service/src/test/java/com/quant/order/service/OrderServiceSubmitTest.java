@@ -252,4 +252,84 @@ class OrderServiceSubmitTest {
         OrderEvent fill = events().stream().filter(e -> e.status() == OrderStatus.FILLED).findFirst().orElseThrow();
         assertEquals(0.006, fill.filledQty(), 1e-9, "只補 0.010 − 0.004 的增量");
     }
+
+    // ── 限價單 ──
+    @Test
+    void dryRunLimitNotTouchedRestsThenFillsWhenPriceReaches() {
+        when(gateway.isDryRun()).thenReturn(true);
+        when(gateway.placeOrder(any())).thenReturn("DRYRUN-cid-1");
+        OrderIntent lim = new OrderIntent("cid-1", "s1", "BTCUSDT", OrderSide.BUY, OrderType.LIMIT, 59000.0, 0.01, false, "SPOT", "main");
+        OrderEntity row = new OrderEntity(); row.setClientOrderId("cid-1"); row.setStatus("CREATED"); row.setSide("BUY");
+        row.setSymbol("BTCUSDT"); row.setPrice(59000.0); row.setQuantity(0.01);
+        when(orders.findByClientOrderId("cid-1")).thenReturn(Optional.of(row));
+
+        assertEquals(0, svc.submit(lim).code());
+        assertFalse(events().stream().anyMatch(e -> e.status() == OrderStatus.FILLED), "現價 60000 > 買限價 59000，不該成交");
+        assertEquals("DRYRUN", row.getExchangeOrderId());
+        assertEquals("SUBMITTED", row.getStatus());
+
+        // 價格跌到 58900 → 排程撮合
+        when(ops.get("price:BTCUSDT")).thenReturn("58900");
+        when(orders.findTop200ByStatusAndExchangeOrderIdOrderByIdAsc("SUBMITTED", "DRYRUN")).thenReturn(List.of(row));
+        svc.matchDryRunRestingOrders();
+        OrderEvent fill = events().stream().filter(e -> e.status() == OrderStatus.FILLED).findFirst().orElseThrow();
+        assertEquals(59000, fill.avgPrice(), 1e-6, "以限價成交");
+        assertTrue(fill.eventId().startsWith("dryfill|"));
+    }
+
+    @Test
+    void dryRunMarketableLimitFillsImmediatelyAtLimit() {
+        when(gateway.isDryRun()).thenReturn(true);
+        when(gateway.placeOrder(any())).thenReturn("DRYRUN-cid-1");
+        OrderIntent lim = new OrderIntent("cid-1", "s1", "BTCUSDT", OrderSide.BUY, OrderType.LIMIT, 61000.0, 0.01, false, "SPOT", "main");
+        svc.submit(lim);
+        OrderEvent fill = events().stream().filter(e -> e.status() == OrderStatus.FILLED).findFirst().orElseThrow();
+        assertEquals(61000, fill.avgPrice(), 1e-6);
+    }
+
+    @Test
+    void limitTouchedRules() {
+        assertTrue(OrderService.limitTouched(OrderSide.BUY, 100, 99));
+        assertFalse(OrderService.limitTouched(OrderSide.BUY, 100, 101));
+        assertTrue(OrderService.limitTouched(OrderSide.SELL, 100, 101));
+        assertFalse(OrderService.limitTouched(OrderSide.SELL, 100, 99));
+        assertFalse(OrderService.limitTouched(OrderSide.BUY, 100, 0));
+    }
+
+    @Test
+    void restingRealOrdersAreReconciledWhenStreamIsDown() {
+        when(gateway.isDryRun()).thenReturn(false);
+        UdsRegistry uds = new UdsRegistry(notify); svc.setUdsRegistry(uds);   // 沒連線
+        OrderEntity open = new OrderEntity(); open.setClientOrderId("cid-9"); open.setSymbol("BTCUSDT");
+        open.setSide("BUY"); open.setStatus("SUBMITTED"); open.setFilledQty(0.0); open.setMarket("SPOT");
+        when(orders.findTop200ByStatusInAndMarketOrderByUpdatedAtAsc(anyList(), eq("SPOT"))).thenReturn(List.of(open));
+        when(orders.findTop200ByStatusInAndMarketOrderByUpdatedAtAsc(anyList(), eq("USDT_M"))).thenReturn(List.of());
+        when(orders.findByClientOrderId("cid-9")).thenReturn(Optional.of(open));
+        when(gateway.queryOrder("BTCUSDT", "cid-9", false))
+                .thenReturn("{\"orderId\":9,\"status\":\"FILLED\",\"executedQty\":\"0.010\",\"cummulativeQuoteQty\":\"590\"}");
+        svc.reconcileRestingRealOrders();
+        OrderEvent fill = events().stream().filter(e -> e.status() == OrderStatus.FILLED).findFirst().orElseThrow();
+        assertEquals(0.01, fill.filledQty(), 1e-12);
+        assertEquals(59000, fill.avgPrice(), 1e-6);
+    }
+
+    @Test
+    void restingRealOrdersSkippedWhenStreamConnected() {
+        when(gateway.isDryRun()).thenReturn(false);
+        UdsRegistry uds = new UdsRegistry(notify); uds.markConnected(UdsRegistry.SPOT); uds.markConnected(UdsRegistry.FUTURES);
+        svc.setUdsRegistry(uds);
+        svc.reconcileRestingRealOrders();
+        verify(orders, never()).findTop200ByStatusInAndMarketOrderByUpdatedAtAsc(anyList(), anyString());
+    }
+
+    @Test
+    void unchangedRestingOrderDoesNotSpamSubmittedEvents() {
+        when(gateway.isDryRun()).thenReturn(false);
+        OrderEntity open = new OrderEntity(); open.setClientOrderId("cid-9"); open.setSymbol("BTCUSDT");
+        open.setSide("BUY"); open.setStatus("SUBMITTED"); open.setFilledQty(0.0); open.setMarket("SPOT");
+        when(orders.findByClientOrderId("cid-9")).thenReturn(Optional.of(open));
+        when(gateway.queryOrder("BTCUSDT", "cid-9", false)).thenReturn("{\"orderId\":9,\"status\":\"NEW\",\"executedQty\":\"0\"}");
+        svc.reconcileOne("cid-9", "BTCUSDT", false, OrderSide.BUY, "main");
+        verify(kafka, never()).send(anyString(), anyString(), any());
+    }
 }
