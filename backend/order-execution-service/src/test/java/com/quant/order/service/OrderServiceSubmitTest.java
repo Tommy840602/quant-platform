@@ -332,4 +332,55 @@ class OrderServiceSubmitTest {
         svc.reconcileOne("cid-9", "BTCUSDT", false, OrderSide.BUY, "main");
         verify(kafka, never()).send(anyString(), anyString(), any());
     }
+
+    // ── Outbox 回收 ──
+    private OrderEntity stuck(String cid, String status, long ageMs) {
+        OrderEntity o = new OrderEntity(); o.setClientOrderId(cid); o.setSymbol("BTCUSDT"); o.setSide("BUY");
+        o.setStatus(status); o.setMarket("SPOT"); o.setQuantity(0.01);
+        o.setUpdatedAt(java.time.OffsetDateTime.now().minusNanos(ageMs * 1_000_000));
+        when(orders.findByClientOrderId(cid)).thenReturn(Optional.of(o));
+        return o;
+    }
+
+    @Test
+    void stuckRiskApprovedOrderIsReconciledAfterRestart() {
+        when(gateway.isDryRun()).thenReturn(false);
+        OrderEntity o = stuck("cid-s1", "RISK_APPROVED", 60_000);
+        when(orders.findTop200ByStatusInOrderByIdAsc(anyList())).thenReturn(List.of(o));
+        when(gateway.queryOrder("BTCUSDT", "cid-s1", false))
+                .thenReturn("{\"orderId\":5,\"status\":\"FILLED\",\"executedQty\":\"0.01\",\"cummulativeQuoteQty\":\"600\"}");
+        assertEquals(1, svc.recoverStuckOrders());
+        assertEquals("FILLED", o.getStatus(), "交易所其實成交了 → 採用");
+        assertTrue(events().stream().anyMatch(e -> e.status() == OrderStatus.FILLED && e.filledQty() == 0.01));
+    }
+
+    @Test
+    void stuckRiskApprovedUnknownToExchangeBecomesRejected() {
+        when(gateway.isDryRun()).thenReturn(false);
+        OrderEntity o = stuck("cid-s2", "RISK_APPROVED", 60_000);
+        when(orders.findTop200ByStatusInOrderByIdAsc(anyList())).thenReturn(List.of(o));
+        when(gateway.queryOrder(any(), eq("cid-s2"), anyBoolean()))
+                .thenThrow(new BinanceOrderGateway.ExchangeRejectedException(400, -2013, "Order does not exist"));
+        svc.recoverStuckOrders();
+        assertEquals("REJECTED", o.getStatus(), "交易所沒收到 → 安全作廢");
+    }
+
+    @Test
+    void stuckCreatedOrderIsRejectedWithoutQuerying() {
+        when(gateway.isDryRun()).thenReturn(false);
+        OrderEntity o = stuck("cid-s3", "CREATED", 60_000);
+        when(orders.findTop200ByStatusInOrderByIdAsc(anyList())).thenReturn(List.of(o));
+        svc.recoverStuckOrders();
+        assertEquals("REJECTED", o.getStatus());
+        verify(gateway, never()).queryOrder(any(), any(), anyBoolean());
+    }
+
+    @Test
+    void freshInFlightOrderIsLeftAlone() {
+        when(gateway.isDryRun()).thenReturn(false);
+        OrderEntity o = stuck("cid-s4", "RISK_APPROVED", 2_000);   // 2 秒前，可能正在送
+        when(orders.findTop200ByStatusInOrderByIdAsc(anyList())).thenReturn(List.of(o));
+        assertEquals(0, svc.recoverStuckOrders());
+        assertEquals("RISK_APPROVED", o.getStatus());
+    }
 }
