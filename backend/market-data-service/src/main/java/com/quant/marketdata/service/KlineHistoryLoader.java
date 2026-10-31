@@ -33,6 +33,7 @@ public class KlineHistoryLoader {
     private final AtomicBoolean running = new AtomicBoolean(false);
     private volatile long lastRunAt = 0, lastLoaded = 0;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public KlineHistoryLoader(BinanceProperties props, KlineBackfillService backfill, KlineRepository repo) {
         this(props, backfill, repo, System::currentTimeMillis);
     }
