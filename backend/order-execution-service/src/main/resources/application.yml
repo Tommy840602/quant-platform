@@ -16,9 +16,14 @@ spring:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/quant
     username: quant
     password: quant
+  flyway:
+    enabled: true
+    locations: classpath:db/migration        # 在 common jar 裡，所有接 DB 的服務跑同一份
+    baseline-on-migrate: true                 # 既有資料庫（init.sql 建的）沒有 history 表 → 先 baseline
+    baseline-version: 0                       # 從 0 起算，V1 仍會跑（V1 全部 IF NOT EXISTS，重跑安全）
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate   # 表結構由 Flyway 管（common/db/migration），JPA 只驗證不建表
     open-in-view: false
   data:
     redis:

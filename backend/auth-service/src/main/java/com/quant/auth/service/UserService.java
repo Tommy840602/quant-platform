@@ -38,16 +38,7 @@ public class UserService {
     /** users 表若不存在就建（init SQL 只在空 volume 跑一次，既有部署升級也要能用）。 */
     @PostConstruct
     void bootstrap() {
-        jdbc.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id            BIGSERIAL PRIMARY KEY,
-                username      VARCHAR(64) UNIQUE NOT NULL,
-                password_hash TEXT NOT NULL,
-                roles         TEXT NOT NULL DEFAULT 'TRADER',
-                enabled       BOOLEAN NOT NULL DEFAULT TRUE,
-                created_at    TIMESTAMPTZ DEFAULT now(),
-                last_login_at TIMESTAMPTZ
-            )""");
+        // users 表由 Flyway V1__baseline.sql 建立（在 JPA 之前執行），這裡只負責初始管理員
         if (users.count() > 0) return;
 
         String pw = adminPassword == null ? "" : adminPassword.trim();

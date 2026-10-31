@@ -29,6 +29,37 @@ jobs:
             | grep -vE 'Re-run Maven|For more information|\[Help [0-9]\]|^\[ERROR\] *$' \
             | head -60 | sed 's/^/::error::/'
 
+  schema:
+    name: Schema (Flyway on TimescaleDB)
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: timescale/timescaledb:latest-pg16
+        env: { POSTGRES_USER: quant, POSTGRES_PASSWORD: quant, POSTGRES_DB: quant }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U quant -d quant" --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: init.sql（extension）
+        run: PGPASSWORD=quant psql -h localhost -U quant -d quant -v ON_ERROR_STOP=1 -f infra/init/timescale-init.sql
+      - name: Flyway migrate（全新庫）
+        run: |
+          docker run --rm --network host -v "$PWD/backend/common/src/main/resources/db/migration:/flyway/sql:ro" \
+            flyway/flyway:10 -url=jdbc:postgresql://localhost:5432/quant -user=quant -password=quant migrate
+      - name: 模擬舊庫：清掉 history 後以 baseline-version=0 再跑一次（V1 必須可重跑）
+        run: |
+          PGPASSWORD=quant psql -h localhost -U quant -d quant -c "DROP TABLE flyway_schema_history;"
+          docker run --rm --network host -v "$PWD/backend/common/src/main/resources/db/migration:/flyway/sql:ro" \
+            flyway/flyway:10 -url=jdbc:postgresql://localhost:5432/quant -user=quant -password=quant \
+            -baselineOnMigrate=true -baselineVersion=0 migrate
+      - name: 表都在
+        run: |
+          for t in kline orders positions order_outbox equity_curve users; do
+            PGPASSWORD=quant psql -h localhost -U quant -d quant -tAc "select to_regclass('$t')" | grep -q "^$t$" || { echo "::error::缺表 $t"; exit 1; }
+          done
+          PGPASSWORD=quant psql -h localhost -U quant -d quant -tAc "select count(*) from timescaledb_information.hypertables where hypertable_name='kline'" | grep -q '^1$' || { echo "::error::kline 不是 hypertable"; exit 1; }
+
   frontend:
     name: Frontend (Vue 3 / Vite)
     runs-on: ubuntu-latest
