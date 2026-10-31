@@ -52,6 +52,8 @@ management:
 
 trading:
   dry-run: ${TRADING_DRY_RUN:true}
+  # 真錢安全鎖：正式網開啟真實送單後 N 小時自動鎖回 Dry-Run（0 = 不限時，不建議）
+  real-arm-ttl-hours: ${TRADING_REAL_ARM_TTL_HOURS:8}
 
 risk:
   max-notional-usdt: ${RISK_MAX_NOTIONAL:1000}   # 單筆名目金額上限(USDT)
@@ -64,10 +66,6 @@ resilience4j:
       riskClient:
         sliding-window-size: 20
         failure-rate-threshold: 50
-
-trading:
-  # 真錢安全鎖：正式網開啟真實送單後 N 小時自動鎖回 Dry-Run（0 = 不限時，不建議）
-  real-arm-ttl-hours: ${TRADING_REAL_ARM_TTL_HOURS:8}
 
 binance:
   env: ${BINANCE_ENV:testnet}
