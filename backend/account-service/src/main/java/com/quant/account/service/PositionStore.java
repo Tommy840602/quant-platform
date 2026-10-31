@@ -72,13 +72,6 @@ public class PositionStore {
     }
 
     /** 快照；account 為 null 回全部。 */
-    /** 清除某帳戶全部部位（虛擬帳戶重置用）。回清除筆數。 */
-    public synchronized int clear(String account) {
-        List<PositionEntity> rows = repo.findAll().stream().filter(p -> account.equals(p.getAccount())).toList();
-        repo.deleteAll(rows);
-        return rows.size();
-    }
-
     public List<Map<String, Object>> snapshot(String account) {
         return repo.findAll().stream()
                 .filter(p -> account == null || account.equals(p.getAccount()))

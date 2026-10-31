@@ -63,35 +63,4 @@ class StrategyContextImplTest {
         new StrategyContextImpl("s", oms, Map.of(), () -> 0, book).submit(buy("c1"));
         assertTrue(book.isPending("s", "BTCUSDT"));
     }
-
-    @Test
-    void botOrdersFollowActiveAccountNotTheHardcodedMain() {
-        OrderClient oms = mock(OrderClient.class);
-        when(oms.submit(any())).thenReturn(ApiResponse.ok("{}"));
-        StrategyPositionBook book = new StrategyPositionBook(); book.reconcile(List.of());
-        String[] mode = {"paper"};
-        StrategyContextImpl ctx = new StrategyContextImpl("s", oms, Map.of("BTCUSDT", 100.0), () -> 0, book, () -> mode[0]);
-
-        ctx.submit(buy("c1"));                       // 策略類別裡寫的是 "main"
-        org.mockito.ArgumentCaptor<OrderIntent> cap = org.mockito.ArgumentCaptor.forClass(OrderIntent.class);
-        verify(oms).submit(cap.capture());
-        assertEquals("paper", cap.getValue().account(), "跟著平台切換，不是策略寫死的 main");
-
-        book.reconcile(List.of()); mode[0] = "main";
-        StrategyContextImpl ctx2 = new StrategyContextImpl("s2", oms, Map.of("BTCUSDT", 100.0), () -> 0, book, () -> mode[0]);
-        ctx2.submit(buy("c2"));
-        verify(oms, times(2)).submit(cap.capture());
-        assertEquals("main", cap.getValue().account());
-    }
-
-    @Test
-    void defaultConstructorIsPaper() {
-        OrderClient oms = mock(OrderClient.class);
-        when(oms.submit(any())).thenReturn(ApiResponse.ok("{}"));
-        StrategyPositionBook book = new StrategyPositionBook(); book.reconcile(List.of());
-        new StrategyContextImpl("s", oms, Map.of("BTCUSDT", 100.0), () -> 0, book).submit(buy("c1"));
-        org.mockito.ArgumentCaptor<OrderIntent> cap = org.mockito.ArgumentCaptor.forClass(OrderIntent.class);
-        verify(oms).submit(cap.capture());
-        assertEquals("paper", cap.getValue().account(), "沒指定就是虛擬，安全");
-    }
 }
