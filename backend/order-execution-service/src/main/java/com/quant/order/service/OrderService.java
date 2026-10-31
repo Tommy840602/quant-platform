@@ -3,6 +3,7 @@ package com.quant.order.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.quant.common.dto.ApiResponse;
+import com.quant.common.account.Accounts;
 import com.quant.common.dto.OrderIntent;
 import com.quant.common.enums.OrderStatus;
 import com.quant.common.event.OrderEvent;
@@ -119,15 +120,21 @@ public class OrderService {
         publish(intent, OrderStatus.RISK_APPROVED, 0, 0);
         updateStatus(intent.clientOrderId(), OrderStatus.RISK_APPROVED, 0);
 
+        // ── 虛擬帳戶：本機撮合，不碰交易所（風控 / 名目上限照跑，練紀律）──
+        if (Accounts.isPaper(intent.accountOrDefault())) return fillPaper(intent, ref);
+
+        // ── 真實帳戶：Dry-Run 安全鎖開著就明確拒單，不再偷偷模擬成交（模擬請用虛擬帳戶）──
+        if (gateway.isDryRun()) {
+            updateStatus(intent.clientOrderId(), OrderStatus.REJECTED, 0);
+            publish(intent, OrderStatus.REJECTED, 0, 0);
+            return ApiResponse.error(409, "真實帳戶已被 Dry-Run 鎖定（TRADING_DRY_RUN=true），未送單。要模擬請切到虛擬帳戶；要真送單請在「連線設定」關閉 Dry-Run");
+        }
+
         try {
             String exchangeResp = gateway.placeOrder(intent);
             publish(intent, OrderStatus.SUBMITTED, 0, 0);
             updateStatus(intent.clientOrderId(), OrderStatus.SUBMITTED, 0);
-            if (gateway.isDryRun()) {
-                // dry-run 以最新市價成交（MARKET 單無 price），讓模擬盈虧/KPI 有意義
-                double price = intent.price() != null && intent.price() > 0 ? intent.price() : lastPrice(intent.symbol());
-                publish(intent, OrderStatus.FILLED, intent.quantity(), price);
-            } else {
+            {
                 // 串流活著 → 成交由 executionReport / ORDER_TRADE_UPDATE 回報；
                 // 串流沒開或此刻斷線 → 解析下單回應（RESULT 帶 executedQty），掛單後才成交的部分交給對帳補記。
                 String market = intent.isFutures() ? UdsRegistry.FUTURES : UdsRegistry.SPOT;
@@ -168,6 +175,30 @@ public class OrderService {
             publish(intent, OrderStatus.UNKNOWN, 0, 0);
             return ApiResponse.error(202, "送單例外，對帳中（UNKNOWN）；勿重送 " + intent.clientOrderId());
         }
+    }
+
+    /**
+     * 虛擬帳戶撮合：市價單以參考價成交、限價單以限價成交（立即全成，不模擬排隊）；
+     * 發 SUBMITTED → FILLED 事件，account-service 的現金帳 / 部位照常更新。
+     */
+    private ApiResponse<String> fillPaper(OrderIntent intent, double ref) {
+        double price = intent.price() != null && intent.price() > 0 ? intent.price() : ref;
+        if (price <= 0) {
+            updateStatus(intent.clientOrderId(), OrderStatus.REJECTED, 0);
+            publish(intent, OrderStatus.REJECTED, 0, 0);
+            return ApiResponse.error(500, "虛擬撮合取不到 " + intent.symbol() + " 價格");
+        }
+        publish(intent, OrderStatus.SUBMITTED, 0, 0);
+        updateStatus(intent.clientOrderId(), OrderStatus.SUBMITTED, 0);
+        updateStatus(intent.clientOrderId(), OrderStatus.FILLED, intent.quantity());
+        orders.findByClientOrderId(intent.clientOrderId()).ifPresent(e -> { e.setAvgPrice(price); orders.save(e); });
+        long ts = System.currentTimeMillis();
+        kafka.send(Topics.ORDER_EVENTS, intent.symbol(), new OrderEvent(intent.clientOrderId(), "PAPER-" + intent.clientOrderId(),
+                intent.symbol(), intent.side(), OrderStatus.FILLED, intent.quantity(), price, ts, Accounts.PAPER,
+                "paper|" + intent.clientOrderId() + "|" + intent.quantity()));
+        log.info("[虛擬] 成交 {} {} qty={} @ {}", intent.symbol(), intent.side(), intent.quantity(), price);
+        return ApiResponse.ok("{\"simulated\":true,\"account\":\"paper\",\"status\":\"FILLED\",\"executedQty\":\""
+                + trimNum(intent.quantity()) + "\",\"price\":\"" + trimNum(price) + "\"}");
     }
 
     // ── 對帳：UNKNOWN 訂單以 origClientOrderId 回查交易所 ───────────────────────────────────
@@ -336,11 +367,28 @@ public class OrderService {
     }
 
     public ApiResponse<String> query(String symbol, String clientOrderId, boolean futures) {
+        var row = orders.findByClientOrderId(clientOrderId);
+        if (row.isPresent() && Accounts.isPaper(row.get().getAccount())) {
+            OrderEntity e = row.get();
+            return ApiResponse.ok("{\"simulated\":true,\"status\":\"" + e.getStatus() + "\",\"executedQty\":\""
+                    + trimNum(e.getFilledQty() == null ? 0 : e.getFilledQty()) + "\",\"avgPrice\":\"" + trimNum(e.getAvgPrice() == null ? 0 : e.getAvgPrice()) + "\"}");
+        }
         try { return ApiResponse.ok(gateway.queryOrder(symbol, clientOrderId, futures)); }
         catch (Exception e) { return ApiResponse.error(500, "query failed: " + e.getMessage()); }
     }
 
     public ApiResponse<String> cancel(String symbol, String clientOrderId, boolean futures) {
+        var row = orders.findByClientOrderId(clientOrderId);
+        if (row.isPresent() && Accounts.isPaper(row.get().getAccount())) {
+            OrderStatus cur = safeStatus(row.get().getStatus());
+            if (cur == OrderStatus.FILLED) return ApiResponse.error(409, "虛擬單已成交，無法取消");
+            updateStatus(clientOrderId, OrderStatus.CANCELED, 0);
+            long ts = System.currentTimeMillis();
+            kafka.send(Topics.ORDER_EVENTS, symbol, new OrderEvent(clientOrderId, null, symbol,
+                    "SELL".equals(row.get().getSide()) ? OrderSide.SELL : OrderSide.BUY, OrderStatus.CANCELED,
+                    0, 0, ts, Accounts.PAPER, OrderEvent.eventId(clientOrderId, OrderStatus.CANCELED, 0, ts)));
+            return ApiResponse.ok("{\"simulated\":true,\"status\":\"CANCELED\"}");
+        }
         try {
             String resp = gateway.cancelOrder(symbol, clientOrderId, futures);
             OrderSide side = orders.findByClientOrderId(clientOrderId)
@@ -441,6 +489,7 @@ public class OrderService {
                         "quantity", o.getQuantity(),
                         "filledQty", o.getFilledQty(),
                         "status", o.getStatus(),
+                        "account", o.getAccount() == null ? "main" : o.getAccount(),
                         "strategyId", o.getStrategyId() == null ? "" : o.getStrategyId()))
                 .getContent();
         return ApiResponse.ok(rows);
