@@ -36,6 +36,11 @@
       <el-header class="header">
         <span class="title">{{ $route.meta.title || '量化交易平台' }}</span>
         <div class="right">
+          <el-radio-group :model-value="account.mode" size="small" @change="switchMode" :title="'目前：' + account.label">
+            <el-radio-button value="paper">虛擬帳戶</el-radio-button>
+            <el-radio-button value="main">真實帳戶</el-radio-button>
+          </el-radio-group>
+          <el-tag v-if="!account.isPaper" type="danger" size="small" effect="dark">真錢 · {{ account.modeInfo.env || '' }}</el-tag>
           <el-tag :type="wsConnected ? 'success' : 'danger'" size="small">
             {{ wsConnected ? '行情已連線' : '行情斷線' }}
           </el-tag>
@@ -61,11 +66,14 @@ import { useRouter } from 'vue-router'
 import { useMarketStore } from '@/store/market'
 import { useAuthStore } from '@/store/auth'
 import { useThemeStore } from '@/store/theme'
+import { useAccountStore } from '@/store/account'
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 const router = useRouter()
 const market = useMarketStore()
 const auth = useAuthStore()
 const theme = useThemeStore()
+const account = useAccountStore()
 const collapsed = ref(localStorage.getItem('qp-collapsed') === '1')
 function toggleCollapse() { collapsed.value = !collapsed.value; localStorage.setItem('qp-collapsed', collapsed.value ? '1' : '0') }
 const { connected: wsConnected } = storeToRefs(market)
@@ -73,7 +81,26 @@ const { connected: wsConnected } = storeToRefs(market)
 const menuBg = computed(() => theme.dark ? '#131722' : '#ffffff')
 const menuText = computed(() => theme.dark ? '#a9b1c2' : '#303133')
 
-onMounted(() => market.connect())
+onMounted(() => { market.connect(); if (auth.loggedIn) account.loadMode() })
+
+/** 虛擬 ⇄ 真實：切真實要二次確認；後端沒金鑰會拒絕並留在虛擬。 */
+async function switchMode(m) {
+  if (m === account.mode) return
+  if (m === 'main') {
+    try {
+      await ElMessageBox.confirm(
+        '切到真實帳戶後，手動下單與所有策略機器人都會用幣安帳戶（' + (account.modeInfo.env || 'testnet') + '）真實送單。確定？',
+        '切換真實帳戶', { type: 'warning', confirmButtonText: '確定切換', cancelButtonText: '取消' })
+    } catch { return }
+  }
+  try {
+    const r = await account.setMode(m)
+    ElMessage.success('已切換到' + r.label)
+  } catch (e) {
+    ElMessage.error(e?.message || '切換失敗')
+    account.loadMode()
+  }
+}
 function doLogout() { auth.logout(); router.push('/signin') }
 </script>
 

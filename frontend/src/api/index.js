@@ -42,6 +42,9 @@ export const accountApi = {
   balance: () => http.get('/account/balance'),
   positions: () => http.get('/account/positions'),
   getConfig: () => http.get('/account/config'),
+  getMode: () => http.get('/account/mode'),
+  setMode: (mode) => http.post('/account/mode', { mode }),
+  resetPaper: () => http.post('/account/paper/reset'),
   summaryNow: () => http.post('/account/summary/now'),
   setConfig: (body) => http.post('/account/config', body)
 }

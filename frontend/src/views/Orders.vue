@@ -28,6 +28,11 @@
       <el-table-column prop="quantity" label="數量" width="100" />
       <el-table-column prop="filledQty" label="成交量" width="100" />
       <el-table-column prop="status" label="狀態" width="140" />
+      <el-table-column prop="account" label="帳戶" width="90">
+        <template #default="{ row }">
+          <el-tag :type="row.account === 'paper' ? 'warning' : 'success'" size="small">{{ row.account === 'paper' ? '虛擬' : '真實' }}</el-tag>
+        </template>
+      </el-table-column>
       <el-table-column prop="strategyId" label="策略" />
     </el-table>
   </el-card>
