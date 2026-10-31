@@ -11,10 +11,13 @@ x-logging: &logging
 # 後端微服務共用：等基礎設施 healthy 才啟動；JVM + Nacos 註冊約 60-90 秒，start_period 內失敗不算
 # 後端探針是 liveness（actuator 有回應 200/503 都算活）：Spring health 任一元件 DOWN 就回 503，
 # Nacos/Kafka 抖一下整排 unhealthy 沒意義；真正的元件狀態看 /actuator/health 內容
+# 只硬等 DB / Redis（Flyway、冪等鍵啟動就要用）；Nacos / Kafka 慢一點沒關係：
+# 註冊 fail-fast=false 會背景重試、Kafka client 自己重連。以前四個都等 healthy，
+# build 期間 Nacos 探針逾時就 "dependency failed to start" 整排不啟動。
 x-backend-deps: &backend-deps
   depends_on:
-    nacos:       { condition: service_healthy }
-    kafka:       { condition: service_healthy }
+    nacos:       { condition: service_started }
+    kafka:       { condition: service_started }
     redis:       { condition: service_healthy }
     timescaledb: { condition: service_healthy }
 
@@ -129,10 +132,10 @@ services:
       # 映像內不一定有 curl：curl → wget → bash /dev/tcp 三段備援，避免探測工具缺席害後端永遠等不到 healthy
       # HTTP 8848 readiness 之外還要等 gRPC 9848 開（後端註冊走 gRPC；8848 好了 9848 常常還要再等幾十秒）
       test: ["CMD-SHELL", "(curl -fsS http://127.0.0.1:8848/nacos/v1/console/health/readiness >/dev/null 2>&1 || wget -qO- http://127.0.0.1:8848/nacos/v1/console/health/readiness >/dev/null 2>&1) && bash -c 'exec 3<>/dev/tcp/127.0.0.1/9848'"]
-      interval: 15s
-      timeout: 10s
-      retries: 20
-      start_period: 120s
+      interval: 30s
+      timeout: 25s
+      retries: 10
+      start_period: 180s
     environment:
       MODE: standalone
       NACOS_AUTH_ENABLE: "false"
