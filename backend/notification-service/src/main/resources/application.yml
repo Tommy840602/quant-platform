@@ -10,6 +10,7 @@ spring:
     nacos:
       discovery:
         server-addr: ${NACOS_ADDR:localhost:8848}
+        fail-fast: false        # Nacos 還沒好時註冊失敗不炸掉服務，背景重試（以前 failFast=true → 一直重啟）
         username: ${NACOS_USER:nacos}
         password: ${NACOS_PASS:nacos}
   kafka:

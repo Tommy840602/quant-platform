@@ -123,7 +123,8 @@ services:
     # ⚠️ 官方映像只有 amd64，Apple Silicon 上走模擬，啟動 1-2 分鐘；start_period 給足
     healthcheck:
       # 映像內不一定有 curl：curl → wget → bash /dev/tcp 三段備援，避免探測工具缺席害後端永遠等不到 healthy
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8848/nacos/v1/console/health/readiness >/dev/null 2>&1 || wget -qO- http://127.0.0.1:8848/nacos/v1/console/health/readiness >/dev/null 2>&1 || bash -c 'exec 3<>/dev/tcp/127.0.0.1/8848'"]
+      # HTTP 8848 readiness 之外還要等 gRPC 9848 開（後端註冊走 gRPC；8848 好了 9848 常常還要再等幾十秒）
+      test: ["CMD-SHELL", "(curl -fsS http://127.0.0.1:8848/nacos/v1/console/health/readiness >/dev/null 2>&1 || wget -qO- http://127.0.0.1:8848/nacos/v1/console/health/readiness >/dev/null 2>&1) && bash -c 'exec 3<>/dev/tcp/127.0.0.1/9848'"]
       interval: 15s
       timeout: 10s
       retries: 20
