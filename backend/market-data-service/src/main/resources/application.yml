@@ -39,6 +39,8 @@ management:
         include: health,info,metrics,prometheus
 
 binance:
+  history-bars: ${KLINE_HISTORY_BARS:2000}     # 啟動暖機每條串流回補到現在的根數（1m → 約 33 小時）
+  history-enabled: ${KLINE_HISTORY_ENABLED:true}
   ws-base-url: ${MARKET_WS:wss://stream.binance.com:9443}
   rest-base-url: ${MARKET_REST:https://api.binance.com}
   streams:
