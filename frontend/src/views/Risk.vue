@@ -62,9 +62,10 @@
         <el-form-item label="每日下單次數上限">
           <el-input-number v-model="limForm.maxDailyOrders" :min="0" :step="5" />
         </el-form-item>
-        <el-form-item label="每日名目總額 (USDT)">
-          <el-input-number v-model="limForm.maxDailyNotional" :min="0" :step="100" />
-          <span class="hint">0 = 不限</span>
+        <el-form-item label="每日名目總額限制">
+          <el-switch v-model="dailyNotionalOn" />
+          <el-input-number v-if="dailyNotionalOn" v-model="limForm.maxDailyNotional" :min="1" :step="100" style="margin-left:12px" />
+          <span class="hint">正式網預設 1000 USDT；關掉 = 不限（關掉前想清楚）</span>
         </el-form-item>
         <el-form-item label="限價偏離上限 (%)">
           <el-input-number v-model="limForm.maxPriceDeviationPct" :min="0" :max="100" :step="1" />
@@ -106,6 +107,8 @@ const kill = reactive({ on: false, reason: '' })
 const st = reactive({}); const lim = reactive({}); const savingLim = ref(false)
 const limForm = reactive({ maxPositionPct: 50, maxDailyLossPct: 3, maxDailyOrders: 50, maxDailyNotional: 0, maxPriceDeviationPct: 5, failClosed: true })
 const pct = v => v == null ? '—' : (v * 100).toFixed(1) + '%'
+const dailyNotionalOn = ref(true)
+const lastDailyNotional = ref(1000)
 
 async function loadRisk() {
   try {
@@ -114,7 +117,9 @@ async function loadRisk() {
     limForm.maxPositionPct = +(lim.maxPositionPct * 100).toFixed(1)
     limForm.maxDailyLossPct = +(lim.maxDailyLossPct * 100).toFixed(1)
     limForm.maxDailyOrders = lim.maxDailyOrders
-    limForm.maxDailyNotional = lim.maxDailyNotional
+    dailyNotionalOn.value = (lim.maxDailyNotional || 0) > 0
+    limForm.maxDailyNotional = lim.maxDailyNotional || lastDailyNotional.value
+    if (lim.maxDailyNotional > 0) lastDailyNotional.value = lim.maxDailyNotional
     limForm.maxPriceDeviationPct = +(lim.maxPriceDeviationPct * 100).toFixed(1)
     limForm.failClosed = !!lim.failClosed
   } catch (e) { ElMessage.error('讀取帳戶風控失敗：' + (e.response?.data?.message || e.message)) }
@@ -123,7 +128,7 @@ async function saveLimits() {
   savingLim.value = true
   try {
     await riskApi.setLimits({ maxPositionPct: limForm.maxPositionPct / 100, maxDailyLossPct: limForm.maxDailyLossPct / 100,
-      maxDailyOrders: limForm.maxDailyOrders, maxDailyNotional: limForm.maxDailyNotional,
+      maxDailyOrders: limForm.maxDailyOrders, maxDailyNotional: dailyNotionalOn.value ? limForm.maxDailyNotional : 0,
       maxPriceDeviationPct: limForm.maxPriceDeviationPct / 100, failClosed: limForm.failClosed })
     ElMessage.success('帳戶風控已儲存'); loadRisk()
   } catch (e) { ElMessage.error('儲存失敗：' + (e.response?.data?.message || e.message)) }
