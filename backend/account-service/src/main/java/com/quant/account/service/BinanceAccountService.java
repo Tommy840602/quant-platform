@@ -122,7 +122,7 @@ public class BinanceAccountService {
 
     public Map<String, Object> balance() {
         if (!live()) return Map.of("asset", "USDT", "free", 10000.0, "locked", 0.0,
-                "real", false, "totalUsdt", 10000.0, "balances", List.of());
+                "real", false, "env", env, "mainnet", false, "totalUsdt", 10000.0, "balances", List.of());
         try {
             Map<String, Double> px = allPrices();   // SYMBOL -> price（正式網公開行情估值）
             HttpResponse<String> resp = signedAccountGet();
@@ -158,13 +158,17 @@ public class BinanceAccountService {
             final double tot = totalUsdt;
             for (Map<String, Object> m : assets)
                 m.put("weight", tot > 0 ? round(((Number) m.get("valueUsdt")).doubleValue() / tot * 100) : 0.0);
-            return Map.of("asset", "USDT", "free", usdtFree, "locked", usdtLocked, "real", true,
-                    "totalUsdt", round(totalUsdt), "assetCount", assets.size(), "balances", assets);
+            // real = 幣安真的回了餘額；env 決定是真錢(mainnet)還是測試網送的假錢(testnet)，前端標籤看 env
+            Map<String, Object> ok = new LinkedHashMap<>();
+            ok.put("asset", "USDT"); ok.put("free", usdtFree); ok.put("locked", usdtLocked);
+            ok.put("real", true); ok.put("env", env); ok.put("mainnet", "mainnet".equalsIgnoreCase(env));
+            ok.put("totalUsdt", round(totalUsdt)); ok.put("assetCount", assets.size()); ok.put("balances", assets);
+            return ok;
         } catch (Exception e) {
             log.warn("查真實餘額失敗,回退示意: {}", e.getMessage());
             if (isAuthOrIpError(e.getMessage())) alertAuth(e.getMessage());
             return Map.of("asset", "USDT", "free", 10000.0, "locked", 0.0,
-                    "real", false, "totalUsdt", 10000.0, "balances", List.of());
+                    "real", false, "env", env, "mainnet", false, "totalUsdt", 10000.0, "balances", List.of());
         }
     }
 
