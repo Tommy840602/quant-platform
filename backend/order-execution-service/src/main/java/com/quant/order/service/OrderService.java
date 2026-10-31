@@ -215,6 +215,47 @@ public class OrderService {
     }
 
     /**
+     * Outbox 回收（#18）：orders 表就是 outbox（送單前落地、client_order_id 冪等）。
+     * OMS 在「落地 RISK_APPROVED / CREATED → placeOrder 回應」之間崩潰，重啟後那筆單卡著沒人管，
+     * 交易所可能已收到。超過 STALE 秒仍停在 CREATED / RISK_APPROVED 的真單 → 標 UNKNOWN 交給對帳回查：
+     * 交易所有 → 採用其狀態；-2013 不存在 → REJECTED（安全，可重送）。
+     * 啟動 15 秒後跑一次，之後每 60 秒。
+     */
+    static final long OUTBOX_STALE_MS = 30_000;
+
+    @Scheduled(initialDelay = 15_000, fixedDelay = 60_000)
+    public int recoverStuckOrders() {
+        if (gateway.isDryRun()) return 0;
+        List<OrderEntity> stuck;
+        try {
+            stuck = orders.findTop200ByStatusInOrderByIdAsc(List.of(OrderStatus.CREATED.name(), OrderStatus.RISK_APPROVED.name()));
+        } catch (Exception e) { return 0; }
+        long cutoff = System.currentTimeMillis() - OUTBOX_STALE_MS;
+        int n = 0;
+        for (OrderEntity o : stuck) {
+            if (DRYRUN_MARK.equals(o.getExchangeOrderId())) continue;
+            OffsetDateTime t = o.getUpdatedAt() == null ? o.getCreatedAt() : o.getUpdatedAt();
+            if (t != null && t.toInstant().toEpochMilli() > cutoff) continue;   // 可能正在送，別搶
+            if (OrderStatus.CREATED.name().equals(o.getStatus())) {
+                // 還沒過風控就死了 → 一定沒送到交易所，直接作廢（可重送）
+                log.warn("Outbox 回收：{} 停在 CREATED 超過 {}s，未送單，標 REJECTED", o.getClientOrderId(), OUTBOX_STALE_MS / 1000);
+                updateStatus(o.getClientOrderId(), OrderStatus.REJECTED, 0);
+                n++; continue;
+            }
+            log.warn("Outbox 回收：{} 停在 {} 超過 {}s，標 UNKNOWN 回查", o.getClientOrderId(), o.getStatus(), OUTBOX_STALE_MS / 1000);
+            updateStatus(o.getClientOrderId(), OrderStatus.UNKNOWN, 0);
+            OrderSide side = "SELL".equals(o.getSide()) ? OrderSide.SELL : OrderSide.BUY;
+            try {
+                reconcileOne(o.getClientOrderId(), o.getSymbol(), "USDT_M".equalsIgnoreCase(o.getMarket()), side,
+                        o.getAccount() == null ? "main" : o.getAccount());
+            } catch (Exception e) { log.warn("Outbox 回查失敗 {}: {}", o.getClientOrderId(), e.getMessage()); }
+            n++;
+        }
+        if (n > 0) log.warn("Outbox 回收 {} 筆卡住的單", n);
+        return n;
+    }
+
+    /**
      * 真單掛簿後的成交補記：UDS 沒開 / 斷線時，每 30 秒回查 SUBMITTED / PARTIALLY_FILLED 的真單。
      * 以前只掃 UNKNOWN，限價單在簿上成交後 DB 永遠停在 SUBMITTED、持倉與現金帳不動。
      */

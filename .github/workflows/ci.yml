@@ -85,9 +85,10 @@ jobs:
           docker run --rm --network host -v "$PWD/backend/common/src/main/resources/db/migration:/flyway/sql:ro" \
             flyway/flyway:10 -url=jdbc:postgresql://localhost:5432/quant -user=quant -password=quant \
             -baselineOnMigrate=true -baselineVersion=0 migrate
-      - name: 表都在
+      - name: 表都在（order_outbox 應已被 V2 移除）
         run: |
-          for t in kline orders positions order_outbox equity_curve users; do
+          PGPASSWORD=quant psql -h localhost -U quant -d quant -tAc "select to_regclass('order_outbox')" | grep -q "order_outbox" && { echo "::error::order_outbox 應已被 V2 刪除"; exit 1; }
+          for t in kline orders positions equity_curve users; do
             PGPASSWORD=quant psql -h localhost -U quant -d quant -tAc "select to_regclass('$t')" | grep -q "^$t$" || { echo "::error::缺表 $t"; exit 1; }
           done
           PGPASSWORD=quant psql -h localhost -U quant -d quant -tAc "select count(*) from timescaledb_information.hypertables where hypertable_name='kline'" | grep -q '^1$' || { echo "::error::kline 不是 hypertable"; exit 1; }
