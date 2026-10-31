@@ -42,3 +42,10 @@ risk:
   # 這裡預設放很大，只擋離譜的胖手指。
   max-order-qty: ${RISK_MAX_ORDER_QTY:1000000000}
   kill-switch: false
+  # ---- 以下為預設值；風控頁可即時改（存 Redis risk:limits:*）。0 = 關閉該規則 ----
+  max-position-pct: ${RISK_MAX_POSITION_PCT:0.5}            # BUY 後非穩定幣市值 / 權益 ≤ 50%
+  max-daily-loss-pct: ${RISK_MAX_DAILY_LOSS_PCT:0.03}       # 當日權益較日初跌 ≥ 3% 停止買入（台北日）
+  max-daily-orders: ${RISK_MAX_DAILY_ORDERS:50}             # 每日下單次數
+  max-daily-notional-usdt: ${RISK_MAX_DAILY_NOTIONAL:0}     # 每日名目總額
+  max-price-deviation-pct: ${RISK_MAX_PRICE_DEVIATION:0.05} # 限價偏離現價 > 5% 拒（胖手指）
+  fail-closed: ${RISK_FAIL_CLOSED:true}                     # 帳戶權益拿不到 → 拒絕 BUY

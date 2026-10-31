@@ -36,7 +36,11 @@ export const orderApi = {
 }
 export const riskApi = {
   getKill: () => http.get('/risk/kill-switch'),
-  setKill: (on, reason = 'manual') => http.post('/risk/kill-switch', null, { params: { on, reason } })
+  setKill: (on, reason = 'manual') => http.post('/risk/kill-switch', null, { params: { on, reason } }),
+  getLimits: () => http.get('/risk/limits'),
+  setLimits: (body) => http.post('/risk/limits', body),
+  status: (account = 'main') => http.get('/risk/status', { params: { account } }),
+  resetDay: (account = 'main') => http.post('/risk/status/reset', null, { params: { account } })
 }
 export const accountApi = {
   balance: () => http.get('/account/balance'),
