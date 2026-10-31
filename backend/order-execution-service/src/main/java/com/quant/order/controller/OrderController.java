@@ -69,6 +69,12 @@ public class OrderController {
     @GetMapping("/strategy-positions")
     public ApiResponse<List<Map<String, Object>>> strategyPositions() { return orderService.strategyPositions(); }
 
+    /** 某策略的實盤成交明細：GET /api/order/orders/fills?strategyId=ma-fast */
+    @GetMapping("/fills")
+    public ApiResponse<List<Map<String, Object>>> fills(@RequestParam String strategyId) {
+        return orderService.fillsByStrategy(strategyId);
+    }
+
     @GetMapping("/attribution")
     public ApiResponse<List<Map<String, Object>>> attribution() {
         return orderService.attribution();

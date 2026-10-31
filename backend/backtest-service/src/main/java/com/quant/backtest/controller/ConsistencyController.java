@@ -1,79 +1,84 @@
 package com.quant.backtest.controller;
 
 import com.quant.backtest.engine.BacktestEngine;
+import com.quant.backtest.engine.ConsistencyScorer;
+import com.quant.backtest.engine.StrategyFactory;
+import com.quant.backtest.service.BarSource;
 import com.quant.backtest.service.LiveOrderClient;
 import com.quant.common.dto.ApiResponse;
-import com.quant.common.dto.Kline;
-import com.quant.backtest.engine.StrategyFactory;
-import java.util.HashMap;
+import com.quant.common.enums.OrderSide;
+import com.quant.common.util.Intervals;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
 
 /**
  * 回測 vs 實盤一致性報告（見架構文件 §7.4、§15）。
- * 以同一策略介面在歷史序列上跑回測，與實盤已成交訂單比對交易次數與均價，估算落差。
- * 註：此處回測資料為合成序列示意；正式應回放實盤策略當時所見的同一段歷史 K 線。
+ * 取該策略實盤成交的時間窗（前面多留 warmup 根讓指標暖機），抓同一段真實 K 線重跑策略，
+ * 逐筆配對（同方向、±tolerance 根）算一致性；沒有實盤成交就老實回 null，不再回 1.0。
  */
 @RestController
 @RequestMapping("/consistency")
 public class ConsistencyController {
 
     private final LiveOrderClient liveOrders;
-    public ConsistencyController(LiveOrderClient liveOrders) { this.liveOrders = liveOrders; }
+    private final BarSource bars;
+    public ConsistencyController(LiveOrderClient liveOrders, BarSource bars) { this.liveOrders = liveOrders; this.bars = bars; }
 
     @GetMapping
     public ApiResponse<Map<String, Object>> report(
             @RequestParam(defaultValue = "ma-fast") String strategyId,
             @RequestParam(defaultValue = "BTCUSDT") String symbol,
+            @RequestParam(defaultValue = "1m") String interval,
             @RequestParam(defaultValue = "3") int fast,
             @RequestParam(defaultValue = "8") int slow,
             @RequestParam(defaultValue = "ma") String type,
-            @RequestParam(defaultValue = "200") int bars) {
+            @RequestParam(defaultValue = "200") int warmupBars,
+            @RequestParam(defaultValue = "2") int toleranceBars,
+            @RequestParam(required = false) Map<String, String> query) {
 
-        // 1) 回測（合成序列）
-        List<Kline> series = synthetic(symbol, bars);
-        var engine = new BacktestEngine(10000, 0.0004, 0.0002);
+        // 1) 實盤成交
+        List<ConsistencyScorer.LiveFill> live = new ArrayList<>();
+        try {
+            for (Map<String, Object> r : liveOrders.fills(strategyId).data()) {
+                if (!symbol.equalsIgnoreCase(String.valueOf(r.get("symbol")))) continue;
+                live.add(new ConsistencyScorer.LiveFill(((Number) r.get("time")).longValue(),
+                        "SELL".equals(r.get("side")) ? OrderSide.SELL : OrderSide.BUY,
+                        ((Number) r.get("filledQty")).doubleValue(), ((Number) r.get("avgPrice")).doubleValue()));
+            }
+        } catch (Exception e) {
+            return ApiResponse.error(502, "取不到實盤成交（order-execution-service）: " + e.getMessage());
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("strategyId", strategyId); out.put("symbol", symbol.toUpperCase()); out.put("interval", interval);
+        if (live.isEmpty()) {
+            out.put("consistencyScore", null);
+            out.put("liveFills", 0);
+            out.put("note", "此策略在 " + symbol + " 尚無實盤成交，無從比對（以前這裡會回 1.0，是假的）");
+            return ApiResponse.ok(out);
+        }
+
+        // 2) 同一段真實 K 線重跑
+        long step = Intervals.millis(interval);
+        long from = live.get(0).time() - (long) warmupBars * step;
+        long to = live.get(live.size() - 1).time() + step;
+        BarSource.Bars data;
+        try { data = bars.range(symbol.toUpperCase(), interval, from, to); }
+        catch (BarSource.NoDataException e) { return ApiResponse.error(400, e.getMessage()); }
+
         var params = new HashMap<String, Object>();
         params.put("fast", fast); params.put("slow", slow); params.put("qty", 0.001);
-        var result = engine.run(series, StrategyFactory.build(type, strategyId, params));
-        int backtestTrades = result.trades();
+        if (query != null) query.forEach((k, v) -> { if (!Set.of("strategyId","symbol","interval","fast","slow","type","warmupBars","toleranceBars").contains(k)) params.put(k, parse(v)); });
+        var result = new BacktestEngine(10000, 0.0004, 0.0002).run(data.bars(), StrategyFactory.build(type, strategyId, params));
 
-        // 2) 實盤成交（由 order-execution 歸因）
-        long liveFilled = 0;
-        try {
-            var attribution = liveOrders.attribution().data();
-            for (Map<String, Object> row : attribution) {
-                if (strategyId.equals(row.get("strategyId")))
-                    liveFilled = ((Number) row.get("filledOrders")).longValue();
-            }
-        } catch (Exception ignore) {}
-
-        // 3) 一致性指標
-        long diff = Math.abs(backtestTrades - liveFilled);
-        double consistency = backtestTrades == 0 ? (liveFilled == 0 ? 1 : 0)
-                : 1 - Math.min(1.0, (double) diff / Math.max(backtestTrades, 1));
-
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("strategyId", strategyId);
-        out.put("backtestTrades", backtestTrades);
-        out.put("backtestAvgFillPrice", Math.round(result.avgFillPrice() * 100.0) / 100.0);
+        // 3) 逐筆配對
+        out.putAll(ConsistencyScorer.score(live, result.tradeLog(), step, toleranceBars));
+        out.put("window", Map.of("from", from, "to", to, "bars", data.bars().size(), "dataSource", data.dataSource()));
         out.put("backtestMetrics", result.metrics());
-        out.put("liveFilledOrders", liveFilled);
-        out.put("tradeCountDiff", diff);
-        out.put("consistencyScore", Math.round(consistency * 100.0) / 100.0);
-        out.put("note", "回測為合成序列示意；正式一致性需回放實盤同段歷史行情並比對逐筆成交與滑點。");
         return ApiResponse.ok(out);
     }
 
-    private List<Kline> synthetic(String symbol, int n) {
-        List<Kline> bars = new ArrayList<>();
-        double p = 100; long t = System.currentTimeMillis();
-        for (int i = 0; i < n; i++) {
-            p += (Math.random() - 0.48) * 2;
-            double c = Math.round(p * 100.0) / 100.0;
-            bars.add(new Kline(symbol, "1m", t + i * 60000L, c, c, c, c, 1, t + i * 60000L, true));
-        }
-        return bars;
+    private static Object parse(String v) {
+        try { return v.contains(".") ? Double.parseDouble(v) : Integer.parseInt(v); } catch (Exception e) { return v; }
     }
 }

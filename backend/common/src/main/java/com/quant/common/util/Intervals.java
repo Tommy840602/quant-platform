@@ -1,4 +1,4 @@
-package com.quant.marketdata.service;
+package com.quant.common.util;
 
 /** 幣安 interval 字串 ↔ 毫秒。 */
 public final class Intervals {

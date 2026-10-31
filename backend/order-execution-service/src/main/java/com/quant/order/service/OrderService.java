@@ -484,6 +484,22 @@ public class OrderService {
     }
 
 
+    /** 某策略的實盤成交明細（一致性比對用）：時間取 updatedAt（最後一次成交回報）。 */
+    public ApiResponse<List<Map<String, Object>>> fillsByStrategy(String strategyId) {
+        List<Map<String, Object>> rows = new java.util.ArrayList<>();
+        for (OrderEntity o : orders.findTop1000ByStrategyIdAndStatusOrderByIdAsc(strategyId, OrderStatus.FILLED.name())) {
+            Map<String, Object> m = new java.util.LinkedHashMap<>();
+            m.put("clientOrderId", o.getClientOrderId());
+            m.put("symbol", o.getSymbol());
+            m.put("side", o.getSide());
+            m.put("filledQty", o.getFilledQty() == null ? 0 : o.getFilledQty());
+            m.put("avgPrice", o.getAvgPrice() == null ? 0 : o.getAvgPrice());
+            m.put("time", (o.getUpdatedAt() == null ? o.getCreatedAt() : o.getUpdatedAt()).toInstant().toEpochMilli());
+            rows.add(m);
+        }
+        return ApiResponse.ok(rows);
+    }
+
     /** 盈虧/勝率 KPI（見架構文件 §11）：以 FIFO 配對已成交買賣單計算已實現損益。 */
     public ApiResponse<Map<String, Object>> kpi() {
         var filled = orders.findByStatusOrderByIdAsc("FILLED");
