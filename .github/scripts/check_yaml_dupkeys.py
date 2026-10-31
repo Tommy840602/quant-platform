@@ -6,6 +6,8 @@ class Strict(yaml.SafeLoader): pass
 def construct_mapping(loader, node, deep=False):
     seen = set()
     for k, _ in node.value:
+        if k.tag == "tag:yaml.org,2002:merge":   # compose 的 <<: *anchor 合併鍵，略過
+            continue
         key = loader.construct_object(k, deep=deep)
         if key in seen:
             raise yaml.YAMLError(f"duplicate key '{key}' at line {k.start_mark.line + 1}")
