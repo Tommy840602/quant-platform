@@ -21,6 +21,13 @@ jobs:
       - name: Build & test
         working-directory: backend
         run: set -o pipefail; mvn -B clean verify 2>&1 | tee build.log
+      - name: Upload jars for boot smoke
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: service-jars
+          path: backend/*/target/*-1.0.0-SNAPSHOT.jar
+          retention-days: 1
       - name: Surface Maven errors as annotations
         if: failure()
         working-directory: backend
@@ -28,6 +35,31 @@ jobs:
           grep -E '\[ERROR\]|Tests run:.*Failures: [1-9]|Tests run:.*Errors: [1-9]|<<< (FAILURE|ERROR)!' build.log \
             | grep -vE 'Re-run Maven|For more information|\[Help [0-9]\]|^\[ERROR\] *$' \
             | head -60 | sed 's/^/::error::/'
+
+  boot-smoke:
+    name: Boot smoke (每支服務真的起一次)
+    needs: backend
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: timescale/timescaledb:latest-pg16
+        env: { POSTGRES_USER: quant, POSTGRES_PASSWORD: quant, POSTGRES_DB: quant }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U quant -d quant" --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+      - uses: actions/download-artifact@v4
+        with: { name: service-jars, path: backend }
+      - name: init.sql（extension）
+        run: PGPASSWORD=quant psql -h localhost -U quant -d quant -v ON_ERROR_STOP=1 -f infra/init/timescale-init.sql
+      - name: 逐一啟動 9 支服務
+        run: .github/scripts/boot_smoke.sh
 
   schema:
     name: Schema (Flyway on TimescaleDB)
