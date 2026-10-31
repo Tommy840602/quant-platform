@@ -33,6 +33,7 @@ class BinanceOrderGatewayArmTest {
         ReflectionTestUtils.setField(gw, "dryRun", false);
         ReflectionTestUtils.setField(gw, "armTtlHours", 8.0);
         ReflectionTestUtils.setField(gw, "spotUrl", "https://api.binance.com");
+        ReflectionTestUtils.setField(gw, "spotKey", "k"); ReflectionTestUtils.setField(gw, "spotSecret", "s");
     }
 
     @Test
