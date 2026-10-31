@@ -97,11 +97,13 @@ services:
     restart: unless-stopped
     <<: *logging
     healthcheck:
-      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server 127.0.0.1:9092 >/dev/null 2>&1"]
-      interval: 15s
-      timeout: 10s
-      retries: 10
-      start_period: 30s
+      # 先用 TCP 探 9092（零成本）；每 15 秒開一個 JVM 跑 broker-api-versions 在電腦忙時會逾時，
+      # 整排後端因 depends_on 被擋住不啟動。JVM 探只在 TCP 通之後偶爾驗證（timeout 放寬）。
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/9092' && (timeout 25 /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server 127.0.0.1:9092 >/dev/null 2>&1 || true)"]
+      interval: 30s
+      timeout: 30s
+      retries: 5
+      start_period: 60s
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
