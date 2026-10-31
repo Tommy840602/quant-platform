@@ -18,16 +18,17 @@ public class MarketDataService {
     private static final Logger log = LoggerFactory.getLogger(MarketDataService.class);
     private final KafkaTemplate<String, Object> kafka;
     private final StringRedisTemplate redis;
+    private final KlinePersister persister;
 
-    public MarketDataService(KafkaTemplate<String, Object> kafka, StringRedisTemplate redis) {
-        this.kafka = kafka; this.redis = redis;
+    public MarketDataService(KafkaTemplate<String, Object> kafka, StringRedisTemplate redis, KlinePersister persister) {
+        this.kafka = kafka; this.redis = redis; this.persister = persister;
     }
 
     public void onKline(Kline k) {
         // 10 分鐘 TTL：行情串流掛掉時不讓舊價一直留著當參考價（下單閘道拿不到會改打 REST ticker）
         redis.opsForValue().set("price:" + k.symbol(), String.valueOf(k.close()), 10, TimeUnit.MINUTES);
         kafka.send(Topics.MARKET_KLINE, k.symbol(), new MarketDataEvent("kline", k, System.currentTimeMillis()));
-        if (k.closed()) log.debug("persist closed kline {} {} close={}", k.symbol(), k.interval(), k.close());
+        if (k.closed()) persister.enqueue(k);   // 已收盤才落庫（未收盤的每秒變動，只走 Redis/Kafka）
     }
 
     /** 訂單簿深度快照（partial book depth）存 Redis，10 秒過期。 */
