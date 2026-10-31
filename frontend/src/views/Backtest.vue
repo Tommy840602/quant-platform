@@ -6,6 +6,10 @@
           <span>回測（來源：{{ source }}）</span>
           <div>
             <symbol-select v-model="btSymbol" size="small" style="width:130px;margin-right:8px" />
+            <el-select v-model="btInterval" size="small" style="width:90px;margin-right:8px" title="K 線週期">
+              <el-option v-for="i in ['1m','5m','15m','1h','4h','1d']" :key="i" :label="i" :value="i" />
+            </el-select>
+            <el-input-number v-model="btBars" :min="50" :max="1000" :step="100" size="small" style="width:120px;margin-right:8px" title="根數" />
             <el-select v-model="btType" filterable size="small" style="width:130px;margin-right:8px">
               <el-option v-for="t in STRATEGY_TYPES" :key="t.value" :label="t.label" :value="t.value" />
             </el-select>
@@ -45,6 +49,8 @@ const chart = ref(null)
 const loading = ref(false)
 const btType = ref('ma')
 const btSymbol = ref('BTCUSDT')
+const btInterval = ref('1m')   // 後端已支援任意 interval / 根數（PR #13），以前前端寫死 1m × 300
+const btBars = ref(300)
 const optBest = ref('')
 const result = ref(null)
 const source = ref('尚未執行')
@@ -64,7 +70,7 @@ const metricCards = computed(() => {
 
 async function realCloses() {
   try {
-    const ks = (await marketApi.klines(btSymbol.value, '1m', 300)).data || []
+    const ks = (await marketApi.klines(btSymbol.value, btInterval.value, btBars.value)).data || []
     if (ks.length >= 30) return ks.map(k => k.close)
   } catch {}
   return samplePrices()
@@ -85,7 +91,7 @@ function gridFor(type) {
 async function runOptimize() {
   loading.value = true; optBest.value = ''
   try {
-    const resp = await backtestApi.optimize({ type: btType.value, symbol: btSymbol.value, interval: '1m', bars: 300, grid: gridFor(btType.value) })
+    const resp = await backtestApi.optimize({ type: btType.value, symbol: btSymbol.value, interval: btInterval.value, bars: btBars.value, grid: gridFor(btType.value) })
     const d = resp.data; const b = d.best
     optBest.value = `最佳參數（共 ${d.combinations} 組）：` + Object.entries(b).filter(([k]) => !['sharpe','total_return','max_drawdown','trades'].includes(k)).map(([k,v]) => k + '=' + v).join(', ') + ` ｜ Sharpe ${b.sharpe} · 交易 ${b.trades}`
     ElMessage.success('最佳化完成')
@@ -96,7 +102,7 @@ async function runJava() {
   loading.value = true
   try {
     // 後端直接用 market-data 的真實 OHLCV（TimescaleDB），不再由前端抓收盤價送過去
-    const resp = await backtestApi.run({ symbol: btSymbol.value, interval: '1m', bars: 300, fast: 3, slow: 8, type: btType.value })
+    const resp = await backtestApi.run({ symbol: btSymbol.value, interval: btInterval.value, bars: btBars.value, fast: 3, slow: 8, type: btType.value })
     if (resp.code && resp.code !== 0) throw new Error(resp.message)
     result.value = resp.data
     source.value = 'Java 事件驅動 · ' + (resp.data.dataSource || '') + ' · ' + resp.data.bars + ' 根'
