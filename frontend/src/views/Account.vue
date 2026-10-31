@@ -13,6 +13,9 @@
           <el-tag v-if="balance.real && balance.mainnet" type="danger" effect="dark" size="small">真實帳戶 · 正式網（真錢）</el-tag>
           <el-tag v-else-if="balance.real" type="warning" size="small">虛擬帳戶 · 測試網 testnet</el-tag>
           <el-tag v-else type="info" size="small">示意（未設定金鑰）</el-tag>
+          <!-- 下單是否真的送出：來自 /order/config 的 dryRun -->
+          <el-tag v-if="trade.dryRun === true" type="info" size="small" style="margin-left:6px">Dry-Run 乾跑 · 不送單</el-tag>
+          <el-tag v-else-if="trade.dryRun === false" type="danger" effect="dark" size="small" style="margin-left:6px">真實送單中</el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="USDT 可用">{{ fmt(balance.free) }}</el-descriptions-item>
         <el-descriptions-item label="USDT 凍結">{{ fmt(balance.locked) }}</el-descriptions-item>
@@ -86,12 +89,14 @@ import { storeToRefs } from 'pinia'
 import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
 import { useAccountStore } from '@/store/account'
-import { accountApi } from '@/api'
+import { accountApi, tradeConfigApi } from '@/api'
 
 const store = useAccountStore()
 const { balance, positions } = storeToRefs(store)
 const rate = ref(Number(localStorage.getItem('qp-usdtwd')) || 32.5)
 const summarizing = ref(false)
+const trade = ref({})
+async function loadTrade() { try { trade.value = (await tradeConfigApi.get()).data || {} } catch { trade.value = {} } }
 async function pushSummary() {
   summarizing.value = true
   try { await accountApi.summaryNow(); ElMessage.success('已推送摘要到 Slack') }
@@ -128,5 +133,5 @@ async function loadRate() {
 }
 
 watch(assets, async () => { await nextTick(); drawPie() })
-onMounted(() => { store.refresh().catch(() => {}); loadRate() })
+onMounted(() => { store.refresh().catch(() => {}); loadRate(); loadTrade() })
 </script>

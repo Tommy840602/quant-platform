@@ -36,6 +36,11 @@
       <el-header class="header">
         <span class="title">{{ $route.meta.title || '量化交易平台' }}</span>
         <div class="right">
+          <!-- 全站常駐：env + 是否真送單，避免在正式網關了 Dry-Run 卻沒意識到 -->
+          <el-tag v-if="trade.env" :type="trade.mainnet ? (trade.dryRun ? 'warning' : 'danger') : 'info'"
+                  :effect="trade.mainnet && !trade.dryRun ? 'dark' : 'light'" size="small" @click="$router.push('/login')" style="cursor:pointer">
+            {{ trade.mainnet ? '正式網' : '測試網' }} · {{ trade.dryRun ? 'Dry-Run 不送單' : '真實送單' }}
+          </el-tag>
           <el-tag :type="wsConnected ? 'success' : 'danger'" size="small">
             {{ wsConnected ? '行情已連線' : '行情斷線' }}
           </el-tag>
@@ -61,6 +66,7 @@ import { useRouter } from 'vue-router'
 import { useMarketStore } from '@/store/market'
 import { useAuthStore } from '@/store/auth'
 import { useThemeStore } from '@/store/theme'
+import { tradeConfigApi } from '@/api'
 
 const router = useRouter()
 const market = useMarketStore()
@@ -73,7 +79,9 @@ const { connected: wsConnected } = storeToRefs(market)
 const menuBg = computed(() => theme.dark ? '#131722' : '#ffffff')
 const menuText = computed(() => theme.dark ? '#a9b1c2' : '#303133')
 
-onMounted(() => market.connect())
+const trade = ref({})
+async function loadTrade() { try { trade.value = (await tradeConfigApi.get()).data || {} } catch { trade.value = {} } }
+onMounted(() => { market.connect(); if (auth.loggedIn) { loadTrade(); setInterval(loadTrade, 30000) } })
 function doLogout() { auth.logout(); router.push('/signin') }
 </script>
 
