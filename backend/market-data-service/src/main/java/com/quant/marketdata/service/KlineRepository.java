@@ -1,6 +1,7 @@
 package com.quant.marketdata.service;
 
 import com.quant.common.dto.Kline;
+import com.quant.common.util.Intervals;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 

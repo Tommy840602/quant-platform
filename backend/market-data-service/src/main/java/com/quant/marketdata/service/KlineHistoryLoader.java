@@ -1,6 +1,7 @@
 package com.quant.marketdata.service;
 
 import com.quant.common.dto.Kline;
+import com.quant.common.util.Intervals;
 import com.quant.marketdata.config.BinanceProperties;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;

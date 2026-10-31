@@ -12,4 +12,7 @@ import java.util.Map;
 public interface LiveOrderClient {
     @GetMapping("/orders/attribution")
     ApiResponse<List<Map<String, Object>>> attribution();
+
+    @GetMapping("/orders/fills")
+    ApiResponse<List<Map<String, Object>>> fills(@org.springframework.web.bind.annotation.RequestParam("strategyId") String strategyId);
 }

@@ -20,6 +20,11 @@ public class BacktestContext implements StrategyContext {
     private double filledNotional = 0, filledQty = 0;
     private final Map<String, Double> positions = new HashMap<>();
     private final Map<String, Double> prices = new HashMap<>();
+    private final java.util.List<Trade> tradeLog = new java.util.ArrayList<>();
+    private long barTime = 0;
+
+    /** 逐筆成交紀錄（一致性比對用）。 */
+    public record Trade(long time, String symbol, OrderSide side, double qty, double price) {}
 
     public BacktestContext(double initialCash, double fee, double slippage) {
         this(initialCash, fee, slippage, 0.95);
@@ -53,7 +58,11 @@ public class BacktestContext implements StrategyContext {
             positions.put(sym, 0.0);
         }
         trades++; filledQty += qty; filledNotional += qty * fillPx;
+        tradeLog.add(new Trade(barTime, sym, intent.side(), qty, fillPx));
     }
+
+    public void setBarTime(long t) { this.barTime = t; }
+    public java.util.List<Trade> tradeLog() { return tradeLog; }
 
     @Override public double position(String symbol) { return positions.getOrDefault(symbol, 0.0); }
     @Override public double price(String symbol) { return prices.getOrDefault(symbol, 0.0); }

@@ -2,8 +2,10 @@ package com.quant.backtest.controller;
 
 import com.quant.backtest.engine.BacktestEngine;
 import com.quant.backtest.engine.StrategyFactory;
+import com.quant.backtest.service.BarSource;
 import com.quant.common.dto.ApiResponse;
 import com.quant.common.dto.Kline;
+import com.quant.common.util.Intervals;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
@@ -15,6 +17,9 @@ import java.util.*;
 @RequestMapping("/")
 public class OptimizeController {
 
+    private final BarSource source;
+    public OptimizeController(BarSource source) { this.source = source; }
+
     /**
      * 網格搜尋：POST /api/backtest/optimize
      * body: {type, symbol, closes?, grid:{fast:[3,5,10], slow:[8,20,30], period:[...] ...}}
@@ -22,7 +27,10 @@ public class OptimizeController {
      */
     @PostMapping("/optimize")
     public ApiResponse<Map<String, Object>> optimize(@RequestBody OptReq req) {
-        List<Kline> bars = toBars(req.symbol, req.closes);
+        BarSource.Bars data;
+        try { data = toBars(req.symbol, req.interval, req.bars, req.closes); }
+        catch (BarSource.NoDataException e) { return ApiResponse.error(400, e.getMessage()); }
+        List<Kline> bars = data.bars();
         List<Map<String, Object>> results = new ArrayList<>();
 
         List<Map<String, Object>> combos = expandGrid(req.grid);
@@ -40,7 +48,8 @@ public class OptimizeController {
                 ((Number) b.getOrDefault("sharpe", 0)).doubleValue(),
                 ((Number) a.getOrDefault("sharpe", 0)).doubleValue()));
         return ApiResponse.ok(Map.of(
-                "type", req.type, "symbol", req.symbol == null ? "SYNTH" : req.symbol,
+                "type", req.type, "symbol", req.symbol == null ? "BTCUSDT" : req.symbol.toUpperCase(),
+                "dataSource", data.dataSource(), "bars", bars.size(),
                 "combinations", results.size(),
                 "best", results.isEmpty() ? Map.of() : results.get(0),
                 "results", results.subList(0, Math.min(results.size(), 50))));
@@ -53,7 +62,10 @@ public class OptimizeController {
      */
     @PostMapping("/portfolio")
     public ApiResponse<Map<String, Object>> portfolio(@RequestBody PortReq req) {
-        List<Kline> bars = toBars(req.symbol, req.closes);
+        BarSource.Bars data;
+        try { data = toBars(req.symbol, req.interval, req.bars, req.closes); }
+        catch (BarSource.NoDataException e) { return ApiResponse.error(400, e.getMessage()); }
+        List<Kline> bars = data.bars();
         int n = bars.size();
         double[] combined = new double[n];
         double totalW = req.members.stream().mapToDouble(m -> m.weight).sum();
@@ -106,25 +118,15 @@ public class OptimizeController {
         Map<String, Object> m = p == null ? new HashMap<>() : new HashMap<>(p);
         m.putIfAbsent("qty", 0.01); return m;
     }
-    private List<Kline> toBars(String symbol, List<Double> closes) {
-        if (closes == null || closes.size() < 10) closes = synthetic(200);
-        String sym = symbol == null ? "BTCUSDT" : symbol;
-        List<Kline> bars = new ArrayList<>();
-        long t = System.currentTimeMillis();
-        for (int i = 0; i < closes.size(); i++) {
-            double c = closes.get(i);
-            bars.add(new Kline(sym, "1m", t + i * 60000L, c, c, c, c, 1, t + i * 60000L, true));
-        }
-        return bars;
-    }
-    private List<Double> synthetic(int n) {
-        List<Double> out = new ArrayList<>(); double p = 100;
-        for (int i = 0; i < n; i++) { p += (Math.random() - 0.48) * 2; out.add(Math.round(p * 100.0) / 100.0); }
-        return out;
+    private BarSource.Bars toBars(String symbol, String interval, int n, List<Double> closes) {
+        String sym = (symbol == null ? "BTCUSDT" : symbol).toUpperCase();
+        String itv = interval == null || interval.isBlank() ? "1m" : interval;
+        if (closes != null && !closes.isEmpty()) return BarSource.fromCloses(sym, itv, closes, Intervals.millis(itv));
+        return source.latest(sym, itv, n <= 0 ? 300 : Math.min(n, 1000));
     }
     private double round(double d) { return Math.round(d * 10000.0) / 10000.0; }
 
-    public static class OptReq { public String type; public String symbol; public List<Double> closes; public Map<String, List<Object>> grid; }
-    public static class PortReq { public String symbol; public List<Double> closes; public List<PortMember> members = new ArrayList<>(); }
+    public static class OptReq { public String type; public String symbol; public String interval; public int bars; public List<Double> closes; public Map<String, List<Object>> grid; }
+    public static class PortReq { public String symbol; public String interval; public int bars; public List<Double> closes; public List<PortMember> members = new ArrayList<>(); }
     public static class PortMember { public String type; public double weight = 1; public Map<String, Object> params; }
 }

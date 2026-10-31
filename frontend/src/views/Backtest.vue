@@ -85,8 +85,7 @@ function gridFor(type) {
 async function runOptimize() {
   loading.value = true; optBest.value = ''
   try {
-    const closes = await realCloses()
-    const resp = await backtestApi.optimize({ type: btType.value, symbol: btSymbol.value, closes, grid: gridFor(btType.value) })
+    const resp = await backtestApi.optimize({ type: btType.value, symbol: btSymbol.value, interval: '1m', bars: 300, grid: gridFor(btType.value) })
     const d = resp.data; const b = d.best
     optBest.value = `最佳參數（共 ${d.combinations} 組）：` + Object.entries(b).filter(([k]) => !['sharpe','total_return','max_drawdown','trades'].includes(k)).map(([k,v]) => k + '=' + v).join(', ') + ` ｜ Sharpe ${b.sharpe} · 交易 ${b.trades}`
     ElMessage.success('最佳化完成')
@@ -96,12 +95,13 @@ async function runOptimize() {
 async function runJava() {
   loading.value = true
   try {
-    const closes = await realCloses()
-    const resp = await backtestApi.run({ symbol: btSymbol.value, closes, fast: 3, slow: 8, type: btType.value })
+    // 後端直接用 market-data 的真實 OHLCV（TimescaleDB），不再由前端抓收盤價送過去
+    const resp = await backtestApi.run({ symbol: btSymbol.value, interval: '1m', bars: 300, fast: 3, slow: 8, type: btType.value })
+    if (resp.code && resp.code !== 0) throw new Error(resp.message)
     result.value = resp.data
-    source.value = 'Java 事件驅動'
+    source.value = 'Java 事件驅動 · ' + (resp.data.dataSource || '') + ' · ' + resp.data.bars + ' 根'
     draw(); ElMessage.success('Java 回測完成')
-  } catch (e) { ElMessage.error('Java 回測失敗（backtest-service 未啟動？）') }
+  } catch (e) { ElMessage.error('Java 回測失敗：' + (e?.message || 'backtest-service 未啟動？')) }
   finally { loading.value = false }
 }
 

@@ -1,4 +1,4 @@
-package com.quant.marketdata.service;
+package com.quant.common.util;
 
 import org.junit.jupiter.api.Test;
 
