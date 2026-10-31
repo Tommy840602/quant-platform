@@ -139,6 +139,12 @@ public class BinanceOrderGateway {
         return configStatus();
     }
     private volatile boolean armExpiredNotified = false;
+    private org.springframework.context.ApplicationEventPublisher events;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setEventPublisher(org.springframework.context.ApplicationEventPublisher p) { this.events = p; }
+    private void fireModeChanged(String by) {
+        try { if (events != null) events.publishEvent(new TradingModeChangedEvent(isDryRun(), env, by)); } catch (Exception ignore) {}
+    }
 
     @PostConstruct
     void resolveEnv() {
@@ -199,6 +205,7 @@ public class BinanceOrderGateway {
         if (newKey != null && !newKey.isBlank())   { spotKey = newKey.trim(); }
         if (newSecret != null && !newSecret.isBlank()) { spotSecret = newSecret.trim(); }
         log.warn("套用下單設定：env={} dryRun={} spot={} keySet={}", env, dryRun, spotUrl, !spotKey.isBlank());
+        fireModeChanged("applyConfig");
         return configStatus();
     }
 
@@ -252,6 +259,7 @@ public class BinanceOrderGateway {
                 java.time.Instant.ofEpochMilli(until).atZone(java.time.ZoneId.of("Asia/Taipei")).toLocalTime().withNano(0)) : "不限時（自動鎖回已關閉，請自行關閉）";
         log.warn("🔴 真實送單已上膛（{}）｜ env={} ｜ {}", by, env, ttl);
         alertReal(":rotating_light: *正式網真實送單已開啟*（" + by + "）｜ " + ttl + " ｜ 手動下單與策略機器人都會用真錢成交");
+        fireModeChanged("arm");
         return configStatus();
     }
 

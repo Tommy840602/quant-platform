@@ -72,12 +72,15 @@ public class BinanceWsApiUserDataStream extends TextWebSocketHandler {
         this.kafka = kafka; this.orders = orders; this.gateway = gateway; this.registry = registry; this.orderService = orderService;
     }
 
+    private final java.util.concurrent.atomic.AtomicBoolean started = new java.util.concurrent.atomic.AtomicBoolean(false);
+
     @PostConstruct
     public void init() {
-        if (!enabled || gateway.isDryRun()) {
-            log.info("現貨 WS API UDS 未啟用（enabled={} dry-run={}）；成交以下單回應(RESULT)解析 + 對帳排程補記", enabled, gateway.isDryRun());
+        if (!enabled) {
+            log.info("現貨 WS API UDS 未啟用（BINANCE_UDS_ENABLED=false）；成交以下單回應(RESULT)解析 + 對帳排程補記");
             return;
         }
+        // 金鑰在開機就驗，不管現在是不是 Dry-Run：設定錯要立刻知道，不要等上膛那一刻才炸
         if (apiKey.isBlank() || keyPath.isBlank())
             throw new IllegalStateException("BINANCE_UDS_ENABLED=true 但缺 Ed25519 金鑰（BINANCE_ED25519_API_KEY / BINANCE_ED25519_KEY_PATH）。"
                     + "拒絕以「成交回報靜默遺失」的狀態啟動；請補金鑰（docker: 把 pem 放 ./secrets/ 並設 KEY_PATH=/run/secrets/<檔名>）或關閉 UDS");
@@ -86,10 +89,26 @@ public class BinanceWsApiUserDataStream extends TextWebSocketHandler {
         } catch (Exception e) {
             throw new IllegalStateException("Ed25519 私鑰讀取失敗 " + keyPath + ": " + e.getMessage(), e);
         }
+        if (gateway.isDryRun()) {
+            log.info("現貨 WS API UDS 已設定但目前 Dry-Run，先不連；關閉 Dry-Run / 上膛時自動啟動");
+            return;
+        }
+        startIfNeeded("開機");
+    }
+
+    /** 上膛 / 關 Dry-Run 時由 gateway 事件觸發；已啟動就不重複。 */
+    @org.springframework.context.event.EventListener
+    public void onModeChanged(TradingModeChangedEvent e) {
+        if (!enabled || privateKey == null || e.effectiveDryRun()) return;
+        startIfNeeded(e.by());
+    }
+
+    public synchronized void startIfNeeded(String by) {
+        if (!started.compareAndSet(false, true)) return;
         if ("mainnet".equalsIgnoreCase(gateway.currentEnv())) wsApiUrl = wsApiMainnetUrl;
         registry.expect(UdsRegistry.SPOT);
         scheduler.execute(this::connect);
-        log.info("現貨 WS API UDS 啟動中… env={} url={}", gateway.currentEnv(), wsApiUrl);
+        log.info("現貨 WS API UDS 啟動中（{}）… env={} url={}", by, gateway.currentEnv(), wsApiUrl);
     }
 
     private void connect() {

@@ -54,7 +54,8 @@ export const tradeConfigApi = {
   get: () => http.get('/order/config'),
   set: (body) => http.post('/order/config', body),
   arm: () => http.post('/order/config/arm'),
-  setArmTtl: (hours) => http.post('/order/config/arm-ttl', { hours })
+  setArmTtl: (hours) => http.post('/order/config/arm-ttl', { hours }),
+  uds: () => http.get('/order/config/uds')
 }
 // Java 事件驅動回測（走 gateway）
 export const backtestApi = {

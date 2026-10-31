@@ -41,6 +41,10 @@
                   :effect="trade.mainnet && !effDry ? 'dark' : 'light'" size="small" @click="$router.push('/login')" style="cursor:pointer">
             {{ trade.mainnet ? '正式網' : '測試網' }} · {{ effDry ? 'Dry-Run 不送單' : '真實送單' }}<span v-if="trade.mainnet && !effDry && trade.armRemainingSec > 0"> · 剩 {{ fmtRemain(trade.armRemainingSec) }}</span>
           </el-tag>
+          <!-- 成交回報：UDS 連著 = 即時；設定了但沒連上 = 退回 30 秒輪詢 -->
+          <el-tag v-if="udsExpected" :type="udsConnected ? 'success' : 'warning'" size="small" :title="udsTitle">
+            成交回報 {{ udsConnected ? '即時' : '輪詢中' }}
+          </el-tag>
           <el-tag :type="wsConnected ? 'success' : 'danger'" size="small">
             {{ wsConnected ? '行情已連線' : '行情斷線' }}
           </el-tag>
@@ -67,6 +71,7 @@ import { useMarketStore } from '@/store/market'
 import { useAuthStore } from '@/store/auth'
 import { useThemeStore } from '@/store/theme'
 import { useTradeStore } from '@/store/trade'
+import { tradeConfigApi } from '@/api'
 import { watch } from 'vue'
 
 const router = useRouter()
@@ -86,7 +91,12 @@ const { cfg: trade } = storeToRefs(tradeStore)
 const effDry = computed(() => trade.value.effectiveDryRun ?? trade.value.dryRun)
 const fmtRemain = s => s >= 3600 ? Math.floor(s / 3600) + 'h' + String(Math.floor(s % 3600 / 60)).padStart(2, '0') + 'm' : Math.floor(s / 60) + 'm'
 // 開頁、換頁、每 30 秒都重讀；連線設定頁存檔會直接寫進同一個 store
-onMounted(() => { market.connect(); if (auth.loggedIn) { tradeStore.load(); setInterval(() => auth.loggedIn && tradeStore.load(), 30000) } })
+const uds = ref({})
+async function loadUds() { try { uds.value = (await tradeConfigApi.uds()).data || {} } catch { uds.value = {} } }
+const udsExpected = computed(() => Object.values(uds.value).some(m => m?.expected))
+const udsConnected = computed(() => Object.entries(uds.value).filter(([, m]) => m?.expected).every(([, m]) => m?.connected))
+const udsTitle = computed(() => Object.entries(uds.value).map(([k, m]) => `${k}: ${m?.connected ? '已連線' : (m?.expected ? '未連線 ' + (m?.lastError || '') : '未啟用')}`).join('\n'))
+onMounted(() => { market.connect(); if (auth.loggedIn) { tradeStore.load(); loadUds(); setInterval(() => { if (auth.loggedIn) { tradeStore.load(); loadUds() } }, 30000) } })
 watch(() => router.currentRoute.value.path, () => { if (auth.loggedIn) tradeStore.load() })
 function doLogout() { auth.logout(); router.push('/signin') }
 </script>

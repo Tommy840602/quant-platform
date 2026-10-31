@@ -65,20 +65,37 @@ public class BinanceFuturesUserDataStream extends TextWebSocketHandler {
         this.kafka = kafka; this.orders = orders; this.gateway = gateway; this.registry = registry; this.orderService = orderService;
     }
 
+    private final java.util.concurrent.atomic.AtomicBoolean started = new java.util.concurrent.atomic.AtomicBoolean(false);
+
     @PostConstruct
     public void init() {
-        if (!enabled || gateway.isDryRun()) {
-            log.info("合約 UDS 未啟用（enabled={} dry-run={}）；合約成交以下單回應(RESULT)解析 + 對帳排程補記", enabled, gateway.isDryRun());
+        if (!enabled) {
+            log.info("合約 UDS 未啟用（BINANCE_FUTURES_UDS_ENABLED=false）；合約成交以下單回應(RESULT)解析 + 對帳排程補記");
             return;
         }
         if (gateway.futuresApiKey().isBlank())
             throw new IllegalStateException("BINANCE_FUTURES_UDS_ENABLED=true 但未設定合約 API 金鑰（BINANCE_FUTURES_API_KEY"
                     + ("mainnet".equalsIgnoreCase(gateway.currentEnv()) ? " / BINANCE_MAINNET_FUTURES_API_KEY" : "")
                     + "）。拒絕以「成交回報靜默遺失」的狀態啟動；請補金鑰或關閉 UDS");
+        if (gateway.isDryRun()) {
+            log.info("合約 UDS 已設定但目前 Dry-Run，先不連；關閉 Dry-Run / 上膛時自動啟動");
+            return;
+        }
+        startIfNeeded("開機");
+    }
+
+    @org.springframework.context.event.EventListener
+    public void onModeChanged(TradingModeChangedEvent e) {
+        if (!enabled || e.effectiveDryRun() || gateway.futuresApiKey().isBlank()) return;
+        startIfNeeded(e.by());
+    }
+
+    public synchronized void startIfNeeded(String by) {
+        if (!started.compareAndSet(false, true)) return;
         registry.expect(UdsRegistry.FUTURES);
         scheduler.execute(this::start);
         scheduler.scheduleAtFixedRate(this::keepAlive, 30, 30, TimeUnit.MINUTES);
-        log.info("合約 UDS 啟動中… env={} ws={}", gateway.currentEnv(), gateway.futuresWsUrl());
+        log.info("合約 UDS 啟動中（{}）… env={} ws={}", by, gateway.currentEnv(), gateway.futuresWsUrl());
     }
 
     private void start() {
