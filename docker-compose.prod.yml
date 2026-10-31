@@ -9,6 +9,8 @@ x-logging: &logging
     options: { max-size: "10m", max-file: "3" }
 
 # 後端微服務共用：等基礎設施 healthy 才啟動；JVM + Nacos 註冊約 60-90 秒，start_period 內失敗不算
+# 後端探針是 liveness（actuator 有回應 200/503 都算活）：Spring health 任一元件 DOWN 就回 503，
+# Nacos/Kafka 抖一下整排 unhealthy 沒意義；真正的元件狀態看 /actuator/health 內容
 x-backend-deps: &backend-deps
   depends_on:
     nacos:       { condition: service_healthy }
@@ -168,7 +170,7 @@ services:
     environment: { <<: *backend-env, SERVICE: api-gateway }
     <<: [*logging, *backend-deps]
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/actuator/health | grep -q '\"UP\"'"]
+      test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/actuator/health); [ \"$$code\" = 200 ] || [ \"$$code\" = 503 ]"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -181,7 +183,7 @@ services:
     environment: { <<: *backend-env, SERVICE: market-data-service }
     <<: [*logging, *backend-deps]
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8082/api/market/actuator/health | grep -q '\"UP\"'"]
+      test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8082/api/market/actuator/health); [ \"$$code\" = 200 ] || [ \"$$code\" = 503 ]"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -194,7 +196,7 @@ services:
     environment: { <<: *backend-env, SERVICE: strategy-service }
     <<: [*logging, *backend-deps]
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8083/api/strategy/actuator/health | grep -q '\"UP\"'"]
+      test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8083/api/strategy/actuator/health); [ \"$$code\" = 200 ] || [ \"$$code\" = 503 ]"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -209,7 +211,7 @@ services:
       - ./secrets:/run/secrets:ro     # Ed25519 pem 放這裡（git 已忽略 *.pem）
     <<: [*logging, *backend-deps]
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8084/api/order/actuator/health | grep -q '\"UP\"'"]
+      test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8084/api/order/actuator/health); [ \"$$code\" = 200 ] || [ \"$$code\" = 503 ]"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -222,7 +224,7 @@ services:
     environment: { <<: *backend-env, SERVICE: risk-service }
     <<: [*logging, *backend-deps]
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8085/api/risk/actuator/health | grep -q '\"UP\"'"]
+      test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8085/api/risk/actuator/health); [ \"$$code\" = 200 ] || [ \"$$code\" = 503 ]"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -235,7 +237,7 @@ services:
     environment: { <<: *backend-env, SERVICE: account-service }
     <<: [*logging, *backend-deps]
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8096/api/account/actuator/health | grep -q '\"UP\"'"]
+      test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8096/api/account/actuator/health); [ \"$$code\" = 200 ] || [ \"$$code\" = 503 ]"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -248,7 +250,7 @@ services:
     environment: { <<: *backend-env, SERVICE: auth-service }
     <<: [*logging, *backend-deps]
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8081/api/auth/actuator/health | grep -q '\"UP\"'"]
+      test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/api/auth/actuator/health); [ \"$$code\" = 200 ] || [ \"$$code\" = 503 ]"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -261,7 +263,7 @@ services:
     environment: { <<: *backend-env, SERVICE: backtest-service }
     <<: [*logging, *backend-deps]
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8087/api/backtest/actuator/health | grep -q '\"UP\"'"]
+      test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8087/api/backtest/actuator/health); [ \"$$code\" = 200 ] || [ \"$$code\" = 503 ]"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -274,7 +276,7 @@ services:
     environment: { <<: *backend-env, SERVICE: notification-service }
     <<: [*logging, *backend-deps]
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8098/api/notify/actuator/health | grep -q '\"UP\"'"]
+      test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8098/api/notify/actuator/health); [ \"$$code\" = 200 ] || [ \"$$code\" = 503 ]"]
       interval: 15s
       timeout: 5s
       retries: 5
