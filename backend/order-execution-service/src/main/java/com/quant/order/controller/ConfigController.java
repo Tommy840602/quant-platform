@@ -25,6 +25,14 @@ public class ConfigController {
         return ApiResponse.ok(gateway.arm("手動延長"));
     }
 
+    /** 真實送單時效（小時）：POST /api/order/config/arm-ttl {hours: 8}；0 = 關閉自動鎖回 */
+    @PostMapping("/arm-ttl")
+    public ApiResponse<Map<String, Object>> armTtl(@RequestBody Map<String, Object> body) {
+        try { return ApiResponse.ok(gateway.setArmTtlHours(Double.parseDouble(String.valueOf(body.getOrDefault("hours", 8))))); }
+        catch (NumberFormatException e) { return ApiResponse.error(400, "hours 必須是數字"); }
+        catch (IllegalStateException e) { return ApiResponse.error(503, e.getMessage()); }
+    }
+
     /** User Data Stream 連線狀態：GET /api/order/config/uds（expected=應連、connected=真的連著）。 */
     @GetMapping("/uds")
     public ApiResponse<Map<String, Object>> uds() { return ApiResponse.ok(uds.status()); }
