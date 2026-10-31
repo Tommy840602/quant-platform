@@ -9,7 +9,10 @@
       </template>
       <el-descriptions :column="4" border v-if="balance">
         <el-descriptions-item label="狀態">
-          <el-tag :type="balance.real ? 'success' : 'info'" size="small">{{ balance.real ? '真實帳戶' : '示意' }}</el-tag>
+          <!-- 看 env 不看有沒有金鑰：testnet 的餘額是幣安送的測試幣，不是真錢 -->
+          <el-tag v-if="balance.real && balance.mainnet" type="danger" effect="dark" size="small">真實帳戶 · 正式網（真錢）</el-tag>
+          <el-tag v-else-if="balance.real" type="warning" size="small">虛擬帳戶 · 測試網 testnet</el-tag>
+          <el-tag v-else type="info" size="small">示意（未設定金鑰）</el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="USDT 可用">{{ fmt(balance.free) }}</el-descriptions-item>
         <el-descriptions-item label="USDT 凍結">{{ fmt(balance.locked) }}</el-descriptions-item>
