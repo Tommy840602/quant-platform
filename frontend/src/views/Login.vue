@@ -24,8 +24,12 @@
                      style="--el-switch-on-color:#26a69a;--el-switch-off-color:#ef5350" />
         </el-form-item>
 
-        <el-alert v-if="cfg.env==='mainnet' && !cfg.dryRun" type="error" :closable="false" show-icon
-          title="⚠️ 正式網 + 真實送單：將用真錢下單，請再三確認" style="margin-bottom:12px" />
+        <el-alert v-if="cfg.env==='mainnet' && !cfg.dryRun" type="error" :closable="false" show-icon style="margin-bottom:12px">
+          <template #title>⚠️ 正式網 + 真實送單：將用真錢下單，請再三確認</template>
+          套用後會「上膛」{{ status?.ord?.armTtlHours ?? 8 }} 小時，到期自動鎖回 Dry-Run 並 Slack 通知。
+          <span v-if="status?.ord?.armed">目前剩 {{ Math.floor((status.ord.armRemainingSec || 0) / 60) }} 分鐘
+            <el-button link type="primary" size="small" @click="extendArm">延長</el-button></span>
+        </el-alert>
         <el-alert v-else-if="cfg.env==='mainnet'" type="warning" :closable="false" show-icon
           title="正式網：看真實帳戶餘額；下單為乾跑，不會動真錢" style="margin-bottom:12px" />
         <el-alert v-else type="success" :closable="false" show-icon
@@ -37,6 +41,7 @@
       <div v-if="status" class="status">
         目前後端：帳戶 env=<b>{{ status.acc?.env }}</b> keySet={{ status.acc?.keySet }} ｜
         下單 env=<b>{{ status.ord?.env }}</b> dryRun={{ status.ord?.dryRun }}
+        <span v-if="status.ord?.mainnet">｜ 真錢送單 {{ status.ord?.armed ? '已上膛，剩 ' + Math.floor((status.ord.armRemainingSec || 0) / 60) + ' 分鐘' : '鎖定中' }}</span>
       </div>
       <p class="hint">API 金鑰只送到後端記憶體、不寫入瀏覽器。切正式網請先用「只讀」權限金鑰確認餘額。</p>
     </el-card>
@@ -67,6 +72,11 @@ async function loadStatus() {
     if (acc.data?.env) cfg.env = acc.data.env
     if (typeof ord.data?.dryRun === 'boolean') cfg.dryRun = ord.data.dryRun
   } catch { status.value = null }
+}
+
+async function extendArm() {
+  try { const r = await tradeConfigApi.arm(); if (r.code && r.code !== 0) throw new Error(r.message); status.value = { ...(status.value || {}), ord: r.data }; ElMessage.success('已延長') }
+  catch (e) { ElMessage.error('延長失敗：' + (e?.message || '')) }
 }
 
 async function apply() {

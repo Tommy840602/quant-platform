@@ -26,6 +26,8 @@ public class RiskLimits {
     @Value("${risk.max-daily-notional-usdt:0}") private double maxDailyNotional;   // 每日名目總額（0=不限）
     @Value("${risk.max-price-deviation-pct:0.05}") private double maxPriceDeviationPct;   // 限價偏離現價 > 5% 視為胖手指
     @Value("${risk.fail-closed:true}") private boolean failClosed;                 // 帳戶資料拿不到 → BUY 一律拒
+    @Value("${risk.mainnet-default-daily-notional-usdt:1000}") private double mainnetDefaultDailyNotional;
+    @Value("${binance.env:testnet}") private String env;
 
     private final StringRedisTemplate redis;
     public RiskLimits(StringRedisTemplate redis) { this.redis = redis; }
@@ -43,7 +45,11 @@ public class RiskLimits {
     public double maxPositionPct()       { return d("maxPositionPct", maxPositionPct); }
     public double maxDailyLossPct()      { return d("maxDailyLossPct", maxDailyLossPct); }
     public int    maxDailyOrders()       { return (int) d("maxDailyOrders", maxDailyOrders); }
-    public double maxDailyNotional()     { return d("maxDailyNotional", maxDailyNotional); }
+    /** 正式網沒設每日名目上限時不給「不限」，預設 1000 USDT（測試網仍 0 = 不限）。 */
+    public double maxDailyNotional()     {
+        double def = maxDailyNotional > 0 ? maxDailyNotional : ("mainnet".equalsIgnoreCase(env) ? mainnetDefaultDailyNotional : 0);
+        return d("maxDailyNotional", def);
+    }
     public double maxPriceDeviationPct() { return d("maxPriceDeviationPct", maxPriceDeviationPct); }
     public boolean failClosed()          { return b("failClosed", failClosed); }
 

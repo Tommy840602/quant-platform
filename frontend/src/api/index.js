@@ -52,7 +52,8 @@ export const accountApi = {
 // 下單連線設定（env/dry-run/金鑰）
 export const tradeConfigApi = {
   get: () => http.get('/order/config'),
-  set: (body) => http.post('/order/config', body)
+  set: (body) => http.post('/order/config', body),
+  arm: () => http.post('/order/config/arm')
 }
 // Java 事件驅動回測（走 gateway）
 export const backtestApi = {

@@ -14,8 +14,8 @@
           <el-tag v-else-if="balance.real" type="warning" size="small">虛擬帳戶 · 測試網 testnet</el-tag>
           <el-tag v-else type="info" size="small">示意（未設定金鑰）</el-tag>
           <!-- 下單是否真的送出：來自 /order/config 的 dryRun -->
-          <el-tag v-if="trade.dryRun === true" type="info" size="small" style="margin-left:6px">Dry-Run 乾跑 · 不送單</el-tag>
-          <el-tag v-else-if="trade.dryRun === false" type="danger" effect="dark" size="small" style="margin-left:6px">真實送單中</el-tag>
+          <el-tag v-if="(trade.effectiveDryRun ?? trade.dryRun) === true" type="info" size="small" style="margin-left:6px">Dry-Run 乾跑 · 不送單</el-tag>
+          <el-tag v-else-if="(trade.effectiveDryRun ?? trade.dryRun) === false" type="danger" effect="dark" size="small" style="margin-left:6px">真實送單中</el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="USDT 可用">{{ fmt(balance.free) }}</el-descriptions-item>
         <el-descriptions-item label="USDT 凍結">{{ fmt(balance.locked) }}</el-descriptions-item>

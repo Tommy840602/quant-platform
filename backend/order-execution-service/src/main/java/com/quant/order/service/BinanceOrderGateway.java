@@ -115,6 +115,11 @@ public class BinanceOrderGateway {
 
     private String testnetSpotUrl, testnetFutUrl, testnetFutWsUrl;   // 保留測試網位址以便切回
 
+    // ── 真錢安全鎖（上膛制）：正式網的真實送單必須「上膛」且有時效，到期自動鎖回 Dry-Run ──
+    @Value("${trading.real-arm-ttl-hours:8}") private double armTtlHours;   // 0 = 不限時（不建議）
+    private static final String ARM_KEY = "trading:armed-until";
+    private volatile boolean armExpiredNotified = false;
+
     @PostConstruct
     void resolveEnv() {
         testnetSpotUrl = spotUrl;  testnetFutUrl = futUrl;  testnetFutWsUrl = futWsUrl;   // 先記住 testnet 位址
@@ -126,6 +131,10 @@ public class BinanceOrderGateway {
             if (!futMainnetSecret.isBlank())  futSecret = futMainnetSecret;
             log.warn("⚠️ BINANCE_ENV=mainnet ｜【正式網真錢下單】spot={} fut={} ｜ dry-run={} ｜ 唯有 dry-run=false 才會真送單",
                     spotUrl, futUrl, dryRun);
+            if (!dryRun) {
+                // 開機就是真錢送單：上膛（有時效）並大聲告警，不讓它靜靜地跑
+                arm("開機設定 TRADING_DRY_RUN=false");
+            }
         } else {
             log.info("BINANCE_ENV=testnet ｜ 測試網下單 spot={}（安全）", spotUrl);
         }
@@ -161,7 +170,12 @@ public class BinanceOrderGateway {
             futWsUrl = m ? futMainnetWsUrl : testnetFutWsUrl;
             syncClock();
         }
-        if (newDryRun != null) dryRun = newDryRun;
+        if (newDryRun != null) {
+            boolean was = dryRun;
+            dryRun = newDryRun;
+            if (!dryRun && isMainnet()) arm("連線設定頁開啟真實送單");
+            else if (dryRun && !was) { disarm(); alertReal(":lock: 已切回 Dry-Run，停止真實送單"); }
+        }
         if (newKey != null && !newKey.isBlank())   { spotKey = newKey.trim(); }
         if (newSecret != null && !newSecret.isBlank()) { spotSecret = newSecret.trim(); }
         log.warn("套用下單設定：env={} dryRun={} spot={} keySet={}", env, dryRun, spotUrl, !spotKey.isBlank());
@@ -175,11 +189,67 @@ public class BinanceOrderGateway {
         m.put("mainnet", "mainnet".equalsIgnoreCase(env));
         m.put("clockOffsetMs", clock.offset(spotUrl));
         m.put("clockSyncedAt", clock.syncedAt(spotUrl));
+        // 真錢安全鎖狀態：effectiveDryRun 才是「現在會不會真送單」
+        long until = armedUntil();
+        m.put("effectiveDryRun", isDryRun());
+        m.put("armed", isMainnet() && !dryRun && armed());
+        m.put("armedUntil", until);
+        m.put("armRemainingSec", until > 0 ? Math.max(0, (until - System.currentTimeMillis()) / 1000) : 0);
+        m.put("armTtlHours", armTtlHours);
         return m;
     }
 
-    /** 唯一的 dry-run 真相來源：OrderService / UDS 必須讀這裡，不可各自持有 @Value 副本。 */
-    public boolean isDryRun() { return dryRun; }
+    /**
+     * 唯一的 dry-run 真相來源：OrderService / UDS 必須讀這裡，不可各自持有 @Value 副本。
+     * 正式網：dryRun=false 還要「上膛未過期」才算真的會送單；過期即視為 Dry-Run（鎖回）。
+     */
+    public boolean isDryRun() {
+        if (dryRun) return true;
+        if (!isMainnet()) return false;
+        return !armed();
+    }
+
+    public boolean isMainnet() { return "mainnet".equalsIgnoreCase(env); }
+
+    // ── 上膛 / 卸膛 ──
+    private long armedUntil() {
+        try { String v = redis.opsForValue().get(ARM_KEY); return v == null ? 0 : Long.parseLong(v); }
+        catch (Exception e) { return 0; }   // Redis 讀不到 = 未上膛 = 不送真單（fail-closed）
+    }
+    private boolean armed() { return armedUntil() > System.currentTimeMillis(); }
+
+    /** 上膛：寫入到期時間（TTL 小時；0 = 不限時，仍記錄以便顯示）。 */
+    public synchronized Map<String, Object> arm(String by) {
+        long now = System.currentTimeMillis();
+        long until = armTtlHours > 0 ? now + (long) (armTtlHours * 3600_000) : Long.MAX_VALUE / 2;
+        try { redis.opsForValue().set(ARM_KEY, String.valueOf(until)); }
+        catch (Exception e) { log.error("上膛寫入 Redis 失敗，真實送單維持鎖定: {}", e.getMessage()); }
+        armExpiredNotified = false;
+        String ttl = armTtlHours > 0 ? String.format("%.1f 小時後（%s）自動鎖回 Dry-Run", armTtlHours,
+                java.time.Instant.ofEpochMilli(until).atZone(java.time.ZoneId.of("Asia/Taipei")).toLocalTime().withNano(0)) : "不限時（請自行關閉）";
+        log.warn("🔴 真實送單已上膛（{}）｜ env={} ｜ {}", by, env, ttl);
+        alertReal(":rotating_light: *正式網真實送單已開啟*（" + by + "）｜ " + ttl + " ｜ 手動下單與策略機器人都會用真錢成交");
+        return configStatus();
+    }
+
+    public synchronized void disarm() {
+        try { redis.delete(ARM_KEY); } catch (Exception ignore) {}
+    }
+
+    /** 每 30 秒：上膛過期 → 硬切回 dryRun=true 並通知（只通知一次）。 */
+    @org.springframework.scheduling.annotation.Scheduled(initialDelay = 30_000, fixedDelay = 30_000)
+    public void checkArmExpiry() {
+        if (dryRun || !isMainnet() || armed() || armExpiredNotified) return;
+        armExpiredNotified = true;
+        dryRun = true;
+        disarm();
+        log.warn("⏱ 真實送單時效到期，已自動鎖回 Dry-Run");
+        alertReal(":lock: 真實送單時效到期（" + armTtlHours + " 小時），已自動鎖回 Dry-Run；要繼續請到連線設定頁重新開啟");
+    }
+
+    private void alertReal(String text) {
+        try { notifyClient.send(Map.of("text", text)); } catch (Exception e) { log.warn("真錢告警推送失敗: {}", e.getMessage()); }
+    }
 
     /** 給合約 UDS 用：依目前 env 解析後的合約 REST / WS 位址與 API key（listenKey 只需 key，不需簽名）。 */
     public String futuresRestUrl() { return futUrl; }
@@ -204,7 +274,7 @@ public class BinanceOrderGateway {
 
     // ---------- 下單 ----------
     public String placeOrder(OrderIntent intent) {
-        if (dryRun) {
+        if (isDryRun()) {
             log.info("[DRY-RUN] {} place {} {} {} qty={}", intent.isFutures() ? "合約" : "現貨",
                     intent.symbol(), intent.side(), intent.type(), intent.quantity());
             return "DRYRUN-" + intent.clientOrderId();
@@ -246,7 +316,7 @@ public class BinanceOrderGateway {
 
     // ---------- 查單 ----------
     public String queryOrder(String symbol, String clientOrderId, boolean futures) {
-        if (dryRun) return "{\"symbol\":\"" + symbol + "\",\"status\":\"FILLED\",\"dryRun\":true}";
+        if (isDryRun()) return "{\"symbol\":\"" + symbol + "\",\"status\":\"FILLED\",\"dryRun\":true}";
         Map<String, String> p = new LinkedHashMap<>();
         p.put("symbol", symbol);
         p.put("origClientOrderId", clientOrderId);
@@ -257,7 +327,7 @@ public class BinanceOrderGateway {
 
     // ---------- 撤單 ----------
     public String cancelOrder(String symbol, String clientOrderId, boolean futures) {
-        if (dryRun) return "{\"symbol\":\"" + symbol + "\",\"status\":\"CANCELED\",\"dryRun\":true}";
+        if (isDryRun()) return "{\"symbol\":\"" + symbol + "\",\"status\":\"CANCELED\",\"dryRun\":true}";
         Map<String, String> p = new LinkedHashMap<>();
         p.put("symbol", symbol);
         p.put("origClientOrderId", clientOrderId);
@@ -268,7 +338,7 @@ public class BinanceOrderGateway {
 
     // ---------- 設定合約槓桿 ----------
     public String setLeverage(String symbol, int leverage) {
-        if (dryRun) return "{\"symbol\":\"" + symbol + "\",\"leverage\":" + leverage + ",\"dryRun\":true}";
+        if (isDryRun()) return "{\"symbol\":\"" + symbol + "\",\"leverage\":" + leverage + ",\"dryRun\":true}";
         Map<String, String> p = new LinkedHashMap<>();
         p.put("symbol", symbol);
         p.put("leverage", String.valueOf(leverage));
@@ -279,7 +349,7 @@ public class BinanceOrderGateway {
     // ---------- OCO（One-Cancels-Other，現貨）----------
     public String placeOco(String symbol, String side, double quantity,
                            double price, double stopPrice, double stopLimitPrice, String listClientOrderId) {
-        if (dryRun) return "{\"symbol\":\"" + symbol + "\",\"listClientOrderId\":\"" + listClientOrderId
+        if (isDryRun()) return "{\"symbol\":\"" + symbol + "\",\"listClientOrderId\":\"" + listClientOrderId
                 + "\",\"listOrderStatus\":\"EXECUTING\",\"dryRun\":true}";
         double[] f = filters.filters(spotUrl, symbol, false);
         if (f == null || (f[0] == 0 && f[1] == 0 && f[3] == 0))
