@@ -80,6 +80,28 @@
       </el-form>
     </el-card>
 
+    <el-card header="真錢安全鎖（正式網真實送單時效）" style="margin-top:16px">
+      <el-form label-width="180px" style="max-width:560px">
+        <el-form-item label="目前狀態">
+          <el-tag v-if="!trade.mainnet" type="info" size="small">測試網，不適用</el-tag>
+          <el-tag v-else-if="trade.effectiveDryRun" type="info" size="small">Dry-Run，未上膛</el-tag>
+          <el-tag v-else-if="trade.armUnlimited" type="danger" effect="dark" size="small">真實送單中 · 不限時</el-tag>
+          <el-tag v-else type="danger" effect="dark" size="small">真實送單中 · 剩 {{ Math.floor((trade.armRemainingSec || 0) / 60) }} 分鐘</el-tag>
+        </el-form-item>
+        <el-form-item label="自動鎖回 Dry-Run">
+          <el-switch v-model="armTtlOn" />
+          <template v-if="armTtlOn">
+            <el-input-number v-model="armTtlHours" :min="0.5" :max="720" :step="1" style="margin-left:12px" /> <span class="hint">小時後自動鎖回並 Slack 通知</span>
+          </template>
+          <span v-else class="hint">關閉 = 開了真實送單就一直送，直到你手動關</span>
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" :loading="savingArm" @click="saveArmTtl">儲存時效</el-button>
+          <el-button v-if="trade.mainnet && !trade.effectiveDryRun && !trade.armUnlimited" @click="extendArm">延長（重新計時）</el-button>
+        </el-form-item>
+      </el-form>
+    </el-card>
+
     <el-card header="全域熔斷 (Kill Switch)" style="margin-top:16px">
       <el-form label-width="180px" style="max-width:560px">
         <el-form-item label="狀態">
@@ -99,11 +121,33 @@
 <script setup>
 import { reactive, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { strategyApi, orderApi, riskApi } from '@/api'
+import { strategyApi, orderApi, riskApi, tradeConfigApi } from '@/api'
+import { storeToRefs } from 'pinia'
+import { useTradeStore } from '@/store/trade'
 
 const saving = ref(false), killing = ref(false)
 const cfg = reactive({ notional: 0, maxNotional: 1000, balanceCheck: false, dryRun: true })
 const kill = reactive({ on: false, reason: '' })
+const tradeStore = useTradeStore(); const { cfg: trade } = storeToRefs(tradeStore)
+const armTtlOn = ref(true), armTtlHours = ref(8), savingArm = ref(false)
+async function loadArm() {
+  await tradeStore.load()
+  const h = Number(trade.value.armTtlHours ?? 8)
+  armTtlOn.value = h > 0; if (h > 0) armTtlHours.value = h
+}
+async function saveArmTtl() {
+  savingArm.value = true
+  try {
+    const r = await tradeConfigApi.setArmTtl(armTtlOn.value ? armTtlHours.value : 0)
+    if (r.code && r.code !== 0) throw new Error(r.message)
+    trade.value = r.data; ElMessage.success(armTtlOn.value ? `已設 ${armTtlHours.value} 小時自動鎖回` : '已關閉自動鎖回')
+  } catch (e) { ElMessage.error('儲存失敗：' + (e?.message || '')) }
+  finally { savingArm.value = false }
+}
+async function extendArm() {
+  try { const r = await tradeConfigApi.arm(); if (r.code && r.code !== 0) throw new Error(r.message); trade.value = r.data; ElMessage.success('已重新計時') }
+  catch (e) { ElMessage.error('延長失敗：' + (e?.message || '')) }
+}
 const st = reactive({}); const lim = reactive({}); const savingLim = ref(false)
 const limForm = reactive({ maxPositionPct: 50, maxDailyLossPct: 3, maxDailyOrders: 50, maxDailyNotional: 0, maxPriceDeviationPct: 5, failClosed: true })
 const pct = v => v == null ? '—' : (v * 100).toFixed(1) + '%'
@@ -169,7 +213,7 @@ async function toggleKill() {
   finally { killing.value = false }
 }
 
-onMounted(() => { load(); loadRisk() })
+onMounted(() => { load(); loadRisk(); loadArm() })
 </script>
 
 <style scoped>

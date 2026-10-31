@@ -79,4 +79,22 @@ class BinanceOrderGatewayArmTest {
         assertTrue(gw.isDryRun());
         assertNull(kv.get("trading:armed-until"));
     }
+
+    @Test
+    void ttlZeroDisablesAutoLockAndIsOverridableAtRuntime() {
+        gw.setArmTtlHours(0);                       // 風控頁關閉自動鎖回
+        assertEquals(0.0, gw.armTtlHours(), 1e-9);
+        gw.arm("test");
+        assertFalse(gw.isDryRun());
+        assertTrue((Boolean) gw.configStatus().get("armUnlimited"));
+        assertEquals(0L, ((Number) gw.configStatus().get("armRemainingSec")).longValue());
+        gw.checkArmExpiry();
+        assertFalse(gw.isDryRun(), "不限時不會被鎖回");
+        verify(notify, never()).send(argThat(m -> m.get("text").contains("自動鎖回 Dry-Run")));
+
+        gw.setArmTtlHours(2);                       // 改回 2 小時：已上膛 → 依新時效重算
+        long remain = ((Number) gw.configStatus().get("armRemainingSec")).longValue();
+        assertTrue(remain > 7000 && remain <= 7200);
+        assertFalse((Boolean) gw.configStatus().get("armUnlimited"));
+    }
 }

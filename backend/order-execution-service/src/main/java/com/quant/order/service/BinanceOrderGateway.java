@@ -116,8 +116,28 @@ public class BinanceOrderGateway {
     private String testnetSpotUrl, testnetFutUrl, testnetFutWsUrl;   // 保留測試網位址以便切回
 
     // ── 真錢安全鎖（上膛制）：正式網的真實送單必須「上膛」且有時效，到期自動鎖回 Dry-Run ──
-    @Value("${trading.real-arm-ttl-hours:8}") private double armTtlHours;   // 0 = 不限時（不建議）
+    @Value("${trading.real-arm-ttl-hours:8}") private double armTtlHours;   // 預設；風控頁可改（存 Redis），0 = 不限時
     private static final String ARM_KEY = "trading:armed-until";
+    private static final String ARM_TTL_KEY = "trading:arm-ttl-hours";
+    private static final long UNLIMITED = Long.MAX_VALUE / 2;
+
+    /** 目前生效的時效（小時）：Redis 覆寫 > env 預設。 */
+    public double armTtlHours() {
+        try { String v = redis.opsForValue().get(ARM_TTL_KEY); if (v != null) return Math.max(0, Double.parseDouble(v)); }
+        catch (Exception ignore) {}
+        return armTtlHours;
+    }
+
+    /** 風控頁改時效：0 = 關閉自動鎖回。若目前已上膛，依新時效重算到期時間。 */
+    public synchronized Map<String, Object> setArmTtlHours(double hours) {
+        double h = Math.max(0, hours);
+        try { redis.opsForValue().set(ARM_TTL_KEY, String.valueOf(h)); }
+        catch (Exception e) { throw new IllegalStateException("寫入 Redis 失敗: " + e.getMessage()); }
+        log.warn("真實送單時效改為 {}", h > 0 ? h + " 小時" : "不限時（自動鎖回關閉）");
+        if (isMainnet() && !dryRun && armed()) arm("時效調整為 " + (h > 0 ? h + "h" : "不限"));
+        else if (h == 0) alertReal(":warning: 真實送單自動鎖回已關閉（不限時）；開啟真實送單後不會自動停，請自行關閉");
+        return configStatus();
+    }
     private volatile boolean armExpiredNotified = false;
 
     @PostConstruct
@@ -191,11 +211,13 @@ public class BinanceOrderGateway {
         m.put("clockSyncedAt", clock.syncedAt(spotUrl));
         // 真錢安全鎖狀態：effectiveDryRun 才是「現在會不會真送單」
         long until = armedUntil();
+        boolean unlimited = until >= UNLIMITED;
         m.put("effectiveDryRun", isDryRun());
         m.put("armed", isMainnet() && !dryRun && armed());
-        m.put("armedUntil", until);
-        m.put("armRemainingSec", until > 0 ? Math.max(0, (until - System.currentTimeMillis()) / 1000) : 0);
-        m.put("armTtlHours", armTtlHours);
+        m.put("armedUntil", unlimited ? 0 : until);
+        m.put("armRemainingSec", until > 0 && !unlimited ? Math.max(0, (until - System.currentTimeMillis()) / 1000) : 0);
+        m.put("armTtlHours", armTtlHours());
+        m.put("armUnlimited", unlimited || armTtlHours() <= 0);
         return m;
     }
 
@@ -221,12 +243,13 @@ public class BinanceOrderGateway {
     /** 上膛：寫入到期時間（TTL 小時；0 = 不限時，仍記錄以便顯示）。 */
     public synchronized Map<String, Object> arm(String by) {
         long now = System.currentTimeMillis();
-        long until = armTtlHours > 0 ? now + (long) (armTtlHours * 3600_000) : Long.MAX_VALUE / 2;
+        double ttlH = armTtlHours();
+        long until = ttlH > 0 ? now + (long) (ttlH * 3600_000) : UNLIMITED;
         try { redis.opsForValue().set(ARM_KEY, String.valueOf(until)); }
         catch (Exception e) { log.error("上膛寫入 Redis 失敗，真實送單維持鎖定: {}", e.getMessage()); }
         armExpiredNotified = false;
-        String ttl = armTtlHours > 0 ? String.format("%.1f 小時後（%s）自動鎖回 Dry-Run", armTtlHours,
-                java.time.Instant.ofEpochMilli(until).atZone(java.time.ZoneId.of("Asia/Taipei")).toLocalTime().withNano(0)) : "不限時（請自行關閉）";
+        String ttl = ttlH > 0 ? String.format("%.1f 小時後（%s）自動鎖回 Dry-Run", ttlH,
+                java.time.Instant.ofEpochMilli(until).atZone(java.time.ZoneId.of("Asia/Taipei")).toLocalTime().withNano(0)) : "不限時（自動鎖回已關閉，請自行關閉）";
         log.warn("🔴 真實送單已上膛（{}）｜ env={} ｜ {}", by, env, ttl);
         alertReal(":rotating_light: *正式網真實送單已開啟*（" + by + "）｜ " + ttl + " ｜ 手動下單與策略機器人都會用真錢成交");
         return configStatus();
@@ -244,7 +267,7 @@ public class BinanceOrderGateway {
         dryRun = true;
         disarm();
         log.warn("⏱ 真實送單時效到期，已自動鎖回 Dry-Run");
-        alertReal(":lock: 真實送單時效到期（" + armTtlHours + " 小時），已自動鎖回 Dry-Run；要繼續請到連線設定頁重新開啟");
+        alertReal(":lock: 真實送單時效到期（" + armTtlHours() + " 小時），已自動鎖回 Dry-Run；要繼續請到連線設定頁重新開啟");
     }
 
     private void alertReal(String text) {
