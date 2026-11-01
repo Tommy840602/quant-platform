@@ -61,6 +61,26 @@
 
     <el-row :gutter="16" style="margin-top:16px">
       <el-col :span="12">
+        <el-card header="Kafka 消費落後 (lag)">
+          <div v-if="lag.error" class="hint" style="color:#f56c6c">{{ lag.error }}</div>
+          <div v-for="g in (lag.groups || [])" :key="g.group" class="kv">
+            <span :title="g.desc">{{ g.group }}</span>
+            <el-tag :type="g.lag < 0 ? 'info' : (g.lag > (lag.threshold || 500) ? 'danger' : (g.lag > 50 ? 'warning' : 'success'))" size="small">{{ g.lag < 0 ? '—' : g.lag }}</el-tag>
+            <span class="hint">{{ g.note || Object.entries(g.perTopic || {}).map(([t, v]) => t + ':' + v).join(' · ') }}</span>
+          </div>
+          <div class="hint" v-if="lag.checkedAt">{{ ago(lag.checkedAt) }} 前檢查 · 門檻 {{ lag.threshold }}</div>
+        </el-card>
+      </el-col>
+      <el-col :span="12">
+        <el-card header="告警 (notification-service)">
+          <div class="kv"><span>今日各類</span><b>{{ Object.entries(alerts.counts || {}).map(([k, v]) => k + ' ' + v).join('，') || '無' }}</b></div>
+          <div class="kv"><span>重複已壓抑</span><b>{{ alerts.suppressedToday ?? '—' }}</b><span class="hint">同類 {{ Math.round((alerts.dedupeWindowSec || 600) / 60) }} 分鐘一則</span></div>
+        </el-card>
+      </el-col>
+    </el-row>
+
+    <el-row :gutter="16" style="margin-top:16px">
+      <el-col :span="12">
         <el-card header="風控 (risk-service)">
           <div class="kv"><span>熔斷</span><el-tag :type="risk.killSwitch ? 'danger' : 'success'" size="small">{{ risk.killSwitch ? '已觸發' : '正常' }}</el-tag></div>
           <div class="kv"><span>今日單數 / 名目</span><b>{{ risk.ordersToday ?? '—' }} / {{ risk.limits?.maxDailyOrders || '∞' }} · {{ risk.notionalToday ?? '—' }} / {{ risk.limits?.maxDailyNotional || '∞' }} USDT</b></div>
@@ -92,6 +112,7 @@ const tradeStore = useTradeStore(); const { cfg: trade } = storeToRefs(tradeStor
 const effDry = computed(() => trade.value.effectiveDryRun ?? trade.value.dryRun)
 const services = ref([]); const svcSummary = ref({ up: 0, total: 0 })
 const uds = ref({}); const kl = ref({}); const risk = ref({}); const dd = ref({}); const bots = ref({ running: 0, total: 0, names: [] })
+const lag = ref({}); const alerts = ref({})
 const loading = ref(false); const lastAt = ref('—')
 
 const coverage = computed(() => {
@@ -116,6 +137,8 @@ async function refresh() {
     safe(systemApi.klines, d => { kl.value = d || {} }),
     safe(() => riskApi.status(), d => { risk.value = d || {} }),
     safe(accountApi.drawdown, d => { dd.value = d || {} }),
+    safe(systemApi.kafkaLag, d => { lag.value = d || {} }),
+    safe(systemApi.alertStats, d => { alerts.value = d || {} }),
     safe(strategyApi.list, d => { const l = d || []; bots.value = { total: l.length, running: l.filter(b => b.status === 'RUNNING').length, names: l.filter(b => b.status === 'RUNNING').map(b => b.id || b.name) } }),
     tradeStore.load()
   ])

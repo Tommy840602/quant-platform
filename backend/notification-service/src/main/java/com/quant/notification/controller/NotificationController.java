@@ -3,6 +3,7 @@ package com.quant.notification.controller;
 import com.quant.common.dto.ApiResponse;
 import com.quant.notification.service.AlertGate;
 import com.quant.notification.service.DailyDigest;
+import com.quant.notification.service.KafkaLagMonitor;
 import com.quant.notification.service.SlackNotifier;
 import org.springframework.web.bind.annotation.*;
 
@@ -16,7 +17,14 @@ public class NotificationController {
     private final SlackNotifier slack;
     private final AlertGate gate;
     private final DailyDigest digest;
-    public NotificationController(SlackNotifier slack, AlertGate gate, DailyDigest digest) { this.slack = slack; this.gate = gate; this.digest = digest; }
+    private final KafkaLagMonitor lag;
+    public NotificationController(SlackNotifier slack, AlertGate gate, DailyDigest digest, KafkaLagMonitor lag) {
+        this.slack = slack; this.gate = gate; this.digest = digest; this.lag = lag;
+    }
+
+    /** Kafka consumer lag：GET /api/notify/kafka-lag */
+    @GetMapping("/kafka-lag")
+    public ApiResponse<Map<String, Object>> kafkaLag() { return ApiResponse.ok(lag.status()); }
 
     /**
      * 各服務推告警的入口：POST /api/notify/test  body: {text, category?}
