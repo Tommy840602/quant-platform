@@ -280,7 +280,9 @@ export default {
     "s11": "Refresh",
     "s12": "Mainnet",
     "s13": "Testnet",
-    "s14": " · simulated"
+    "s14": " · simulated",
+    "time": "Time",
+    "reason": "Reason (rejected / unknown)"
   },
   "risk": {
     "s1": "Order risk controls (live, no restart)",

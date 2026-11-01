@@ -100,6 +100,7 @@ public class OrderService {
         RiskClient.RiskDecision decision = riskClient.check(intent);
         if (!decision.approved()) {
             updateStatus(intent.clientOrderId(), OrderStatus.REJECTED, 0);
+            setReason(intent.clientOrderId(), "風控拒絕：" + decision.reason());
             publish(intent, OrderStatus.REJECTED, 0, 0);
             notifyReject(intent, "風控拒絕：" + decision.reason());
             return ApiResponse.error(403, "risk rejected: " + decision.reason());
@@ -111,6 +112,7 @@ public class OrderService {
         String preReject = preTradeCheck(intent, ref, notional);
         if (preReject != null) {
             updateStatus(intent.clientOrderId(), OrderStatus.REJECTED, 0);
+            setReason(intent.clientOrderId(), preReject);
             publish(intent, OrderStatus.REJECTED, 0, 0);
             notifyReject(intent, preReject);
             return ApiResponse.error(403, preReject);
@@ -155,6 +157,7 @@ public class OrderService {
             // 逾時 / 斷線 / 5xx：單子可能已在簿上。絕不標 REJECTED —— 標 UNKNOWN，立刻回查一次，查不到就交給排程持續對帳。
             log.warn("送單狀態不明 {} {}: {} → 標 UNKNOWN 並回查", intent.symbol(), intent.clientOrderId(), e.getMessage());
             updateStatus(intent.clientOrderId(), OrderStatus.UNKNOWN, 0);
+            setReason(intent.clientOrderId(), "送單狀態不明：" + e.getMessage());
             publish(intent, OrderStatus.UNKNOWN, 0, 0);
             notifyReject(intent, "送單狀態不明（" + e.getMessage() + "），已自動回查對帳，請勿重送");
             OrderStatus resolved = reconcileOne(intent.clientOrderId(), intent.symbol(), intent.isFutures(), intent.side(), intent.accountOrDefault());
@@ -167,6 +170,7 @@ public class OrderService {
             // 交易所明確拒絕 / filter 未過 / 金鑰未設：確定沒進簿
             log.error("place order rejected: {}", e.getMessage());
             updateStatus(intent.clientOrderId(), OrderStatus.REJECTED, 0);
+            setReason(intent.clientOrderId(), e.getMessage());
             publish(intent, OrderStatus.REJECTED, 0, 0);
             notifyReject(intent, e.getMessage());
             return ApiResponse.error(500, e.getMessage());   // 把 filter/餘額/幣安錯誤訊息帶回前端
@@ -240,6 +244,7 @@ public class OrderService {
                 // 還沒過風控就死了 → 一定沒送到交易所，直接作廢（可重送）
                 log.warn("Outbox 回收：{} 停在 CREATED 超過 {}s，未送單，標 REJECTED", o.getClientOrderId(), OUTBOX_STALE_MS / 1000);
                 updateStatus(o.getClientOrderId(), OrderStatus.REJECTED, 0);
+                setReason(o.getClientOrderId(), "服務重啟時未送出（outbox 回收）");
                 n++; continue;
             }
             log.warn("Outbox 回收：{} 停在 {} 超過 {}s，標 UNKNOWN 回查", o.getClientOrderId(), o.getStatus(), OUTBOX_STALE_MS / 1000);
@@ -536,15 +541,18 @@ public class OrderService {
     /** 近期訂單（DB）。 */
     public ApiResponse<List<Map<String, Object>>> recent(int limit) {
         List<Map<String, Object>> rows = orders.findAllByOrderByIdDesc(PageRequest.of(0, Math.min(limit, 200)))
-                .map(o -> Map.<String, Object>of(
-                        "clientOrderId", o.getClientOrderId(),
-                        "symbol", o.getSymbol(),
-                        "side", o.getSide(),
-                        "type", o.getType(),
-                        "quantity", o.getQuantity(),
-                        "filledQty", o.getFilledQty(),
-                        "status", o.getStatus(),
-                        "strategyId", o.getStrategyId() == null ? "" : o.getStrategyId()))
+                .map(o -> {
+                    Map<String, Object> m = new java.util.LinkedHashMap<>();
+                    m.put("clientOrderId", o.getClientOrderId());
+                    m.put("symbol", o.getSymbol()); m.put("side", o.getSide()); m.put("type", o.getType());
+                    m.put("quantity", o.getQuantity()); m.put("filledQty", o.getFilledQty()); m.put("avgPrice", o.getAvgPrice());
+                    m.put("status", o.getStatus());
+                    m.put("strategyId", o.getStrategyId() == null ? "" : o.getStrategyId());
+                    m.put("env", (o.getEnv() == null ? "" : o.getEnv()) + (DRYRUN_MARK.equals(o.getExchangeOrderId()) ? "/dry" : "")); m.put("account", o.getAccount());
+                    m.put("reason", o.getReason() == null ? "" : o.getReason());
+                    m.put("createdAt", o.getCreatedAt() == null ? 0 : o.getCreatedAt().toInstant().toEpochMilli());
+                    return m;
+                })
                 .getContent();
         return ApiResponse.ok(rows);
     }
@@ -762,6 +770,15 @@ public class OrderService {
         e.setEnv(gateway.currentEnv() == null ? "testnet" : gateway.currentEnv().toLowerCase());
         if (gateway.isDryRun()) e.setExchangeOrderId(DRYRUN_MARK);   // 模擬單一落地就標記
         orders.saveAndFlush(e);
+    }
+
+    private void setReason(String clientOrderId, String reason) {
+        try {
+            orders.findByClientOrderId(clientOrderId).ifPresent(e -> {
+                e.setReason(reason == null ? null : (reason.length() > 500 ? reason.substring(0, 500) : reason));
+                orders.save(e);
+            });
+        } catch (Exception ex) { log.debug("寫入拒單原因失敗 {}: {}", clientOrderId, ex.getMessage()); }
     }
 
     private void updateStatus(String clientOrderId, OrderStatus status, double filled) {
