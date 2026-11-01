@@ -161,9 +161,14 @@ services:
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASS:-admin}
+      # 明確關掉匿名與自助註冊；只綁本機 127.0.0.1:3000，外面的人連不到
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SECURITY_DISABLE_GRAVATAR: "true"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
     volumes:
       - ./infra/grafana/provisioning:/etc/grafana/provisioning
-    ports: ["127.0.0.1:3000:3000"]
+    ports: ["${BIND_ADDR:-127.0.0.1}:3000:3000"]   # 只有本機；要給別台看請走反向代理 + HTTPS
     depends_on: [prometheus]
 
   # ---------- 後端微服務（同一 image，以 SERVICE 選擇） ----------
@@ -311,7 +316,8 @@ services:
     container_name: qp-frontend
     restart: unless-stopped
     <<: *logging
-    ports: ["${FRONTEND_PORT:-8088}:80"]
+    # 預設只綁本機；伺服器上請讓 nginx/caddy 反向代理 + HTTPS 指到這個埠，不要直接把 0.0.0.0 開給外面
+    ports: ["${BIND_ADDR:-127.0.0.1}:${FRONTEND_PORT:-8088}:80"]
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null"]
       interval: 15s
