@@ -55,8 +55,15 @@ export default {
     "stop": "Stop",
     "create": "Create",
     "loading": "Loading…",
-    "dur": "{d}d {h}h|{h}h {m}m|{m}m {s}s",
-    "none": "None"
+    "none": "None",
+    "days": "{d}d",
+    "gain": "Gain",
+    "loss": "Loss",
+    "flat": "Flat",
+    "realized": "Realized",
+    "unrealized": "Unrealized",
+    "fees": "Fees",
+    "trades": "Fills"
   },
   "account": {
     "s1": "Status",

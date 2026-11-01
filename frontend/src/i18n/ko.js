@@ -54,6 +54,14 @@ export default {
     "start": "시작",
     "stop": "중지",
     "create": "생성",
-    "loading": "불러오는 중…"
+    "loading": "불러오는 중…",
+    "days": "{d}일",
+    "gain": "수익",
+    "loss": "손실",
+    "flat": "보합",
+    "realized": "실현",
+    "unrealized": "미실현",
+    "fees": "수수료",
+    "trades": "체결"
   }
 }

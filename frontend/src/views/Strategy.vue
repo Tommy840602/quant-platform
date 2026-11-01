@@ -21,21 +21,21 @@
         <el-table-column prop="position" :label="t('strategy.s3')" width="90" />
         <el-table-column :label="t('strategy.s4')" width="120">
           <template #default="{ row }">
-            <span v-if="row.status === 'RUNNING'" :title="row.startedAt ? t('strategy.s44') + locale.fmtTime(row.startedAt) : ''">{{ fmtDur(row.runningSec) }}</span>
+            <span v-if="row.status === 'RUNNING'" :title="row.startedAt ? t('strategy.s44') + locale.fmtTime(row.startedAt) : ''">{{ fmtDur(row.runningSec, fetchedAt) }}</span>
             <span v-else class="hint">—</span>
           </template>
         </el-table-column>
-        <el-table-column :label="t('strategy.s5')" width="300">
+        <el-table-column :label="t('strategy.s5')" width="340">
           <template #default="{ row }">
             <template v-if="row.pnl">
-              <b :style="{ color: row.pnl.pnl > 0 ? '#67c23a' : row.pnl.pnl < 0 ? '#f56c6c' : 'inherit' }">{{ sign(row.pnl.pnl) }} USDT</b>
-              <svg v-if="spark(row.id)" :width="spark(row.id).w" :height="spark(row.id).hh" style="vertical-align:middle;margin-left:6px">
-                <line :x1="0" :x2="spark(row.id).w" :y1="spark(row.id).zero" :y2="spark(row.id).zero" stroke="#ddd" stroke-dasharray="2,2" />
-                <polyline :points="spark(row.id).pts" fill="none" :stroke="spark(row.id).color" stroke-width="1.5" />
-              </svg>
-              <span class="hint" :title="t('strategy.s45') + sign(row.pnl.realized) + t('strategy.s46') + sign(row.pnl.unrealized) + t('strategy.s47') + row.pnl.fees + t('strategy.s48') + row.pnl.trades + t('strategy.s49') + (row.pnl.openQty ? t('strategy.s50') + row.pnl.openQty + ' @ ' + row.pnl.avgCost : '')">
-                {{ (row.pnl.pnlPct * 100).toFixed(2) }}% · {{ row.pnl.trades }} {{ t('strategy.s16') }}
-              </span>
+              <div style="display:flex;align-items:center;gap:6px">
+                <b :style="{ color: fmtPnl(row.pnl).color }">{{ fmtPnl(row.pnl).word }} {{ fmtPnl(row.pnl).text }}</b>
+                <svg v-if="spark(row.id)" :width="spark(row.id).w" :height="spark(row.id).hh" style="vertical-align:middle">
+                  <line :x1="0" :x2="spark(row.id).w" :y1="spark(row.id).zero" :y2="spark(row.id).zero" stroke="#999" stroke-dasharray="2,2" />
+                  <polyline :points="spark(row.id).pts" fill="none" :stroke="spark(row.id).color" stroke-width="1.5" />
+                </svg>
+              </div>
+              <div class="hint">{{ t('common.realized') }} {{ num(row.pnl.realized) }} · {{ t('common.unrealized') }} {{ num(row.pnl.unrealized) }} · {{ t('common.fees') }} {{ Number(row.pnl.fees || 0).toFixed(2) }} · {{ t('common.trades') }} {{ row.pnl.trades }}<template v-if="row.pnl.openQty"> · {{ t('strategy.s50').trim() }} {{ row.pnl.openQty }} @ {{ row.pnl.avgCost }}</template></div>
             </template>
             <span v-else class="hint">{{ row.status === 'RUNNING' ? t('strategy.s43') : '—' }}</span>
           </template>
@@ -45,7 +45,7 @@
             <el-tag :type="row.status === 'RUNNING' ? 'success' : 'info'">{{ row.status }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column :label="t('strategy.s7')" width="300">
+        <el-table-column :label="t('strategy.s7')" width="340">
           <template #default="{ row }">
             <el-button size="small" type="success" :disabled="row.status === 'RUNNING'" @click="start(row.id)">{{ t('strategy.s17') }}</el-button>
             <el-dropdown split-button size="small" type="warning" :disabled="row.status !== 'RUNNING'" @click="stop(row.id, false)" @command="c => stop(row.id, c === 'flatten')" style="margin:0 6px">
@@ -100,9 +100,11 @@
 
 <script setup>
 import { useI18n } from 'vue-i18n'
+import { useFmt } from '@/composables/useFmt'
 const { t } = useI18n()
 // 執行時長 / 收益輔助
-const fmtDur = s => { s = Math.max(0, +s || 0); const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60); const p = t('common.dur').split('|'); const fill = (tpl, o) => tpl.replace(/\{(\w+)\}/g, (_, k) => o[k]); return d ? fill(p[0], { d, h }) : h ? fill(p[1], { h, m }) : fill(p[2], { m, s: s % 60 }) }
+const { fmtDur, fmtPnl, num } = useFmt()
+const fetchedAt = ref(0)
 const sign = v => (v > 0 ? '+' : '') + Number(v || 0).toFixed(2)
 import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -119,6 +121,7 @@ async function load(silent = false) {
   if (!silent) loading.value = true
   try {
     list.value = (await strategyApi.list()).data || []
+    fetchedAt.value = Date.now()
     // 收益走勢：每次刷新把各機器人 pnl 推進記憶體序列（最多 120 點 ≈ 30 分鐘）
     for (const b of list.value) {
       if (!b.pnl) { delete pnlHist[b.id]; continue }

@@ -21,11 +21,11 @@
             </el-table-column>
             <el-table-column prop="position" :label="t('dashboard.s4')" width="90" />
             <el-table-column :label="t('dashboard.s5')" width="110">
-              <template #default="{ row }">{{ row.runningSec ? fmtDur(row.runningSec) : '—' }}</template>
+              <template #default="{ row }">{{ row.status === 'RUNNING' ? fmtDur(row.runningSec, fetchedAt) : '—' }}</template>
             </el-table-column>
-            <el-table-column :label="t('dashboard.s6')" width="130">
+            <el-table-column :label="t('dashboard.s6')" min-width="200">
               <template #default="{ row }">
-                <b v-if="row.pnl" :style="{ color: row.pnl.pnl > 0 ? '#67c23a' : row.pnl.pnl < 0 ? '#f56c6c' : 'inherit' }">{{ (row.pnl.pnl > 0 ? '+' : '') + Number(row.pnl.pnl).toFixed(2) }}</b>
+                <b v-if="row.pnl" :style="{ color: fmtPnl(row.pnl).color }">{{ fmtPnl(row.pnl).word }} {{ fmtPnl(row.pnl).text }}</b>
                 <span v-else>—</span>
               </template>
             </el-table-column>
@@ -85,8 +85,10 @@
 
 <script setup>
 import { useI18n } from 'vue-i18n'
+import { useFmt } from '@/composables/useFmt'
 const { t } = useI18n()
-const fmtDur = s => { s = Math.max(0, +s || 0); const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60); const p = t('common.dur').split('|'); const fill = (tpl, o) => tpl.replace(/\{(\w+)\}/g, (_, k) => o[k]); return d ? fill(p[0], { d, h }) : h ? fill(p[1], { h, m }) : fill(p[2], { m, s: s % 60 }) }
+const { fmtDur, fmtPnl } = useFmt()
+const fetchedAt = ref(0)
 import { computed, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useMarketStore } from '@/store/market'
@@ -121,7 +123,7 @@ const priceRows = computed(() =>
   Object.entries(prices.value).map(([symbol, price]) => ({ symbol, price })))
 
 async function refresh() {
-  try { strategies.value = (await strategyApi.list()).data || [] } catch {}
+  try { strategies.value = (await strategyApi.list()).data || []; fetchedAt.value = Date.now() } catch {}
   try { positions.value = (await accountApi.positions()).data || [] } catch {}
   try { orders.value = (await orderApi.recent(50)).data || [] } catch {}
   try { kpi.value = (await orderApi.kpi()).data || {} } catch {}
