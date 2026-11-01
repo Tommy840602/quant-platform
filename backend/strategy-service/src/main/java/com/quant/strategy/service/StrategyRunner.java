@@ -2,6 +2,9 @@ package com.quant.strategy.service;
 
 import com.quant.common.event.MarketDataEvent;
 import com.quant.common.event.Topics;
+import com.quant.common.enums.OrderType;
+import com.quant.common.enums.OrderSide;
+import com.quant.common.dto.OrderIntent;
 import com.quant.common.strategy.*;
 import com.quant.strategy.core.StrategyContextImpl;
 import com.quant.strategy.position.StrategyPositionBook;
@@ -180,6 +183,8 @@ public class StrategyRunner {
             m.put("allocation", contexts.get(id).getAllocation());
             m.put("symbol", symbolFilter.getOrDefault(id, "ALL"));
             m.put("type", types.getOrDefault(id, "ma"));
+            m.put("params", paramsOf.getOrDefault(id, Map.of()));
+            m.put("builtin", builtins.contains(id));
             Long st = startedAt.get(id);
             m.put("startedAt", st == null ? 0 : st);
             m.put("runningSec", st == null ? 0 : (now - st) / 1000);
@@ -246,8 +251,10 @@ public class StrategyRunner {
     /** 動態建立機器人（見架構文件 §8 策略打包精神）。type: ma|rsi|grid。 */
     public String createBot(String id, String type, String symbol, Map<String, Object> p) { return createBot(id, type, symbol, p, true); }
 
-    public String createBot(String id, String type, String symbol, Map<String, Object> p, boolean persist) {
-        if (factories.containsKey(id)) return "id 已存在: " + id;
+    /** 依類型與參數建工廠；未知類型回 null。 */
+    record Built(Supplier<Strategy> factory, String name) {}
+
+    Built build(String id, String type, Map<String, Object> p) {
         double qty = num(p, "qty", 0.001);
         Supplier<Strategy> s;
         String name;
@@ -305,8 +312,17 @@ public class StrategyRunner {
                 s = () -> new MovingAverageStrategy(id, (int) num(p, "fast", 3), (int) num(p, "slow", 8), qty);
                 name = "雙均線機器人";
             }
-            default -> { return "未知類型: " + type + "（支援 ma/ema/macd/boll/kdj/rsi/grid/cci/williams/donchian/momentum/atr）"; }
+            default -> { return null; }
         }
+        return new Built(s, name);
+    }
+
+
+    public String createBot(String id, String type, String symbol, Map<String, Object> p, boolean persist) {
+        if (factories.containsKey(id)) return "id 已存在: " + id;
+        Built b = build(id, type, p);
+        if (b == null) return "未知類型: " + type;
+        Supplier<Strategy> s = b.factory(); String name = b.name();
         put(id, s, name + (symbol != null ? " · " + symbol.toUpperCase() : ""), symbol);
         types.put(id, type.toLowerCase());
         paramsOf.put(id, p == null ? new java.util.LinkedHashMap<>() : new java.util.LinkedHashMap<>(p));
@@ -315,6 +331,55 @@ public class StrategyRunner {
         if (persist) notify(":new: 建立機器人 [" + name + "] (" + id + ") 標的 "
                 + (symbol != null ? symbol.toUpperCase() : "ALL"));
         return "created: " + id;
+    }
+
+    /** 任一類型改參數（後續 4）：與既有參數合併後重建工廠、丟掉實例重新暖機、持久化。運行中也可改。 */
+    public String updateParamsAny(String id, Map<String, Object> patch) {
+        if (!factories.containsKey(id)) return "no such strategy: " + id;
+        String type = types.getOrDefault(id, "ma");
+        Map<String, Object> merged = new java.util.LinkedHashMap<>(paramsOf.getOrDefault(id, Map.of()));
+        if (patch != null) patch.forEach((k, v) -> { if (v != null) merged.put(k, v); });
+        Built b = build(id, type, merged);
+        if (b == null) return "未知類型: " + type;
+        factories.put(id, b.factory());
+        instances.put(id, new ConcurrentHashMap<>());
+        paramsOf.put(id, merged);
+        if (repo != null) try { repo.setParams(id, merged); } catch (Exception e) { log.warn("持久化失敗: {}", e.getMessage()); }
+        log.info("機器人 {} 參數更新 {}", id, merged);
+        return "updated: " + id + " " + merged;
+    }
+
+    public Map<String, Object> paramsOf(String id) { return paramsOf.getOrDefault(id, Map.of()); }
+
+    /** 刪除機器人：先下線（可選平倉）；內建的不能刪。 */
+    public String deleteBot(String id, boolean flatten) {
+        if (!factories.containsKey(id)) return "no such strategy: " + id;
+        if (builtins.contains(id)) return "內建策略不可刪除: " + id;
+        if (running.contains(id)) stop(id, flatten);
+        factories.remove(id); instances.remove(id); contexts.remove(id); names.remove(id);
+        symbolFilter.remove(id); types.remove(id); paramsOf.remove(id); startedAt.remove(id);
+        if (repo != null) try { repo.delete(id); } catch (Exception e) { log.warn("刪除持久化失敗: {}", e.getMessage()); }
+        notify(":wastebasket: 刪除機器人 (" + id + ")");
+        return "deleted: " + id;
+    }
+
+    /** 下線並（可選）平倉：對策略帳上每個有多頭部位的標的送市價 SELL。 */
+    public String stop(String id, boolean flatten) {
+        String r = stop(id);
+        if (!flatten) return r;
+        int sent = 0;
+        for (var e : book.snapshot(id).entrySet()) {
+            double qty = e.getValue();
+            if (qty <= 1e-12) continue;   // 只處理多頭（現貨）
+            try {
+                var resp = orderClient.submit(new OrderIntent("flat-" + id + "-" + System.currentTimeMillis(), id, e.getKey(),
+                        OrderSide.SELL, OrderType.MARKET, null, qty, false, "SPOT", "main"));
+                if (resp != null && resp.code() == 0) sent++;
+                else log.warn("平倉被拒 {} {}: {}", id, e.getKey(), resp == null ? "null" : resp.message());
+            } catch (Exception ex) { log.warn("平倉送單失敗 {} {}: {}", id, e.getKey(), ex.getMessage()); }
+        }
+        notify(":outbox_tray: 機器人下線並平倉 (" + id + ")，送出 " + sent + " 張市價賣單");
+        return r + ", flatten sent=" + sent;
     }
 
     private static double num(Map<String, Object> p, String k, double def) {

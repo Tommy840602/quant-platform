@@ -41,10 +41,17 @@
             <el-tag :type="row.status === 'RUNNING' ? 'success' : 'info'">{{ row.status }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="180">
+        <el-table-column label="操作" width="300">
           <template #default="{ row }">
-            <el-button size="small" type="success" @click="start(row.id)">上線</el-button>
-            <el-button size="small" type="warning" @click="stop(row.id)">下線</el-button>
+            <el-button size="small" type="success" :disabled="row.status === 'RUNNING'" @click="start(row.id)">上線</el-button>
+            <el-dropdown split-button size="small" type="warning" :disabled="row.status !== 'RUNNING'" @click="stop(row.id, false)" @command="c => stop(row.id, c === 'flatten')" style="margin:0 6px">
+              下線
+              <template #dropdown><el-dropdown-menu>
+                <el-dropdown-item command="flatten">下線並平倉（市價賣出持倉）</el-dropdown-item>
+              </el-dropdown-menu></template>
+            </el-dropdown>
+            <el-button size="small" @click="openEdit(row)">參數</el-button>
+            <el-button size="small" type="danger" plain :disabled="row.builtin" :title="row.builtin ? '內建策略不可刪' : ''" @click="removeBot(row)">刪除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -64,8 +71,26 @@
         <el-form-item label="數量"><el-input-number v-model="bot.qty" :step="0.001" :min="0.001" /></el-form-item>
         <el-form-item><el-button type="primary" @click="createBot">建立</el-button></el-form-item>
       </el-form>
-      <div class="hint">RSI 參數 window/oversold/overbought、網格 gridPct 走預設；建立後在上表「上線」即開始自動交易。</div>
+      <div class="hint">建立後可在上表「參數」調整各類型參數；建立後「上線」即開始自動交易。</div>
     </el-card>
+
+    <el-dialog v-model="edit.show" :title="'參數 · ' + edit.id" width="480px">
+      <el-form label-width="120px">
+        <el-form-item v-for="k in edit.keys" :key="k" :label="k">
+          <el-input-number v-model="edit.params[k]" :step="stepFor(k, edit.params[k])" :precision="precisionFor(edit.params[k])" style="width:200px" />
+        </el-form-item>
+        <el-form-item label="新增參數">
+          <el-input v-model="edit.newKey" placeholder="例如 mult" style="width:120px;margin-right:6px" />
+          <el-input-number v-model="edit.newVal" style="width:140px" />
+          <el-button size="small" @click="addKey" style="margin-left:6px">加入</el-button>
+        </el-form-item>
+      </el-form>
+      <div class="hint">參數名依類型：ma/ema/wma/tema fast,slow · macd fast,slow,signal · boll/bollbreak/keltner/atr/volbreak period,mult · rsi window,oversold,overbought · grid gridPct · dualthrust period,k · momentum/roc period,threshold · zscore period,threshold · vwap period,dev · sar step,max · 其餘 period。qty 為每筆數量（每單名目 &gt; 0 時被換算覆蓋）。運行中修改會重新暖機指標。</div>
+      <template #footer>
+        <el-button @click="edit.show = false">取消</el-button>
+        <el-button type="primary" :loading="edit.saving" @click="saveEdit">儲存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -74,7 +99,7 @@
 const fmtDur = s => { s = Math.max(0, +s || 0); const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60); return d ? `${d}天${h}時` : h ? `${h}時${m}分` : `${m}分${s % 60}秒` }
 const sign = v => (v > 0 ? '+' : '') + Number(v || 0).toFixed(2)
 import { onMounted, onUnmounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { strategyApi, notifyApi } from '@/api'
 import { STRATEGY_TYPES } from '@/config/strategies'
 import { SYMBOLS } from '@/config/symbols'
@@ -89,7 +114,52 @@ async function load() {
   finally { loading.value = false }
 }
 async function start(id) { await strategyApi.start(id); ElMessage.success('已上線'); load() }
-async function stop(id) { await strategyApi.stop(id); ElMessage.success('已下線'); load() }
+async function stop(id, flatten) {
+  if (flatten) {
+    try { await ElMessageBox.confirm(`下線 ${id} 並對其持倉送市價賣單平倉？`, '下線並平倉', { type: 'warning' }) } catch { return }
+  }
+  const r = await strategyApi.stop(id, flatten); ElMessage.success(r.data || '已下線'); load()
+}
+async function removeBot(row) {
+  try { await ElMessageBox.confirm(`刪除機器人 ${row.id}？${row.status === 'RUNNING' ? '（運行中，會先下線）' : ''}`, '刪除', { type: 'warning', confirmButtonText: '刪除', cancelButtonText: '取消' }) }
+  catch { return }
+  let flatten = false
+  if (row.position > 0) {
+    try {
+      await ElMessageBox.confirm(`它目前持倉 ${row.position}，要一併市價賣出平倉嗎？`, '平倉', { type: 'warning', confirmButtonText: '平倉', cancelButtonText: '不平倉', distinguishCancelAndClose: true })
+      flatten = true
+    } catch (e) { if (e === 'close') return }   // 關閉視窗 = 放棄；「不平倉」繼續
+  }
+  const r = await strategyApi.remove(row.id, flatten)
+  if (r.code && r.code !== 0) return ElMessage.error(r.message)
+  ElMessage.success(r.data || '已刪除'); load()
+}
+
+// ── 參數編輯 ──
+const edit = reactive({ show: false, id: '', keys: [], params: {}, newKey: '', newVal: 0, saving: false })
+const DEFAULT_KEYS = { ma: ['fast','slow'], ema: ['fast','slow'], wma: ['fast','slow'], tema: ['fast','slow'], macd: ['fast','slow','signal'],
+  boll: ['period','mult'], bollbreak: ['period','mult'], keltner: ['period','mult'], atr: ['period','mult'], volbreak: ['period','mult'],
+  rsi: ['window','oversold','overbought'], grid: ['gridPct'], dualthrust: ['period','k'], momentum: ['period','threshold'], roc: ['period','threshold'],
+  zscore: ['period','threshold'], vwap: ['period','dev'], sar: ['step','max'], supertrend: ['period','mult'] }
+function openEdit(row) {
+  const p = { ...(row.params || {}) }
+  for (const k of (DEFAULT_KEYS[row.type] || ['period'])) if (!(k in p)) p[k] = null
+  if (!('qty' in p)) p.qty = 0.001
+  edit.id = row.id; edit.params = Object.fromEntries(Object.entries(p).map(([k, v]) => [k, v == null ? undefined : +v])); edit.keys = Object.keys(edit.params); edit.show = true
+}
+function addKey() { if (!edit.newKey) return; edit.params[edit.newKey] = +edit.newVal; edit.keys = Object.keys(edit.params); edit.newKey = '' }
+const precisionFor = v => (v != null && !Number.isInteger(+v)) ? 4 : 0
+const stepFor = (k, v) => ['qty','gridPct','threshold','dev','step','max','k','mult'].includes(k) || (v != null && !Number.isInteger(+v)) ? 0.001 : 1
+async function saveEdit() {
+  edit.saving = true
+  try {
+    const body = Object.fromEntries(Object.entries(edit.params).filter(([, v]) => v != null && v !== undefined && !Number.isNaN(v)))
+    const r = await strategyApi.paramsAny(edit.id, body)
+    if (r.code && r.code !== 0) throw new Error(r.message)
+    ElMessage.success('已更新'); edit.show = false; load()
+  } catch (e) { ElMessage.error('更新失敗：' + (e?.message || '')) }
+  finally { edit.saving = false }
+}
 async function createBot() {
   if (!bot.id) return ElMessage.warning('請填 ID')
   const resp = await strategyApi.create({ id: bot.id, type: bot.type, symbol: bot.symbol, params: { qty: bot.qty } })
