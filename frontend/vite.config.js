@@ -4,6 +4,19 @@ import vue from '@vitejs/plugin-vue'
 export default defineConfig({
   plugins: [vue()],
   resolve: { alias: { '@': '/src' } },
+  build: {
+    // 把大依賴拆成獨立 chunk：改業務碼時 echarts / element-plus 的 chunk 不變、瀏覽器快取有效，首頁也只載需要的
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vue: ['vue', 'vue-router', 'pinia'],
+          element: ['element-plus', '@element-plus/icons-vue'],
+          echarts: ['echarts']
+        }
+      }
+    },
+    chunkSizeWarningLimit: 1200   // echarts 單檔本來就 ~1 MB，拆出後不再對它警告
+  },
   server: {
     port: 5173,
     proxy: {
