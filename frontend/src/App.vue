@@ -29,6 +29,7 @@
           <template #title><span class="grp">設定</span></template>
           <el-menu-item index="/login"><el-icon><Key /></el-icon><template #title>連線設定</template></el-menu-item>
           <el-menu-item index="/risk"><el-icon><Warning /></el-icon><template #title>風控設定</template></el-menu-item>
+          <el-menu-item index="/system"><el-icon><Monitor /></el-icon><template #title>系統狀態</template></el-menu-item>
         </el-menu-item-group>
       </el-menu>
     </el-aside>

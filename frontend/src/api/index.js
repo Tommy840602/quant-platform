@@ -42,8 +42,13 @@ export const riskApi = {
   status: (account = 'main') => http.get('/risk/status', { params: { account } }),
   resetDay: (account = 'main') => http.post('/risk/status/reset', null, { params: { account } })
 }
+export const systemApi = {
+  status: () => http.get('/system/status'),
+  klines: () => http.get('/market/klines/status')
+}
 export const accountApi = {
   balance: () => http.get('/account/balance'),
+  drawdown: () => http.get('/account/drawdown'),
   positions: () => http.get('/account/positions'),
   getConfig: () => http.get('/account/config'),
   summaryNow: () => http.post('/account/summary/now'),

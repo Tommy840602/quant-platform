@@ -25,6 +25,9 @@ spring:
         spring.json.value.default.type: com.quant.common.event.OrderEvent
 
 management:
+  endpoint:
+    health:
+      show-details: always     # 系統狀態頁要看 db / redis / kafka / discovery 各元件
   endpoints:
     web:
       exposure:
