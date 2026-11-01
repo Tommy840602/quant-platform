@@ -74,6 +74,7 @@ public class StrategyController {
         String id = (String) b.get("id");
         String type = (String) b.get("type");
         String symbol = (String) b.get("symbol");
+        if (symbol != null && (symbol.isBlank() || "ALL".equalsIgnoreCase(symbol))) symbol = null;   // 全部標的
         Map<String, Object> params = (Map<String, Object>) b.getOrDefault("params", Map.of());
         return ApiResponse.ok(runner.createBot(id, type, symbol, params));
     }
