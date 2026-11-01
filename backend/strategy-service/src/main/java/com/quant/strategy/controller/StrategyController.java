@@ -19,7 +19,10 @@ public class StrategyController {
     public ApiResponse<List<Map<String, Object>>> list() { return ApiResponse.ok(runner.list()); }
 
     @PostMapping("/{id}/start")
-    public ApiResponse<String> start(@PathVariable String id) { return ApiResponse.ok(runner.start(id)); }
+    public ApiResponse<String> start(@PathVariable String id) {
+        String r = runner.start(id);
+        return r.startsWith("rejected") ? ApiResponse.error(409, r) : ApiResponse.ok(r);
+    }
 
     /** 下線；flatten=true 同時對該策略持倉送市價賣單平倉 */
     @PostMapping("/{id}/stop")
