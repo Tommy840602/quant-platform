@@ -15,6 +15,7 @@ public interface OrderRepository extends JpaRepository<OrderEntity, Long> {
     List<OrderEntity> findTop50ByStatusOrderByUpdatedAtAsc(String status);
     List<OrderEntity> findByStrategyIdIsNotNullOrderByIdAsc();
     List<OrderEntity> findByEnvAndAccountAndStrategyIdIsNotNullOrderByIdAsc(String env, String account);
+    List<OrderEntity> findByEnvAndStrategyIdAndStatusOrderByIdAsc(String env, String strategyId, String status);
     List<OrderEntity> findTop1000ByStrategyIdAndStatusOrderByIdAsc(String strategyId, String status);
     List<OrderEntity> findTop200ByStatusInAndMarketOrderByUpdatedAtAsc(List<String> statuses, String market);
     List<OrderEntity> findTop200ByStatusAndExchangeOrderIdOrderByIdAsc(String status, String exchangeOrderId);

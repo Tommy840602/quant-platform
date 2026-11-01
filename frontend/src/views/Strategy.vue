@@ -19,6 +19,23 @@
         </template>
       </el-table-column>
         <el-table-column prop="position" label="部位" width="90" />
+        <el-table-column label="執行時長" width="120">
+          <template #default="{ row }">
+            <span v-if="row.status === 'RUNNING'" :title="row.startedAt ? '上線於 ' + new Date(row.startedAt).toLocaleString() : ''">{{ fmtDur(row.runningSec) }}</span>
+            <span v-else class="hint">—</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="收益（本次上線）" width="200">
+          <template #default="{ row }">
+            <template v-if="row.pnl">
+              <b :style="{ color: row.pnl.pnl > 0 ? '#67c23a' : row.pnl.pnl < 0 ? '#f56c6c' : 'inherit' }">{{ sign(row.pnl.pnl) }} USDT</b>
+              <span class="hint" :title="'已實現 ' + sign(row.pnl.realized) + ' · 未實現 ' + sign(row.pnl.unrealized) + ' · 手續費 ' + row.pnl.fees + ' · 成交 ' + row.pnl.trades + ' 筆' + (row.pnl.openQty ? ' · 持倉 ' + row.pnl.openQty + ' @ ' + row.pnl.avgCost : '')">
+                {{ (row.pnl.pnlPct * 100).toFixed(2) }}% · {{ row.pnl.trades }} 筆
+              </span>
+            </template>
+            <span v-else class="hint">{{ row.status === 'RUNNING' ? '計算中…' : '—' }}</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="status" label="狀態" width="110">
           <template #default="{ row }">
             <el-tag :type="row.status === 'RUNNING' ? 'success' : 'info'">{{ row.status }}</el-tag>
@@ -53,7 +70,10 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+// 執行時長 / 收益輔助
+const fmtDur = s => { s = Math.max(0, +s || 0); const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60); return d ? `${d}天${h}時` : h ? `${h}時${m}分` : `${m}分${s % 60}秒` }
+const sign = v => (v > 0 ? '+' : '') + Number(v || 0).toFixed(2)
+import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { strategyApi, notifyApi } from '@/api'
 import { STRATEGY_TYPES } from '@/config/strategies'
@@ -79,6 +99,8 @@ async function testSlack() {
   try { await notifyApi.test('🔔 來自量化平台的測試通知'); ElMessage.success('已送出（未設 webhook 則僅記錄 log）') }
   catch { ElMessage.error('通知服務未啟動？') }
 }
-onMounted(load)
+let timer
+onMounted(() => { load(); timer = setInterval(() => load(), 15000) })   // 執行時長 / 收益每 15 秒更新
+onUnmounted(() => clearInterval(timer))
 </script>
 <style scoped>.hint{color:#999;font-size:12px;margin-top:8px}</style>

@@ -18,7 +18,7 @@ public class BotRepository {
     public BotRepository(JdbcTemplate jdbc) { this.jdbc = jdbc; }
 
     public record BotRow(String id, String type, String name, String symbol, Map<String, Object> params,
-                         double allocation, boolean running, boolean builtin) {}
+                         double allocation, boolean running, boolean builtin, Long startedAt) {}
 
     public void upsert(BotRow b) {
         jdbc.update("""
@@ -30,8 +30,10 @@ public class BotRepository {
             """, b.id(), b.type(), b.name(), b.symbol(), json(b.params()), b.allocation(), b.running(), b.builtin());
     }
 
+    /** 上線記 started_at，下線清空。 */
     public void setRunning(String id, boolean running) {
-        jdbc.update("UPDATE strategy_bots SET running = ?, updated_at = now() WHERE id = ?", running, id);
+        if (running) jdbc.update("UPDATE strategy_bots SET running = true, started_at = now(), updated_at = now() WHERE id = ?", id);
+        else jdbc.update("UPDATE strategy_bots SET running = false, started_at = NULL, updated_at = now() WHERE id = ?", id);
     }
     public void setAllocation(String id, double a) {
         jdbc.update("UPDATE strategy_bots SET allocation = ?, updated_at = now() WHERE id = ?", a, id);
@@ -42,9 +44,10 @@ public class BotRepository {
     public void delete(String id) { jdbc.update("DELETE FROM strategy_bots WHERE id = ?", id); }
 
     public List<BotRow> findAll() {
-        return jdbc.query("SELECT id, type, name, symbol, params::text AS params, allocation, running, builtin FROM strategy_bots ORDER BY id",
-                (rs, i) -> new BotRow(rs.getString("id"), rs.getString("type"), rs.getString("name"), rs.getString("symbol"),
-                        parse(rs.getString("params")), rs.getDouble("allocation"), rs.getBoolean("running"), rs.getBoolean("builtin")));
+        return jdbc.query("SELECT id, type, name, symbol, params::text AS params, allocation, running, builtin, "
+                        + "(extract(epoch FROM started_at) * 1000)::bigint AS started_ms FROM strategy_bots ORDER BY id",
+                (rs, i) -> { long st = rs.getLong("started_ms"); return new BotRow(rs.getString("id"), rs.getString("type"), rs.getString("name"), rs.getString("symbol"),
+                        parse(rs.getString("params")), rs.getDouble("allocation"), rs.getBoolean("running"), rs.getBoolean("builtin"), rs.wasNull() ? null : st); });
     }
 
     public Optional<String> setting(String key) {

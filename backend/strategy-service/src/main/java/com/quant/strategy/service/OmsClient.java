@@ -12,4 +12,8 @@ import java.util.Map;
 public interface OmsClient {
     @GetMapping("/orders/strategy-positions")
     ApiResponse<List<Map<String, Object>>> strategyPositions();
+
+    @GetMapping("/orders/strategy-pnl")
+    ApiResponse<Map<String, Object>> strategyPnl(@org.springframework.web.bind.annotation.RequestParam("strategyId") String strategyId,
+                                                 @org.springframework.web.bind.annotation.RequestParam("since") long since);
 }
