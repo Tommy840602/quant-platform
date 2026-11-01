@@ -554,9 +554,18 @@ public class OrderService {
      * 各策略的「有號」部位與未結訂單，供 strategy-service 啟動時對帳。
      * qty = Σ(BUY filled) − Σ(SELL filled)；openOrders = 尚未終結的單數（策略應視為 pending，不可再開同向新單）。
      */
-    public ApiResponse<List<Map<String, Object>>> strategyPositions() {
+    /**
+     * 策略倉位（給 strategy-service 對帳）：只算「目前環境 + 目前模式」的單——
+     * testnet 的舊單不能混進 mainnet，Dry-Run 模擬單與真單也要分開；帳戶預設 main。
+     */
+    public ApiResponse<List<Map<String, Object>>> strategyPositions() { return strategyPositions("main"); }
+
+    public ApiResponse<List<Map<String, Object>>> strategyPositions(String account) {
+        String env = gateway.currentEnv() == null ? "testnet" : gateway.currentEnv().toLowerCase();
+        boolean dry = gateway.isDryRun();
         Map<String, double[]> agg = new java.util.LinkedHashMap<>();   // key strategy|symbol -> [qty, open]
-        for (OrderEntity o : orders.findByStrategyIdIsNotNullOrderByIdAsc()) {
+        for (OrderEntity o : orders.findByEnvAndAccountAndStrategyIdIsNotNullOrderByIdAsc(env, account == null ? "main" : account)) {
+            if (DRYRUN_MARK.equals(o.getExchangeOrderId()) != dry) continue;   // 模擬單 / 真單分開
             String key = o.getStrategyId() + "|" + o.getSymbol();
             double[] a = agg.computeIfAbsent(key, k -> new double[2]);
             OrderStatus st = safeStatus(o.getStatus());
@@ -577,7 +586,8 @@ public class OrderService {
     /** 績效歸因：依 strategy_id 匯總已成交訂單（見架構文件 §11）。 */
     public ApiResponse<List<Map<String, Object>>> attribution() {
         List<Map<String, Object>> rows = new java.util.ArrayList<>();
-        for (Object[] r : orders.attribution()) {
+        String env = gateway.currentEnv() == null ? "testnet" : gateway.currentEnv().toLowerCase();
+        for (Object[] r : orders.attribution(env)) {
             rows.add(Map.of(
                     "strategyId", r[0] == null ? "(manual)" : r[0].toString(),
                     "filledOrders", ((Number) r[1]).longValue(),
@@ -699,6 +709,8 @@ public class OrderService {
         e.setStrategyId(i.strategyId());
         e.setAccount(i.accountOrDefault());
         e.setMarket(i.isFutures() ? "USDT_M" : "SPOT");
+        e.setEnv(gateway.currentEnv() == null ? "testnet" : gateway.currentEnv().toLowerCase());
+        if (gateway.isDryRun()) e.setExchangeOrderId(DRYRUN_MARK);   // 模擬單一落地就標記
         orders.saveAndFlush(e);
     }
 

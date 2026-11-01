@@ -383,4 +383,37 @@ class OrderServiceSubmitTest {
         assertEquals(0, svc.recoverStuckOrders());
         assertEquals("RISK_APPROVED", o.getStatus());
     }
+
+    // ── 策略倉位對帳只看目前環境 + 模式 ──
+    private OrderEntity filled(String cid, String sid, String side, double qty, boolean dry) {
+        OrderEntity o = new OrderEntity(); o.setClientOrderId(cid); o.setStrategyId(sid); o.setSymbol("BTCUSDT");
+        o.setSide(side); o.setStatus("FILLED"); o.setFilledQty(qty); o.setAccount("main");
+        if (dry) o.setExchangeOrderId("DRYRUN");
+        return o;
+    }
+
+    @Test
+    void strategyPositionsExcludeOtherModeOrders() {
+        when(gateway.currentEnv()).thenReturn("mainnet");
+        when(gateway.isDryRun()).thenReturn(false);
+        when(orders.findByEnvAndAccountAndStrategyIdIsNotNullOrderByIdAsc("mainnet", "main")).thenReturn(List.of(
+                filled("r1", "ma-fast", "BUY", 0.01, false),
+                filled("d1", "ma-fast", "BUY", 5.0, true)));     // Dry-Run 模擬單不算
+        var rows = svc.strategyPositions("main").data();
+        assertEquals(1, rows.size());
+        assertEquals(0.01, ((Number) rows.get(0).get("qty")).doubleValue(), 1e-12);
+        verify(orders).findByEnvAndAccountAndStrategyIdIsNotNullOrderByIdAsc("mainnet", "main");   // testnet 的根本不撈
+    }
+
+    @Test
+    void newOrdersRecordEnvAndDryRunMark() {
+        when(gateway.currentEnv()).thenReturn("mainnet");
+        when(gateway.isDryRun()).thenReturn(true);
+        when(gateway.placeOrder(any())).thenReturn("DRYRUN-cid-1");
+        ArgumentCaptor<OrderEntity> cap = ArgumentCaptor.forClass(OrderEntity.class);
+        svc.submit(intent);
+        verify(orders).saveAndFlush(cap.capture());
+        assertEquals("mainnet", cap.getValue().getEnv());
+        assertEquals("DRYRUN", cap.getValue().getExchangeOrderId());
+    }
 }

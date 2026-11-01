@@ -67,7 +67,7 @@ public class OrderController {
     /** 績效歸因：GET /api/order/orders/attribution */
     /** 各策略有號部位 + 未結單數（strategy-service 啟動對帳用）。 */
     @GetMapping("/strategy-positions")
-    public ApiResponse<List<Map<String, Object>>> strategyPositions() { return orderService.strategyPositions(); }
+    public ApiResponse<List<Map<String, Object>>> strategyPositions(@RequestParam(defaultValue = "main") String account) { return orderService.strategyPositions(account); }
 
     /** 某策略的實盤成交明細：GET /api/order/orders/fills?strategyId=ma-fast */
     @GetMapping("/fills")
