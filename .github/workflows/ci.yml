@@ -88,7 +88,7 @@ jobs:
       - name: 表都在（order_outbox 應已被 V2 移除）
         run: |
           PGPASSWORD=quant psql -h localhost -U quant -d quant -tAc "select to_regclass('order_outbox')" | grep -q "order_outbox" && { echo "::error::order_outbox 應已被 V2 刪除"; exit 1; }
-          for t in kline orders positions equity_curve users; do
+          for t in kline orders positions equity_curve users strategy_bots strategy_settings; do
             PGPASSWORD=quant psql -h localhost -U quant -d quant -tAc "select to_regclass('$t')" | grep -q "^$t$" || { echo "::error::缺表 $t"; exit 1; }
           done
           PGPASSWORD=quant psql -h localhost -U quant -d quant -tAc "select count(*) from timescaledb_information.hypertables where hypertable_name='kline'" | grep -q '^1$' || { echo "::error::kline 不是 hypertable"; exit 1; }
