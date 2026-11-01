@@ -1,54 +1,55 @@
 <template>
   <div class="login-wrap">
     <el-card class="login-card">
-      <h2 class="title">量化交易平台</h2>
-      <p class="sub">連線設定與登入</p>
+      <h2 class="title">{{ t('login.s8') }}</h2>
+      <p class="sub">{{ t('login.s9') }}</p>
 
       <el-form label-position="top">
-        <el-form-item label="環境">
+        <el-form-item :label="t('login.s1')">
           <el-radio-group v-model="cfg.env" style="width:100%">
-            <el-radio-button value="testnet">測試網 testnet（安全）</el-radio-button>
-            <el-radio-button value="mainnet">正式網 mainnet（真錢）</el-radio-button>
+            <el-radio-button value="testnet">{{ t('login.s10') }}</el-radio-button>
+            <el-radio-button value="mainnet">{{ t('login.s11') }}</el-radio-button>
           </el-radio-group>
         </el-form-item>
 
         <el-form-item label="API Key">
-          <el-input v-model="cfg.apiKey" placeholder="留空=沿用目前設定" clearable />
+          <el-input v-model="cfg.apiKey" :placeholder="t('login.s2')" clearable />
         </el-form-item>
         <el-form-item label="API Secret">
-          <el-input v-model="cfg.apiSecret" type="password" placeholder="留空=沿用目前設定" show-password clearable />
+          <el-input v-model="cfg.apiSecret" type="password" :placeholder="t('login.s2')" show-password clearable />
         </el-form-item>
 
-        <el-form-item label="下單模式">
-          <el-switch v-model="cfg.dryRun" active-text="Dry-Run 乾跑（不送單）" inactive-text="真實送單" inline-prompt
+        <el-form-item :label="t('login.s3')">
+          <el-switch v-model="cfg.dryRun" :active-text="t('login.s4')" :inactive-text="t('login.s5')" inline-prompt
                      style="--el-switch-on-color:#26a69a;--el-switch-off-color:#ef5350" />
         </el-form-item>
 
         <el-alert v-if="cfg.env==='mainnet' && !cfg.dryRun" type="error" :closable="false" show-icon style="margin-bottom:12px">
-          <template #title>⚠️ 正式網 + 真實送單：將用真錢下單，請再三確認</template>
-          套用後會「上膛」{{ status?.ord?.armTtlHours ?? 8 }} 小時，到期自動鎖回 Dry-Run 並 Slack 通知。
-          <span v-if="status?.ord?.armed">目前剩 {{ Math.floor((status.ord.armRemainingSec || 0) / 60) }} 分鐘
-            <el-button link type="primary" size="small" @click="extendArm">延長</el-button></span>
+          <template #title>{{ t('login.s12') }}</template>
+          {{ t('login.s13') }}{{ status?.ord?.armTtlHours ?? 8 }} {{ t('login.s14') }}
+          <span v-if="status?.ord?.armed">{{ t('login.s15') }} {{ Math.floor((status.ord.armRemainingSec || 0) / 60) }} {{ t('login.s16') }}
+            <el-button link type="primary" size="small" @click="extendArm">{{ t('login.s17') }}</el-button></span>
         </el-alert>
         <el-alert v-else-if="cfg.env==='mainnet'" type="warning" :closable="false" show-icon
-          title="正式網：看真實帳戶餘額；下單為乾跑，不會動真錢" style="margin-bottom:12px" />
+          :title="t('login.s6')" style="margin-bottom:12px" />
         <el-alert v-else type="success" :closable="false" show-icon
-          title="測試網：完全不碰真錢" style="margin-bottom:12px" />
+          :title="t('login.s7')" style="margin-bottom:12px" />
 
-        <el-button type="primary" style="width:100%" :loading="loading" @click="apply">套用並進入</el-button>
+        <el-button type="primary" style="width:100%" :loading="loading" @click="apply">{{ t('login.s18') }}</el-button>
       </el-form>
 
       <div v-if="status" class="status">
-        目前後端：帳戶 env=<b>{{ status.acc?.env }}</b> keySet={{ status.acc?.keySet }} ｜
-        下單 env=<b>{{ status.ord?.env }}</b> dryRun={{ status.ord?.dryRun }}
-        <span v-if="status.ord?.mainnet">｜ 真錢送單 {{ status.ord?.armed ? '已上膛，剩 ' + Math.floor((status.ord.armRemainingSec || 0) / 60) + ' 分鐘' : '鎖定中' }}</span>
+        {{ t('login.s19') }}<b>{{ status.acc?.env }}</b> keySet={{ status.acc?.keySet }} {{ t('login.s20') }}<b>{{ status.ord?.env }}</b> dryRun={{ status.ord?.dryRun }}
+        <span v-if="status.ord?.mainnet">{{ t('login.s21') }} {{ status.ord?.armed ? t('login.s31') + Math.floor((status.ord.armRemainingSec || 0) / 60) + t('login.s32') : t('login.s33') }}</span>
       </div>
-      <p class="hint">API 金鑰只送到後端記憶體、不寫入瀏覽器。切正式網請先用「只讀」權限金鑰確認餘額。</p>
+      <p class="hint">{{ t('login.s22') }}</p>
     </el-card>
   </div>
 </template>
 
 <script setup>
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 import { reactive, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -75,15 +76,15 @@ async function loadStatus() {
 }
 
 async function extendArm() {
-  try { const r = await tradeConfigApi.arm(); if (r.code && r.code !== 0) throw new Error(r.message); status.value = { ...(status.value || {}), ord: r.data }; ElMessage.success('已延長') }
-  catch (e) { ElMessage.error('延長失敗：' + (e?.message || '')) }
+  try { const r = await tradeConfigApi.arm(); if (r.code && r.code !== 0) throw new Error(r.message); status.value = { ...(status.value || {}), ord: r.data }; ElMessage.success(t('login.s23')) }
+  catch (e) { ElMessage.error(t('login.s24') + (e?.message || '')) }
 }
 
 async function apply() {
   if (cfg.env === 'mainnet' && !cfg.dryRun) {
     try {
-      await ElMessageBox.confirm('你選了「正式網 + 真實送單」，之後策略或手動下單會用真錢成交。確定要啟用？',
-        '真錢下單確認', { type: 'warning', confirmButtonText: '我了解，啟用', cancelButtonText: '取消' })
+      await ElMessageBox.confirm(t('login.s25'),
+        t('login.s26'), { type: 'warning', confirmButtonText: t('login.s27'), cancelButtonText: t('login.s28') })
     } catch { return }
   }
   loading.value = true
@@ -93,10 +94,10 @@ async function apply() {
     await tradeStore.save({ ...body, dryRun: cfg.dryRun })   // 寫進共用 store，右上角 / 帳戶頁立即同步
     localStorage.setItem('qp-env', cfg.env)
     localStorage.setItem('qp-dryrun', String(cfg.dryRun))
-    ElMessage.success('設定已套用')
+    ElMessage.success(t('login.s29'))
     router.push('/account')
   } catch (e) {
-    ElMessage.error('套用失敗：' + (e.response?.data?.message || e.message))
+    ElMessage.error(t('login.s30') + (e.response?.data?.message || e.message))
   } finally { loading.value = false }
 }
 

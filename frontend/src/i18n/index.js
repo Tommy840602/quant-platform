@@ -7,7 +7,7 @@ import ko from './ko'
 import de from './de'
 
 export const i18n = createI18n({
-  legacy: false, locale: 'zh-TW', fallbackLocale: 'zh-TW',
+  legacy: false, locale: 'zh-TW', fallbackLocale: { ko: ['en', 'zh-TW'], de: ['en', 'zh-TW'], default: ['zh-TW'] },
   messages: { 'zh-TW': zhTW, 'zh-CN': zhCN, en, ja, ko, de }
 })
 
