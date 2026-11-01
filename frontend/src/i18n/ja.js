@@ -55,8 +55,15 @@ export default {
     "stop": "停止",
     "create": "作成",
     "loading": "読み込み中…",
-    "dur": "{d}日{h}時間|{h}時間{m}分|{m}分{s}秒",
-    "none": "なし"
+    "none": "なし",
+    "days": "{d}日",
+    "gain": "利益",
+    "loss": "損失",
+    "flat": "±0",
+    "realized": "実現",
+    "unrealized": "未実現",
+    "fees": "手数料",
+    "trades": "約定"
   },
   "account": {
     "s1": "状態",

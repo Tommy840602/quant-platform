@@ -55,8 +55,15 @@ export default {
     "stop": "下線",
     "create": "建立",
     "loading": "載入中…",
-    "dur": "{d}天{h}時|{h}時{m}分|{m}分{s}秒",
-    "none": "無"
+    "none": "無",
+    "days": "{d}天",
+    "gain": "賺",
+    "loss": "虧",
+    "flat": "持平",
+    "realized": "已實現",
+    "unrealized": "未實現",
+    "fees": "手續費",
+    "trades": "成交"
   },
   "account": {
     "s1": "狀態",
