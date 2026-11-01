@@ -75,8 +75,11 @@ public class DailyDigest {
             long sec = ((Number) b.getOrDefault("runningSec", 0)).longValue();
             String dur = sec >= 86400 ? (sec / 86400) + "天" + (sec % 86400 / 3600) + "時" : (sec / 3600) + "時" + (sec % 3600 / 60) + "分";
             String pnl = "—";
-            if (b.get("pnl") instanceof Map<?, ?> p && p.get("pnl") instanceof Number n)
-                pnl = String.format("%+.2f USDT（%+.2f%%，%s 筆）", n.doubleValue(), ((Number) p.getOrDefault("pnlPct", 0)).doubleValue() * 100, p.getOrDefault("trades", 0));
+            if (b.get("pnl") instanceof Map<?, ?> p && p.get("pnl") instanceof Number n) {
+                double pct = p.get("pnlPct") instanceof Number x ? x.doubleValue() : 0;
+                Object trades = p.get("trades") == null ? 0 : p.get("trades");
+                pnl = String.format("%+.2f USDT（%+.2f%%，%s 筆）", n.doubleValue(), pct * 100, trades);
+            }
             sb.append("• ").append(b.get("name")).append("（").append(b.get("id")).append("）").append(b.get("symbol")).append(" · 運行 ").append(dur).append(" · 收益 ").append(pnl).append("\n");
         }
         if (running == 0) sb.append("沒有機器人在運行\n");
