@@ -105,10 +105,10 @@ onMounted(loadStatus)
 </script>
 
 <style scoped>
-.login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #f0f2f5; padding: 20px; }
+.login-wrap { min-height: calc(100vh - 100px); display: flex; align-items: center; justify-content: center; background: var(--el-bg-color-page); padding: 20px; }
 .login-card { width: 420px; }
-.title { text-align: center; color: #1f4e79; margin: 0 0 4px; }
-.sub { text-align: center; color: #888; margin: 0 0 20px; font-size: 13px; }
-.status { font-size: 12px; color: #666; margin-top: 12px; padding: 8px; background: #f6f8fa; border-radius: 4px; }
-.hint { color: #aaa; font-size: 11px; margin-top: 12px; }
+.title { text-align: center; color: var(--el-color-primary); margin: 0 0 4px; }
+.sub { text-align: center; color: var(--el-text-color-secondary); margin: 0 0 20px; font-size: 13px; }
+.status { font-size: 12px; color: var(--el-text-color-regular); margin-top: 12px; padding: 8px; background: var(--el-fill-color-light); border-radius: 4px; }
+.hint { color: var(--el-text-color-placeholder); font-size: 11px; margin-top: 12px; }
 </style>
