@@ -423,7 +423,12 @@ export default {
     "s52": "参数 · ",
     "s53": "下线 {id} 并对其持仓送市价卖单平仓？",
     "s54": "删除机器人 {id}？",
-    "s55": "它目前持仓 {pos}，要一并市价卖出平仓吗？"
+    "s55": "它目前持仓 {pos}，要一并市价卖出平仓吗？",
+    "diagBars": "已收 {n} 根收盘K（{syms} 标的）",
+    "diagNoBars": "还没收到行情",
+    "diagWarmup": "预热中，每标的要 {n} 根",
+    "diagSignals": "信号 {n} 次",
+    "diagLastBar": "最后一根："
   },
   "system": {
     "s1": "服务",
