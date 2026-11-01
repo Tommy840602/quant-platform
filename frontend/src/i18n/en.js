@@ -423,7 +423,12 @@ export default {
     "s52": "Params · ",
     "s53": "Stop {id} and market-sell its position?",
     "s54": "Delete bot {id}?",
-    "s55": "It holds {pos}. Market-sell to flatten as well?"
+    "s55": "It holds {pos}. Market-sell to flatten as well?",
+    "diagBars": "{n} closed bars ({syms} symbols)",
+    "diagNoBars": "no market data yet",
+    "diagWarmup": "warming up, needs {n} per symbol",
+    "diagSignals": "{n} signals",
+    "diagLastBar": "Last bar: "
   },
   "system": {
     "s1": "Service",

@@ -423,7 +423,12 @@ export default {
     "s52": "參數 · ",
     "s53": "下線 {id} 並對其持倉送市價賣單平倉？",
     "s54": "刪除機器人 {id}？",
-    "s55": "它目前持倉 {pos}，要一併市價賣出平倉嗎？"
+    "s55": "它目前持倉 {pos}，要一併市價賣出平倉嗎？",
+    "diagBars": "已收 {n} 根收盤K（{syms} 標的）",
+    "diagNoBars": "還沒收到行情",
+    "diagWarmup": "暖機中，每標的要 {n} 根",
+    "diagSignals": "訊號 {n} 次",
+    "diagLastBar": "最後一根："
   },
   "system": {
     "s1": "服務",

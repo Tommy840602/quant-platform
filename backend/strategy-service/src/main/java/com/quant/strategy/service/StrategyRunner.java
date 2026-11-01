@@ -94,6 +94,8 @@ public class StrategyRunner {
     private final Set<String> builtins = ConcurrentHashMap.newKeySet();
     private final Map<String, Long> startedAt = new ConcurrentHashMap<>();            // id -> 本次上線時間(ms)
     private final Map<String, Map<String, Object>> pnlCache = new ConcurrentHashMap<>();
+    // 診斷：每個機器人收到幾根 K 線 / 幾根已收盤、最後一根時間（確認行情真的有餵到策略）
+    private final Map<String, long[]> barStats = new ConcurrentHashMap<>();   // id -> {bars, closedBars, lastBarAt}
     private volatile long pnlCachedAt = 0;
 
     public StrategyRunner(OrderClient orderClient, NotifyClient notifyClient, OmsClient omsClient, StrategyPositionBook book) {
@@ -189,6 +191,8 @@ public class StrategyRunner {
             String filter = symbolFilter.get(id);
             if (filter != null && !filter.equals(sym)) continue;   // 機器人限定 symbol
             if (!factories.containsKey(id)) continue;
+            long[] st = barStats.computeIfAbsent(id, k -> new long[3]);
+            st[0]++; if (event.kline().closed()) st[1]++; st[2] = System.currentTimeMillis();
             try { instanceFor(id, sym).onBar(event.kline(), contexts.get(id)); }
             catch (Exception e) { log.warn("策略 {} [{}] 執行錯誤: {}", id, sym, e.getMessage()); }
         }
@@ -227,6 +231,14 @@ public class StrategyRunner {
             m.put("startedAt", st == null ? 0 : st);
             m.put("runningSec", st == null ? 0 : (now - st) / 1000);
             m.put("pnl", pnl.get(id));   // null = 未運行 / OMS 不在
+            long[] bs = barStats.getOrDefault(id, new long[3]);
+            StrategyContextImpl c = contexts.get(id);
+            Map<String, Object> diag = new java.util.LinkedHashMap<>();
+            diag.put("bars", bs[0]); diag.put("closedBars", bs[1]); diag.put("lastBarAt", bs[2]);
+            diag.put("symbols", symbolFilter.containsKey(id) ? 1 : prices.size());
+            diag.put("signals", c.signals()); diag.put("lastSignalAt", c.lastSignalAt());
+            diag.put("lastSignal", c.lastSignal()); diag.put("lastOutcome", c.lastOutcome());
+            m.put("diag", diag);
             out.add(m);
         });
         out.sort(Comparator.comparing(m -> (String) m.get("id")));
@@ -244,7 +256,7 @@ public class StrategyRunner {
         return "started: " + id;
     }
     public String stop(String id) {
-        running.remove(id); startedAt.remove(id); log.info("機器人下線: {}", id);
+        running.remove(id); startedAt.remove(id); barStats.remove(id); instances.put(id, new ConcurrentHashMap<>()); log.info("機器人下線: {}", id);
         if (repo != null) try { repo.setRunning(id, false); } catch (Exception e) { log.warn("持久化失敗: {}", e.getMessage()); }
         notify(":pause_button: 機器人下線 [" + names.getOrDefault(id, id) + "] (" + id + ")");
         return "stopped: " + id;

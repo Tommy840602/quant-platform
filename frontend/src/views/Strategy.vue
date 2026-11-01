@@ -40,9 +40,19 @@
             <span v-else class="hint">{{ row.status === 'RUNNING' ? t('strategy.s43') : '—' }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="status" :label="t('strategy.s6')" width="110">
+        <el-table-column prop="status" :label="t('strategy.s6')" width="210">
           <template #default="{ row }">
             <el-tag :type="row.status === 'RUNNING' ? 'success' : 'info'">{{ row.status }}</el-tag>
+            <div v-if="row.status === 'RUNNING' && row.diag" class="hint" style="line-height:1.5;margin-top:4px">
+              <div :title="row.diag.lastBarAt ? t('strategy.diagLastBar') + locale.fmtTime(row.diag.lastBarAt) : ''">
+                {{ t('strategy.diagBars', { n: row.diag.closedBars, syms: row.diag.symbols }) }}
+                <span v-if="!row.diag.closedBars" style="color:#e6a23c">· {{ t('strategy.diagNoBars') }}</span>
+                <span v-else-if="row.diag.closedBars < (row.params?.slow || 8) * row.diag.symbols" style="color:#e6a23c">· {{ t('strategy.diagWarmup', { n: row.params?.slow || 8 }) }}</span>
+              </div>
+              <div :title="row.diag.lastSignalAt ? locale.fmtTime(row.diag.lastSignalAt) : ''">
+                {{ t('strategy.diagSignals', { n: row.diag.signals }) }}<template v-if="row.diag.lastSignal"> · {{ row.diag.lastSignal }} → {{ row.diag.lastOutcome }}</template>
+              </div>
+            </div>
           </template>
         </el-table-column>
         <el-table-column :label="t('strategy.s7')" width="340">
