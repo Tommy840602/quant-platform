@@ -45,14 +45,67 @@ public class StrategyRunner {
     @Value("${order.notional-usdt:0}")   // 每單目標名目(USDT)；0=用策略原始固定數量
     private double orderNotional;
 
+    private BotRepository repo;   // 可為 null（單元測試）
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setBotRepository(BotRepository r) { this.repo = r; }
+    private final Map<String, String> types = new ConcurrentHashMap<>();            // id -> type
+    private final Map<String, Map<String, Object>> paramsOf = new ConcurrentHashMap<>();
+    private final Set<String> builtins = ConcurrentHashMap.newKeySet();
+
     public StrategyRunner(OrderClient orderClient, NotifyClient notifyClient, OmsClient omsClient, StrategyPositionBook book) {
         this.orderClient = orderClient;
         this.notifyClient = notifyClient;
         this.omsClient = omsClient;
         this.book = book;
-        put("ma-fast", () -> new MovingAverageStrategy("ma-fast", 3, 8, 0.001), "雙均線 3/8（快）", null);
-        put("ma-mid",  () -> new MovingAverageStrategy("ma-mid", 5, 20, 0.001), "雙均線 5/20（中）", null);
-        put("ma-slow", () -> new MovingAverageStrategy("ma-slow", 10, 30, 0.001), "雙均線 10/30（慢）", null);
+        builtin("ma-fast", 3, 8, "雙均線 3/8（快）");
+        builtin("ma-mid", 5, 20, "雙均線 5/20（中）");
+        builtin("ma-slow", 10, 30, "雙均線 10/30（慢）");
+    }
+
+    private void builtin(String id, int fast, int slow, String name) {
+        put(id, () -> new MovingAverageStrategy(id, fast, slow, 0.001), name, null);
+        types.put(id, "ma"); builtins.add(id);
+        paramsOf.put(id, new java.util.LinkedHashMap<>(Map.of("fast", fast, "slow", slow, "qty", 0.001)));
+    }
+
+    /**
+     * 啟動後從 DB 讀回機器人（後續 6）：自建的重新建立、內建的套回參數 / 配置、RUNNING 的恢復運行。
+     * 以前全在記憶體，重啟就歸零。
+     */
+    @jakarta.annotation.PostConstruct
+    public void restoreFromDb() {
+        if (repo == null) return;
+        try {
+            repo.setting("order_notional").ifPresent(v -> orderNotional = Math.max(0, Double.parseDouble(v)));
+            int restored = 0, resumed = 0;
+            for (BotRepository.BotRow b : repo.findAll()) {
+                if (!factories.containsKey(b.id())) {
+                    String r = createBot(b.id(), b.type(), b.symbol(), b.params(), false);
+                    if (!r.startsWith("created")) { log.warn("恢復機器人 {} 失敗: {}", b.id(), r); continue; }
+                    restored++;
+                } else if (builtins.contains(b.id()) && "ma".equals(b.type()) && b.params() != null && b.params().containsKey("fast")) {
+                    applyMaParams(b.id(), (int) num(b.params(), "fast", 3), (int) num(b.params(), "slow", 8), num(b.params(), "qty", 0.001));
+                }
+                StrategyContextImpl c = contexts.get(b.id());
+                if (c != null) c.setAllocation(b.allocation());
+                if (b.running()) { running.add(b.id()); resumed++; }
+            }
+            // 內建的若 DB 還沒有列，寫一筆讓之後的改動有地方存
+            for (String id : builtins) if (repo.findAll().stream().noneMatch(r -> r.id().equals(id))) persist(id);
+            log.info("機器人持久化：恢復 {} 個自建、{} 個恢復運行", restored, resumed);
+            if (resumed > 0) notify(":repeat: 重啟後恢復 " + resumed + " 個機器人運行：" + running);
+        } catch (Exception e) {
+            log.error("讀回機器人設定失敗（繼續以記憶體狀態運行）: {}", e.getMessage());
+        }
+    }
+
+    private void persist(String id) {
+        if (repo == null || !factories.containsKey(id)) return;
+        try {
+            repo.upsert(new BotRepository.BotRow(id, types.getOrDefault(id, "ma"), names.getOrDefault(id, id),
+                    symbolFilter.get(id), paramsOf.getOrDefault(id, Map.of()),
+                    contexts.get(id) == null ? 1.0 : contexts.get(id).getAllocation(), running.contains(id), builtins.contains(id)));
+        } catch (Exception e) { log.warn("機器人 {} 寫入 DB 失敗: {}", id, e.getMessage()); }
     }
 
     private void put(String id, Supplier<Strategy> factory, String name, String symbol) {
@@ -112,12 +165,14 @@ public class StrategyRunner {
     public String start(String id) {
         if (!factories.containsKey(id)) return "no such strategy: " + id;
         running.add(id); log.info("機器人上線: {}", id);
+        if (repo != null) try { repo.setRunning(id, true); } catch (Exception e) { log.warn("持久化失敗: {}", e.getMessage()); }
         notify(":arrow_forward: 機器人上線 [" + names.getOrDefault(id, id) + "] (" + id
                 + ") 標的 " + symbolFilter.getOrDefault(id, "ALL"));
         return "started: " + id;
     }
     public String stop(String id) {
         running.remove(id); log.info("機器人下線: {}", id);
+        if (repo != null) try { repo.setRunning(id, false); } catch (Exception e) { log.warn("持久化失敗: {}", e.getMessage()); }
         notify(":pause_button: 機器人下線 [" + names.getOrDefault(id, id) + "] (" + id + ")");
         return "stopped: " + id;
     }
@@ -130,27 +185,40 @@ public class StrategyRunner {
 
     /** 每單目標名目(USDT)：0=用策略原始固定數量。執行期可調(風控頁)。 */
     public double getOrderNotional() { return orderNotional; }
-    public double setOrderNotional(double v) { orderNotional = Math.max(0, v); return orderNotional; }
+    public double setOrderNotional(double v) {
+        orderNotional = Math.max(0, v);
+        if (repo != null) try { repo.setSetting("order_notional", String.valueOf(orderNotional)); } catch (Exception e) { log.warn("持久化失敗: {}", e.getMessage()); }
+        return orderNotional;
+    }
 
     /** 資金配置：設定策略下單量倍率（見架構文件 §10 資金配置）。 */
     public String setAllocation(String id, double weight) {
         StrategyContextImpl c = contexts.get(id);
         if (c == null) return "no such strategy: " + id;
         c.setAllocation(weight);
+        if (repo != null) try { repo.setAllocation(id, weight); } catch (Exception e) { log.warn("持久化失敗: {}", e.getMessage()); }
         return "allocation set: " + id + " x" + weight;
     }
 
     public String updateParams(String id, int fast, int slow, double qty) {
         Supplier<Strategy> f = factories.get(id);
         if (f == null || !(f.get() instanceof MovingAverageStrategy)) return "僅雙均線支援此參數: " + id;
-        factories.put(id, () -> new MovingAverageStrategy(id, fast, slow, qty));
-        instances.put(id, new ConcurrentHashMap<>());   // 丟掉舊實例，各 symbol 重新暖機
+        applyMaParams(id, fast, slow, qty);
+        if (repo != null) try { repo.setParams(id, paramsOf.get(id)); } catch (Exception e) { log.warn("持久化失敗: {}", e.getMessage()); }
         log.info("機器人 {} 參數更新 fast={} slow={} qty={}", id, fast, slow, qty);
         return "updated: " + id;
     }
 
+    private void applyMaParams(String id, int fast, int slow, double qty) {
+        factories.put(id, () -> new MovingAverageStrategy(id, fast, slow, qty));
+        instances.put(id, new ConcurrentHashMap<>());   // 丟掉舊實例，各 symbol 重新暖機
+        paramsOf.put(id, new java.util.LinkedHashMap<>(Map.of("fast", fast, "slow", slow, "qty", qty)));
+    }
+
     /** 動態建立機器人（見架構文件 §8 策略打包精神）。type: ma|rsi|grid。 */
-    public String createBot(String id, String type, String symbol, Map<String, Object> p) {
+    public String createBot(String id, String type, String symbol, Map<String, Object> p) { return createBot(id, type, symbol, p, true); }
+
+    public String createBot(String id, String type, String symbol, Map<String, Object> p, boolean persist) {
         if (factories.containsKey(id)) return "id 已存在: " + id;
         double qty = num(p, "qty", 0.001);
         Supplier<Strategy> s;
@@ -212,8 +280,11 @@ public class StrategyRunner {
             default -> { return "未知類型: " + type + "（支援 ma/ema/macd/boll/kdj/rsi/grid/cci/williams/donchian/momentum/atr）"; }
         }
         put(id, s, name + (symbol != null ? " · " + symbol.toUpperCase() : ""), symbol);
+        types.put(id, type.toLowerCase());
+        paramsOf.put(id, p == null ? new java.util.LinkedHashMap<>() : new java.util.LinkedHashMap<>(p));
+        if (persist) persist(id);
         log.info("建立機器人 {} type={} symbol={}", id, type, symbol);
-        notify(":new: 建立機器人 [" + name + "] (" + id + ") 標的 "
+        if (persist) notify(":new: 建立機器人 [" + name + "] (" + id + ") 標的 "
                 + (symbol != null ? symbol.toUpperCase() : "ALL"));
         return "created: " + id;
     }
