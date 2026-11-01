@@ -91,7 +91,9 @@ public class BinanceAccountService {
     }
 
     /** 執行期套用連線設定（登入頁推送）。keys 空字串代表不變更。 */
-    public synchronized void applyConfig(String newEnv, String newKey, String newSecret) {
+    /** 回傳 env 是否有變（testnet ⇄ mainnet）：權益基準完全不同，呼叫端要重置回撤峰值與風控日計數。 */
+    public synchronized boolean applyConfig(String newEnv, String newKey, String newSecret) {
+        String before = env;
         if (newEnv != null && !newEnv.isBlank()) {
             env = newEnv.trim().toLowerCase();
             restUrl = "mainnet".equals(env) ? mainnetRestUrl : testnetRestUrl;
@@ -99,6 +101,7 @@ public class BinanceAccountService {
         if (newKey != null && !newKey.isBlank()) apiKey = newKey.trim();
         if (newSecret != null && !newSecret.isBlank()) apiSecret = newSecret.trim();
         log.warn("套用連線設定：env={} REST={} keySet={}", env, restUrl, live());
+        return !env.equalsIgnoreCase(before);
     }
 
     /** 目前連線狀態（不外洩金鑰內容）。 */
