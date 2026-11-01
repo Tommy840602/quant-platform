@@ -48,6 +48,44 @@ public class StrategyRunner {
     @Value("${order.notional-usdt:0}")   // 每單目標名目(USDT)；0=用策略原始固定數量
     private double orderNotional;
 
+    // ── 資金配置守門（後續 8）──
+    @Value("${strategy.max-exposure-pct:1.0}") private double maxExposurePct;          // 運行中機器人最大合計曝險 / 權益
+    @Value("${strategy.max-total-allocation:5.0}") private double maxTotalAllocation;  // 每單名目=0（用固定數量）時退而求其次：Σ allocation 上限
+    private AccountClient accountClient;   // 可為 null（單元測試）
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setAccountClient(AccountClient c) { this.accountClient = c; }
+
+    /**
+     * 檢查「讓 id 以 allocation 運行」後，所有運行中機器人的合計曝險是否超標。
+     * 曝險估算（保守）：每單名目 × allocation × 該機器人可交易的標的數（指定標的=1，ALL=目前看到的幣數）。
+     * 每單名目=0 時改檢查 Σ allocation ≤ maxTotalAllocation。回 null = 通過，否則回原因。
+     */
+    String exposureViolation(String id, double allocationForId) {
+        Set<String> ids = new java.util.HashSet<>(running); ids.add(id);
+        double sumAlloc = 0, exposure = 0;
+        for (String b : ids) {
+            double a = b.equals(id) ? allocationForId : (contexts.get(b) == null ? 1.0 : contexts.get(b).getAllocation());
+            sumAlloc += a;
+            int syms = symbolFilter.containsKey(b) ? 1 : Math.max(1, prices.size());
+            exposure += orderNotional * a * syms;
+        }
+        if (orderNotional <= 0) {
+            if (maxTotalAllocation > 0 && sumAlloc > maxTotalAllocation)
+                return String.format("運行中機器人配置倍率合計 %.2f 超過上限 %.2f（每單名目=0 時以此守門）", sumAlloc, maxTotalAllocation);
+            return null;
+        }
+        if (maxExposurePct <= 0 || accountClient == null) return null;
+        double equity;
+        try {
+            Object t = accountClient.balance().data().get("totalUsdt");
+            equity = t instanceof Number n ? n.doubleValue() : 0;
+        } catch (Exception e) { return "取不到帳戶權益，無法確認資金配置（account-service）: " + e.getMessage(); }
+        if (equity <= 0) return "帳戶權益為 0，無法配置";
+        if (exposure > equity * maxExposurePct)
+            return String.format("運行中機器人最大曝險 %.0f USDT（每單名目 %.0f × 倍率 × 標的數）超過權益 %.0f × %.0f%%", exposure, orderNotional, equity, maxExposurePct * 100);
+        return null;
+    }
+
     private BotRepository repo;   // 可為 null（單元測試）
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     public void setBotRepository(BotRepository r) { this.repo = r; }
@@ -197,6 +235,8 @@ public class StrategyRunner {
 
     public String start(String id) {
         if (!factories.containsKey(id)) return "no such strategy: " + id;
+        String bad = exposureViolation(id, contexts.get(id) == null ? 1.0 : contexts.get(id).getAllocation());
+        if (bad != null) { log.warn("拒絕上線 {}: {}", id, bad); return "rejected: " + bad; }
         running.add(id); startedAt.put(id, System.currentTimeMillis()); log.info("機器人上線: {}", id);
         if (repo != null) try { repo.setRunning(id, true); } catch (Exception e) { log.warn("持久化失敗: {}", e.getMessage()); }
         notify(":arrow_forward: 機器人上線 [" + names.getOrDefault(id, id) + "] (" + id
@@ -228,6 +268,7 @@ public class StrategyRunner {
     public String setAllocation(String id, double weight) {
         StrategyContextImpl c = contexts.get(id);
         if (c == null) return "no such strategy: " + id;
+        if (running.contains(id)) { String bad = exposureViolation(id, weight); if (bad != null) return "rejected: " + bad; }
         c.setAllocation(weight);
         if (repo != null) try { repo.setAllocation(id, weight); } catch (Exception e) { log.warn("持久化失敗: {}", e.getMessage()); }
         return "allocation set: " + id + " x" + weight;
