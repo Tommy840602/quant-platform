@@ -583,6 +583,56 @@ public class OrderService {
         return ApiResponse.ok(rows);
     }
 
+    @Value("${account.fee-rate:0.001}") private double feeRate;   // 與 account-service CashLedger 同值
+
+    /**
+     * 單一策略損益（本次上線以來）：FIFO 沖銷已實現 + 未平倉按現價估未實現，手續費以名目 × feeRate 計。
+     * 只看目前 env、目前模式（模擬 / 真單分開）、sinceMs 之後成交的單。
+     */
+    public ApiResponse<Map<String, Object>> strategyPnl(String strategyId, long sinceMs) {
+        String env = gateway.currentEnv() == null ? "testnet" : gateway.currentEnv().toLowerCase();
+        boolean dry = gateway.isDryRun();
+        Map<String, java.util.Deque<double[]>> lots = new java.util.HashMap<>();   // symbol -> [qty, price]
+        double realized = 0, fees = 0, buyNotional = 0; int trades = 0;
+        for (OrderEntity o : orders.findByEnvAndStrategyIdAndStatusOrderByIdAsc(env, strategyId, OrderStatus.FILLED.name())) {
+            if (DRYRUN_MARK.equals(o.getExchangeOrderId()) != dry) continue;
+            OffsetDateTime t = o.getUpdatedAt() == null ? o.getCreatedAt() : o.getUpdatedAt();
+            if (t != null && t.toInstant().toEpochMilli() < sinceMs) continue;
+            double qty = o.getFilledQty() == null ? 0 : o.getFilledQty();
+            double px = o.getAvgPrice() == null ? 0 : o.getAvgPrice();
+            if (qty <= 0 || px <= 0) continue;
+            trades++; fees += qty * px * feeRate;
+            var dq = lots.computeIfAbsent(o.getSymbol(), k -> new java.util.ArrayDeque<>());
+            if ("BUY".equals(o.getSide())) { dq.addLast(new double[]{qty, px}); buyNotional += qty * px; }
+            else {
+                double remain = qty;
+                while (remain > 1e-12 && !dq.isEmpty()) {
+                    double[] lot = dq.peekFirst();
+                    double m = Math.min(remain, lot[0]);
+                    realized += (px - lot[1]) * m;
+                    lot[0] -= m; remain -= m;
+                    if (lot[0] <= 1e-12) dq.removeFirst();
+                }
+            }
+        }
+        double unrealized = 0, openQty = 0, openCost = 0;
+        for (var e : lots.entrySet()) {
+            double last = lastPrice(e.getKey());
+            for (double[] lot : e.getValue()) {
+                openQty += lot[0]; openCost += lot[0] * lot[1];
+                if (last > 0) unrealized += (last - lot[1]) * lot[0];
+            }
+        }
+        double pnl = realized + unrealized - fees;
+        Map<String, Object> m = new java.util.LinkedHashMap<>();
+        m.put("strategyId", strategyId); m.put("sinceMs", sinceMs); m.put("trades", trades);
+        m.put("realized", round4(realized)); m.put("unrealized", round4(unrealized)); m.put("fees", round4(fees));
+        m.put("pnl", round4(pnl));
+        m.put("pnlPct", buyNotional > 0 ? round4(pnl / buyNotional) : 0.0);   // 相對投入（累計買入名目）
+        m.put("openQty", round4(openQty)); m.put("avgCost", openQty > 0 ? round4(openCost / openQty) : 0.0);
+        return ApiResponse.ok(m);
+    }
+
     /** 績效歸因：依 strategy_id 匯總已成交訂單（見架構文件 §11）。 */
     public ApiResponse<List<Map<String, Object>>> attribution() {
         List<Map<String, Object>> rows = new java.util.ArrayList<>();

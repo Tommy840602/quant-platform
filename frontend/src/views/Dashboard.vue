@@ -20,6 +20,15 @@
               </template>
             </el-table-column>
             <el-table-column prop="position" label="部位" width="90" />
+            <el-table-column label="執行時長" width="110">
+              <template #default="{ row }">{{ row.runningSec ? fmtDur(row.runningSec) : '—' }}</template>
+            </el-table-column>
+            <el-table-column label="收益" width="130">
+              <template #default="{ row }">
+                <b v-if="row.pnl" :style="{ color: row.pnl.pnl > 0 ? '#67c23a' : row.pnl.pnl < 0 ? '#f56c6c' : 'inherit' }">{{ (row.pnl.pnl > 0 ? '+' : '') + Number(row.pnl.pnl).toFixed(2) }}</b>
+                <span v-else>—</span>
+              </template>
+            </el-table-column>
           </el-table>
         </el-card>
       </el-col>
@@ -75,6 +84,7 @@
 </template>
 
 <script setup>
+const fmtDur = s => { s = Math.max(0, +s || 0); const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60); return d ? `${d}天${h}時` : h ? `${h}時${m}分` : `${m}分` }
 import { computed, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useMarketStore } from '@/store/market'

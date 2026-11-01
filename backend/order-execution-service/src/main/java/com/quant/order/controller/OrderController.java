@@ -75,6 +75,12 @@ public class OrderController {
         return orderService.fillsByStrategy(strategyId);
     }
 
+    /** 單一策略本次上線以來損益：GET /api/order/orders/strategy-pnl?strategyId=&since=ms */
+    @GetMapping("/strategy-pnl")
+    public ApiResponse<Map<String, Object>> strategyPnl(@RequestParam String strategyId, @RequestParam(defaultValue = "0") long since) {
+        return orderService.strategyPnl(strategyId, since);
+    }
+
     @GetMapping("/attribution")
     public ApiResponse<List<Map<String, Object>>> attribution() {
         return orderService.attribution();

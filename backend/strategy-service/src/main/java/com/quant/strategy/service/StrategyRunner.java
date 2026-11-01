@@ -51,6 +51,9 @@ public class StrategyRunner {
     private final Map<String, String> types = new ConcurrentHashMap<>();            // id -> type
     private final Map<String, Map<String, Object>> paramsOf = new ConcurrentHashMap<>();
     private final Set<String> builtins = ConcurrentHashMap.newKeySet();
+    private final Map<String, Long> startedAt = new ConcurrentHashMap<>();            // id -> 本次上線時間(ms)
+    private final Map<String, Map<String, Object>> pnlCache = new ConcurrentHashMap<>();
+    private volatile long pnlCachedAt = 0;
 
     public StrategyRunner(OrderClient orderClient, NotifyClient notifyClient, OmsClient omsClient, StrategyPositionBook book) {
         this.orderClient = orderClient;
@@ -88,7 +91,7 @@ public class StrategyRunner {
                 }
                 StrategyContextImpl c = contexts.get(b.id());
                 if (c != null) c.setAllocation(b.allocation());
-                if (b.running()) { running.add(b.id()); resumed++; }
+                if (b.running()) { running.add(b.id()); resumed++; startedAt.put(b.id(), b.startedAt() == null ? System.currentTimeMillis() : b.startedAt()); }
             }
             // 內建的若 DB 還沒有列，寫一筆讓之後的改動有地方存
             for (String id : builtins) if (repo.findAll().stream().noneMatch(r -> r.id().equals(id))) persist(id);
@@ -104,7 +107,7 @@ public class StrategyRunner {
         try {
             repo.upsert(new BotRepository.BotRow(id, types.getOrDefault(id, "ma"), names.getOrDefault(id, id),
                     symbolFilter.get(id), paramsOf.getOrDefault(id, Map.of()),
-                    contexts.get(id) == null ? 1.0 : contexts.get(id).getAllocation(), running.contains(id), builtins.contains(id)));
+                    contexts.get(id) == null ? 1.0 : contexts.get(id).getAllocation(), running.contains(id), builtins.contains(id), startedAt.get(id)));
         } catch (Exception e) { log.warn("機器人 {} 寫入 DB 失敗: {}", id, e.getMessage()); }
     }
 
@@ -150,28 +153,53 @@ public class StrategyRunner {
         }
     }
 
+    /** 各機器人損益（本次上線以來），向 OMS 查，5 秒快取；OMS 不在就空。 */
+    private Map<String, Map<String, Object>> pnlAll() {
+        long now = System.currentTimeMillis();
+        if (now - pnlCachedAt < 5000) return pnlCache;
+        Map<String, Map<String, Object>> fresh = new ConcurrentHashMap<>();
+        for (String id : running) {
+            try {
+                var r = omsClient.strategyPnl(id, startedAt.getOrDefault(id, 0L));
+                if (r != null && r.code() == 0 && r.data() != null) fresh.put(id, r.data());
+            } catch (Exception e) { log.debug("查 {} 損益失敗: {}", id, e.getMessage()); }
+        }
+        pnlCache.clear(); pnlCache.putAll(fresh); pnlCachedAt = now;
+        return pnlCache;
+    }
+
     public List<Map<String, Object>> list() {
         List<Map<String, Object>> out = new ArrayList<>();
-        factories.forEach((id, s) -> out.add(Map.of(
-                "id", id, "name", names.getOrDefault(id, id),
-                "status", running.contains(id) ? "RUNNING" : "STOPPED",
-                "position", contexts.get(id).totalPosition(),
-                "allocation", contexts.get(id).getAllocation(),
-                "symbol", symbolFilter.getOrDefault(id, "ALL"))));
+        Map<String, Map<String, Object>> pnl = pnlAll();
+        long now = System.currentTimeMillis();
+        factories.forEach((id, s) -> {
+            Map<String, Object> m = new java.util.LinkedHashMap<>();
+            m.put("id", id); m.put("name", names.getOrDefault(id, id));
+            m.put("status", running.contains(id) ? "RUNNING" : "STOPPED");
+            m.put("position", contexts.get(id).totalPosition());
+            m.put("allocation", contexts.get(id).getAllocation());
+            m.put("symbol", symbolFilter.getOrDefault(id, "ALL"));
+            m.put("type", types.getOrDefault(id, "ma"));
+            Long st = startedAt.get(id);
+            m.put("startedAt", st == null ? 0 : st);
+            m.put("runningSec", st == null ? 0 : (now - st) / 1000);
+            m.put("pnl", pnl.get(id));   // null = 未運行 / OMS 不在
+            out.add(m);
+        });
         out.sort(Comparator.comparing(m -> (String) m.get("id")));
         return out;
     }
 
     public String start(String id) {
         if (!factories.containsKey(id)) return "no such strategy: " + id;
-        running.add(id); log.info("機器人上線: {}", id);
+        running.add(id); startedAt.put(id, System.currentTimeMillis()); log.info("機器人上線: {}", id);
         if (repo != null) try { repo.setRunning(id, true); } catch (Exception e) { log.warn("持久化失敗: {}", e.getMessage()); }
         notify(":arrow_forward: 機器人上線 [" + names.getOrDefault(id, id) + "] (" + id
                 + ") 標的 " + symbolFilter.getOrDefault(id, "ALL"));
         return "started: " + id;
     }
     public String stop(String id) {
-        running.remove(id); log.info("機器人下線: {}", id);
+        running.remove(id); startedAt.remove(id); log.info("機器人下線: {}", id);
         if (repo != null) try { repo.setRunning(id, false); } catch (Exception e) { log.warn("持久化失敗: {}", e.getMessage()); }
         notify(":pause_button: 機器人下線 [" + names.getOrDefault(id, id) + "] (" + id + ")");
         return "stopped: " + id;
