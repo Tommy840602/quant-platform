@@ -44,6 +44,8 @@ export const riskApi = {
 }
 export const systemApi = {
   status: () => http.get('/system/status'),
+  kafkaLag: () => http.get('/notify/kafka-lag'),
+  alertStats: () => http.get('/notify/stats'),
   klines: () => http.get('/market/klines/status')
 }
 export const accountApi = {

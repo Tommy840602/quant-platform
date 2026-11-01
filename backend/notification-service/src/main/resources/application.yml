@@ -38,3 +38,6 @@ notification:
     webhook-url: ${SLACK_WEBHOOK_URL:}
   dedupe-enabled: ${NOTIFY_DEDUPE_ENABLED:true}
   dedupe-window-sec: ${NOTIFY_DEDUPE_WINDOW_SEC:600}   # 同類告警 10 分鐘內只發一則，其餘計數後補「+N」
+  kafka-lag:
+    enabled: ${KAFKA_LAG_MONITOR_ENABLED:true}
+    threshold: ${KAFKA_LAG_THRESHOLD:500}              # 連續兩次（60 秒）超過才告警
