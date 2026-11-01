@@ -42,8 +42,7 @@ export default {
     "hint": "选择国家会同时设置语言、时区、币种；三项也可单独调整。后端「交易日」固定以 Asia/Taipei 计算。",
     "save": "保存",
     "cancel": "取消",
-    "saved": "已应用",
-    "pageNote": "各页内容翻译逐步补齐中。"
+    "saved": "已应用"
   },
   "common": {
     "refresh": "刷新",

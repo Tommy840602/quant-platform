@@ -42,8 +42,7 @@ export default {
     "hint": "국가를 선택하면 언어·시간대·통화가 함께 설정됩니다(개별 변경 가능). 백엔드 \"거래일\"은 Asia/Taipei 고정입니다.",
     "save": "저장",
     "cancel": "취소",
-    "saved": "적용됨",
-    "pageNote": "각 페이지 번역은 순차적으로 추가 중입니다."
+    "saved": "적용됨"
   },
   "common": {
     "refresh": "새로고침",

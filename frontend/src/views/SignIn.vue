@@ -1,5 +1,12 @@
 <template>
   <div class="signin-wrap">
+    <div class="tools">
+      <el-button size="small" text @click="pref?.open()" :title="t('locale.title')" style="font-size:16px;padding:0 6px">{{ countryFlag }} <span class="tz">{{ locale.tzOffsetLabel }}</span></el-button>
+      <el-button circle size="small" @click="theme.toggle()" :title="theme.dark ? t('header.themeLight') : t('header.themeDark')">
+        <el-icon><Sunny v-if="theme.dark" /><Moon v-else /></el-icon>
+      </el-button>
+    </div>
+    <LocaleDialog ref="pref" />
     <el-card class="signin-card">
       <template #header>
         <div class="hd"><span class="logo">{{ t('signin.s3') }}</span><span class="sub">{{ t('signin.s4') }}</span></div>
@@ -23,13 +30,22 @@
 <script setup>
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
-import { reactive, ref } from 'vue'
+import { reactive, ref, computed } from 'vue'
+import { Sunny, Moon } from '@element-plus/icons-vue'
+import { useThemeStore } from '@/store/theme'
+import { useLocaleStore } from '@/store/locale'
+import { COUNTRIES } from '@/config/countries'
+import LocaleDialog from '@/components/LocaleDialog.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/store/auth'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const theme = useThemeStore()
+const locale = useLocaleStore()
+const pref = ref(null)
+const countryFlag = computed(() => COUNTRIES.find(c => c.code === locale.country)?.flag || '🌐')
 const form = reactive({ username: '', password: '' })
 const loading = ref(false)
 const error = ref('')
@@ -48,6 +64,8 @@ async function submit() {
 </script>
 
 <style scoped>
+.tools { position: fixed; top: 14px; right: 16px; display: flex; align-items: center; gap: 6px; }
+.tz { font-size: 11px; color: var(--el-text-color-secondary); }
 .signin-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--el-bg-color-page); padding: 20px; }
 .signin-card { width: 380px; }
 .hd { display: flex; align-items: baseline; gap: 10px; }
