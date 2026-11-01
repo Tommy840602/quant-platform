@@ -35,14 +35,22 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="strategyId" :label="t('orders.s9')" />
+      <el-table-column prop="strategyId" :label="t('orders.s9')" width="110" />
+      <el-table-column :label="t('orders.time')" width="150">
+        <template #default="{ row }">{{ row.createdAt ? locale.fmtTime(row.createdAt, { year: undefined }) : '' }}</template>
+      </el-table-column>
+      <el-table-column :label="t('orders.reason')" min-width="260">
+        <template #default="{ row }"><span v-if="row.reason" :style="{ color: row.status === 'REJECTED' ? '#f56c6c' : '#e6a23c' }">{{ row.reason }}</span></template>
+      </el-table-column>
     </el-table>
   </el-card>
 </template>
 
 <script setup>
 import { useI18n } from 'vue-i18n'
+import { useLocaleStore } from '@/store/locale'
 const { t } = useI18n()
+const locale = useLocaleStore()
 import { reactive, ref, computed, onMounted } from 'vue'
 import { SYMBOLS } from '@/config/symbols'
 import { orderApi } from '@/api'

@@ -32,6 +32,8 @@ public class OrderEntity {
     private String market = "SPOT";
     /** testnet | mainnet — 下單當時的環境；對帳 / 歸因只看目前環境 */
     private String env = "testnet";
+    /** 拒單 / 狀態不明的原因；成功的單為 null */
+    private String reason;
     @Column(name = "created_at")
     private OffsetDateTime createdAt = OffsetDateTime.now();
     @Column(name = "updated_at")
@@ -63,6 +65,8 @@ public class OrderEntity {
     public void setStrategyId(String v) { this.strategyId = v; }
     public String getMarket() { return market; }
     public void setMarket(String v) { this.market = v; }
+    public String getReason() { return reason; }
+    public void setReason(String v) { this.reason = v; }
     public String getEnv() { return env; }
     public void setEnv(String v) { this.env = v; }
     public String getAccount() { return account; }
