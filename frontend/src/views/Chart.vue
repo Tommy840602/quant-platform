@@ -3,13 +3,13 @@
     <el-card>
       <template #header>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-          <span>即時看盤</span>
+          <span>{{ t('chart.s2') }}</span>
           <symbol-select v-model="symbol" style="width:150px" @change="reload" />
           <el-select v-model="interval" style="width:90px" @change="reload">
             <el-option v-for="i in ['1m','5m','15m','1h','4h','1d']" :key="i" :label="i" :value="i" />
           </el-select>
-          <el-select v-model="sigType" style="width:130px" @change="draw" placeholder="買賣信號">
-            <el-option v-for="s in SIGNAL_TYPES" :key="s.value" :label="'信號:'+s.label" :value="s.value" />
+          <el-select v-model="sigType" style="width:130px" @change="draw" :placeholder="t('chart.s1')">
+            <el-option v-for="s in SIGNAL_TYPES" :key="s.value" :label="t('chart.s9')+s.label" :value="s.value" />
           </el-select>
           <span class="px"><coin-icon :symbol="symbol" :size="18" /> <price-change :symbol="symbol" /></span>
           <el-checkbox-group v-model="overlays" size="small" @change="draw">
@@ -19,19 +19,19 @@
             <el-checkbox-button label="VWAP">VWAP</el-checkbox-button>
           </el-checkbox-group>
           <el-checkbox-group v-model="panes" size="small" @change="reload">
-            <el-checkbox-button label="VOL">量</el-checkbox-button>
+            <el-checkbox-button label="VOL">{{ t('chart.s3') }}</el-checkbox-button>
             <el-checkbox-button label="MACD">MACD</el-checkbox-button>
             <el-checkbox-button label="RSI">RSI</el-checkbox-button>
             <el-checkbox-button label="KDJ">KDJ</el-checkbox-button>
             <el-checkbox-button label="ATR">ATR</el-checkbox-button>
             <el-checkbox-button label="CCI">CCI</el-checkbox-button>
-            <el-checkbox-button label="WR">威廉</el-checkbox-button>
+            <el-checkbox-button label="WR">{{ t('chart.s4') }}</el-checkbox-button>
             <el-checkbox-button label="OBV">OBV</el-checkbox-button>
             <el-checkbox-button label="TRIX">TRIX</el-checkbox-button>
             <el-checkbox-button label="ROC">ROC</el-checkbox-button>
             <el-checkbox-button label="CMF">CMF</el-checkbox-button>
           </el-checkbox-group>
-          <el-button size="small" @click="reload">刷新</el-button>
+          <el-button size="small" @click="reload">{{ t('chart.s5') }}</el-button>
         </div>
       </template>
       <div class="chart-wrap">
@@ -49,12 +49,14 @@
       <div v-show="panes.includes('TRIX')" ref="trixEl" style="height:90px;margin-top:6px"></div>
       <div v-show="panes.includes('ROC')" ref="rocEl" style="height:90px;margin-top:6px"></div>
       <div v-show="panes.includes('CMF')" ref="cmfEl" style="height:90px;margin-top:6px"></div>
-      <div class="hint">行情來自幣安正式網公開資料（20 對）。指標：MA/EMA/BOLL 疊圖，成交量、MACD、RSI、KDJ 分頁。</div>
+      <div class="hint">{{ t('chart.s6') }}</div>
     </el-card>
   </div>
 </template>
 
 <script setup>
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { createChart } from 'lightweight-charts'
 import { storeToRefs } from 'pinia'
@@ -134,7 +136,7 @@ function markSignals(times) {
     position: x.side === 'BUY' ? 'belowBar' : 'aboveBar',
     color: x.side === 'BUY' ? '#26a69a' : '#ef5350',
     shape: x.side === 'BUY' ? 'arrowUp' : 'arrowDown',
-    text: x.side === 'BUY' ? '買' : '賣'
+    text: x.side === 'BUY' ? t('chart.s7') : t('chart.s8')
   }))
   candle.setMarkers(markers)
 }

@@ -2,49 +2,49 @@
   <div>
     <el-row :gutter="16">
       <el-col :span="10">
-        <el-card header="手動下單 / 查單 / 撤單">
+        <el-card :header="t('live.s1')">
           <el-form label-width="80px">
-            <el-form-item label="市場">
+            <el-form-item :label="t('live.s2')">
               <el-radio-group v-model="ticket.market">
-                <el-radio-button label="SPOT">現貨</el-radio-button>
-                <el-radio-button label="USDT_M">合約(U本位)</el-radio-button>
+                <el-radio-button label="SPOT">{{ t('live.s25') }}</el-radio-button>
+                <el-radio-button label="USDT_M">{{ t('live.s26') }}</el-radio-button>
               </el-radio-group>
             </el-form-item>
-            <el-form-item label="標的">
+            <el-form-item :label="t('live.s3')">
               <symbol-select v-model="ticket.symbol" style="width:100%" />
             </el-form-item>
-            <el-form-item label="方向">
+            <el-form-item :label="t('live.s4')">
               <el-radio-group v-model="ticket.side">
-                <el-radio-button label="BUY">買入/做多</el-radio-button>
-                <el-radio-button label="SELL">賣出/做空</el-radio-button>
+                <el-radio-button label="BUY">{{ t('live.s27') }}</el-radio-button>
+                <el-radio-button label="SELL">{{ t('live.s28') }}</el-radio-button>
               </el-radio-group>
             </el-form-item>
-            <el-form-item label="類型">
+            <el-form-item :label="t('live.s5')">
               <el-select v-model="ticket.type" style="width:100%">
                 <el-option label="MARKET" value="MARKET" />
                 <el-option label="LIMIT" value="LIMIT" />
               </el-select>
             </el-form-item>
-            <el-form-item v-if="ticket.type==='LIMIT'" label="限價">
+            <el-form-item v-if="ticket.type==='LIMIT'" :label="t('live.s6')">
               <el-input-number v-model="ticket.price" :step="priceStep" :min="0" :precision="pricePrecision" style="width:180px" />
-              <el-button size="small" style="margin-left:8px" @click="ticket.price = prices[ticket.symbol] || 0">帶入現價</el-button>
-              <span class="hint" v-if="prices[ticket.symbol]">現價 {{ prices[ticket.symbol] }}
+              <el-button size="small" style="margin-left:8px" @click="ticket.price = prices[ticket.symbol] || 0">{{ t('live.s29') }}</el-button>
+              <span class="hint" v-if="prices[ticket.symbol]">{{ t('live.s30') }} {{ prices[ticket.symbol] }}
                 <template v-if="ticket.price > 0">｜ {{ ((ticket.price / prices[ticket.symbol] - 1) * 100).toFixed(2) }}%</template></span>
             </el-form-item>
-            <el-form-item label="數量">
+            <el-form-item :label="t('live.s7')">
               <el-input-number v-model="ticket.quantity" :step="0.001" :min="0.001" />
             </el-form-item>
-            <el-form-item v-if="ticket.market==='USDT_M'" label="槓桿">
+            <el-form-item v-if="ticket.market==='USDT_M'" :label="t('live.s8')">
               <el-input-number v-model="ticket.leverage" :min="1" :max="125" />
-              <el-button size="small" style="margin-left:8px" @click="setLev">設定</el-button>
+              <el-button size="small" style="margin-left:8px" @click="setLev">{{ t('live.s31') }}</el-button>
             </el-form-item>
             <el-form-item>
-              <el-button type="primary" :loading="submitting" @click="submit">送出下單</el-button>
-              <el-button :disabled="!lastId" @click="query">查單</el-button>
-              <el-button type="danger" :disabled="!lastId" @click="cancel">撤單</el-button>
+              <el-button type="primary" :loading="submitting" @click="submit">{{ t('live.s32') }}</el-button>
+              <el-button :disabled="!lastId" @click="query">{{ t('live.s33') }}</el-button>
+              <el-button type="danger" :disabled="!lastId" @click="cancel">{{ t('live.s34') }}</el-button>
             </el-form-item>
           </el-form>
-          <div v-if="lastId" class="last">最近：{{ lastId }}（{{ lastSymbol }} · {{ lastMarket }}）</div>
+          <div v-if="lastId" class="last">{{ t('live.s35') }}{{ lastId }}（{{ lastSymbol }} · {{ lastMarket }}）</div>
           <el-alert v-if="lastResp" :title="lastResp" type="info" :closable="false" style="margin-top:8px" />
         </el-card>
       </el-col>
@@ -52,63 +52,63 @@
         <el-card>
           <template #header>
             <div style="display:flex;justify-content:space-between;align-items:center">
-              <span>部位（account 由成交事件更新，已落地 DB）</span>
-              <el-button size="small" @click="loadPositions">重新整理</el-button>
+              <span>{{ t('live.s36') }}</span>
+              <el-button size="small" @click="loadPositions">{{ t('live.s37') }}</el-button>
             </div>
           </template>
           <el-table :data="positions" size="small">
-            <el-table-column label="標的">
+            <el-table-column :label="t('live.s3')">
         <template #default="{ row }">
           <span style="display:inline-flex;align-items:center;gap:6px"><coin-icon v-if="row.symbol && row.symbol !== 'ALL'" :symbol="row.symbol" :size="16" />{{ row.symbol }}</span>
         </template>
       </el-table-column>
-            <el-table-column prop="quantity" label="數量" />
-            <el-table-column prop="avgPrice" label="均價" />
-            <el-table-column prop="unrealizedPnl" label="未實現盈虧" />
+            <el-table-column prop="quantity" :label="t('live.s7')" />
+            <el-table-column prop="avgPrice" :label="t('live.s9')" />
+            <el-table-column prop="unrealizedPnl" :label="t('live.s10')" />
           </el-table>
         </el-card>
       </el-col>
     </el-row>
-    <el-card header="智慧單 / 條件單（自動停損 · 停利 · 移動鎖利）" style="margin-top:16px">
+    <el-card :header="t('live.s11')" style="margin-top:16px">
       <el-form :inline="true">
-        <el-form-item label="標的">
+        <el-form-item :label="t('live.s3')">
           <symbol-select v-model="condForm.symbol" style="width:130px" />
         </el-form-item>
-        <el-form-item label="條件">
+        <el-form-item :label="t('live.s12')">
           <el-select v-model="condForm.type" style="width:150px">
-            <el-option label="停損(跌破賣)" value="STOP_LOSS" />
-            <el-option label="停利(漲到賣)" value="TAKE_PROFIT" />
-            <el-option label="移動鎖利" value="TRAILING_STOP" />
-            <el-option label="突破價買/賣" value="PRICE_ABOVE" />
-            <el-option label="跌破價買/賣" value="PRICE_BELOW" />
+            <el-option :label="t('live.s13')" value="STOP_LOSS" />
+            <el-option :label="t('live.s14')" value="TAKE_PROFIT" />
+            <el-option :label="t('live.s15')" value="TRAILING_STOP" />
+            <el-option :label="t('live.s16')" value="PRICE_ABOVE" />
+            <el-option :label="t('live.s17')" value="PRICE_BELOW" />
           </el-select>
         </el-form-item>
-        <el-form-item label="方向">
+        <el-form-item :label="t('live.s4')">
           <el-select v-model="condForm.side" style="width:90px">
-            <el-option label="賣" value="SELL" /><el-option label="買" value="BUY" />
+            <el-option :label="t('live.s18')" value="SELL" /><el-option :label="t('live.s19')" value="BUY" />
           </el-select>
         </el-form-item>
-        <el-form-item label="數量"><el-input-number v-model="condForm.quantity" :step="0.001" :min="0.001" /></el-form-item>
-        <el-form-item v-if="condForm.type!=='TRAILING_STOP'" label="觸發價"><el-input-number v-model="condForm.triggerPrice" :step="1" /></el-form-item>
-        <el-form-item v-else label="回撤%"><el-input-number v-model="condForm.trailPctUi" :step="0.5" :min="0.1" /></el-form-item>
-        <el-form-item><el-button type="primary" @click="createCond">建立</el-button></el-form-item>
+        <el-form-item :label="t('live.s7')"><el-input-number v-model="condForm.quantity" :step="0.001" :min="0.001" /></el-form-item>
+        <el-form-item v-if="condForm.type!=='TRAILING_STOP'" :label="t('live.s20')"><el-input-number v-model="condForm.triggerPrice" :step="1" /></el-form-item>
+        <el-form-item v-else :label="t('live.s21')"><el-input-number v-model="condForm.trailPctUi" :step="0.5" :min="0.1" /></el-form-item>
+        <el-form-item><el-button type="primary" @click="createCond">{{ t('live.s38') }}</el-button></el-form-item>
       </el-form>
       <el-table :data="conds" size="small" style="margin-top:8px">
         <el-table-column prop="id" label="#" width="60" />
-        <el-table-column label="標的" width="100">
+        <el-table-column :label="t('live.s3')" width="100">
         <template #default="{ row }">
           <span style="display:inline-flex;align-items:center;gap:6px"><coin-icon v-if="row.symbol && row.symbol !== 'ALL'" :symbol="row.symbol" :size="16" />{{ row.symbol }}</span>
         </template>
       </el-table-column>
-        <el-table-column prop="type" label="條件" width="140" />
-        <el-table-column prop="side" label="方向" width="70" />
-        <el-table-column prop="quantity" label="數量" width="90" />
-        <el-table-column prop="triggerPrice" label="觸發價" width="100" />
-        <el-table-column prop="trailPct" label="回撤" width="80" />
-        <el-table-column prop="status" label="狀態" width="110" />
-        <el-table-column label="操作" width="90">
+        <el-table-column prop="type" :label="t('live.s12')" width="140" />
+        <el-table-column prop="side" :label="t('live.s4')" width="70" />
+        <el-table-column prop="quantity" :label="t('live.s7')" width="90" />
+        <el-table-column prop="triggerPrice" :label="t('live.s20')" width="100" />
+        <el-table-column prop="trailPct" :label="t('live.s22')" width="80" />
+        <el-table-column prop="status" :label="t('live.s23')" width="110" />
+        <el-table-column :label="t('live.s24')" width="90">
           <template #default="{ row }">
-            <el-button size="small" type="danger" :disabled="row.status!=='PENDING'" @click="cancelCond(row.id)">取消</el-button>
+            <el-button size="small" type="danger" :disabled="row.status!=='PENDING'" @click="cancelCond(row.id)">{{ t('live.s39') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -117,6 +117,8 @@
 </template>
 
 <script setup>
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 import { reactive, ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
@@ -139,7 +141,7 @@ const lastResp = ref(''); const lastId = ref(''); const lastSymbol = ref(''); co
 const positions = ref([])
 
 async function submit() {
-  if (ticket.type === 'LIMIT' && !(ticket.price > 0)) { ElMessage.warning('請輸入限價'); return }
+  if (ticket.type === 'LIMIT' && !(ticket.price > 0)) { ElMessage.warning(t('live.s40')); return }
   submitting.value = true
   try {
     const id = 'ui-' + Date.now()
@@ -151,34 +153,34 @@ async function submit() {
     }
     const resp = await orderApi.submit(intent)
     lastId.value = id; lastSymbol.value = ticket.symbol; lastMarket.value = ticket.market
-    lastResp.value = `下單 code=${resp.code} · ${resp.message}`
-    ElMessage.success('已送出')
+    lastResp.value = t('live.s55', { code: resp.code, msg: resp.message })
+    ElMessage.success(t('live.s41'))
     setTimeout(loadPositions, 800)
   } catch (e) {
-    lastResp.value = '下單失敗：' + (e.response?.data?.message || e.message)
-    ElMessage.error('下單失敗')
+    lastResp.value = t('live.s42') + (e.response?.data?.message || e.message)
+    ElMessage.error(t('live.s43'))
   } finally { submitting.value = false }
 }
 
 async function query() {
   try {
     const resp = await orderApi.query(lastId.value, lastSymbol.value, lastMarket.value)
-    lastResp.value = '查單：' + (resp.data || resp.message)
-  } catch (e) { lastResp.value = '查單失敗：' + (e.response?.data?.message || e.message) }
+    lastResp.value = t('live.s44') + (resp.data || resp.message)
+  } catch (e) { lastResp.value = t('live.s45') + (e.response?.data?.message || e.message) }
 }
 async function cancel() {
   try {
     const resp = await orderApi.cancel(lastId.value, lastSymbol.value, lastMarket.value)
-    lastResp.value = '撤單：' + (resp.data || resp.message)
-    ElMessage.success('已送撤單'); setTimeout(loadPositions, 800)
-  } catch (e) { lastResp.value = '撤單失敗：' + (e.response?.data?.message || e.message) }
+    lastResp.value = t('live.s46') + (resp.data || resp.message)
+    ElMessage.success(t('live.s47')); setTimeout(loadPositions, 800)
+  } catch (e) { lastResp.value = t('live.s48') + (e.response?.data?.message || e.message) }
 }
 async function setLev() {
   try {
     const resp = await http.post('/order/orders/leverage', null, { params: { symbol: ticket.symbol, leverage: ticket.leverage } })
-    lastResp.value = '設定槓桿：' + (resp.data || resp.message)
-    ElMessage.success('槓桿已送出')
-  } catch (e) { lastResp.value = '槓桿設定失敗：' + (e.response?.data?.message || e.message) }
+    lastResp.value = t('live.s49') + (resp.data || resp.message)
+    ElMessage.success(t('live.s50'))
+  } catch (e) { lastResp.value = t('live.s51') + (e.response?.data?.message || e.message) }
 }
 async function loadPositions() {
   try { positions.value = (await accountApi.positions()).data || [] } catch { positions.value = [] }
@@ -192,10 +194,10 @@ async function createCond() {
   const body = { symbol: condForm.symbol, type: condForm.type, side: condForm.side, quantity: condForm.quantity, market: 'SPOT', account: 'main' }
   if (condForm.type === 'TRAILING_STOP') body.trailPct = condForm.trailPctUi / 100
   else body.triggerPrice = condForm.triggerPrice
-  try { await orderApi.condCreate(body); ElMessage.success('條件單已建立'); loadConds() }
-  catch (e) { ElMessage.error('建立失敗：' + (e.response?.data?.message || e.message)) }
+  try { await orderApi.condCreate(body); ElMessage.success(t('live.s52')); loadConds() }
+  catch (e) { ElMessage.error(t('live.s53') + (e.response?.data?.message || e.message)) }
 }
-async function cancelCond(id) { await orderApi.condCancel(id); ElMessage.success('已取消'); loadConds() }
+async function cancelCond(id) { await orderApi.condCancel(id); ElMessage.success(t('live.s54')); loadConds() }
 loadConds()
 
 // SSE 即時推播（見架構文件 §11.3）：後端每 3 秒推部位/回撤，取代輪詢

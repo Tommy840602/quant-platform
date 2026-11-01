@@ -2,45 +2,47 @@
   <el-card>
     <template #header>
       <div style="display:flex;justify-content:space-between;align-items:center">
-        <span>訂單紀錄</span>
-        <el-button size="small" type="primary" @click="load">重新整理</el-button>
+        <span>{{ t('orders.s10') }}</span>
+        <el-button size="small" type="primary" @click="load">{{ t('orders.s11') }}</el-button>
       </div>
     </template>
     <el-form :inline="true" style="margin-bottom:12px">
-      <el-form-item label="標的">
-        <symbol-select v-model="filter.symbol" clearable placeholder="全部" style="width:160px" />
+      <el-form-item :label="t('orders.s1')">
+        <symbol-select v-model="filter.symbol" clearable :placeholder="t('orders.s2')" style="width:160px" />
       </el-form-item>
-      <el-form-item label="狀態">
-        <el-select v-model="filter.status" placeholder="全部" clearable style="width:150px">
+      <el-form-item :label="t('orders.s3')">
+        <el-select v-model="filter.status" :placeholder="t('orders.s2')" clearable style="width:150px">
           <el-option v-for="s in statuses" :key="s" :label="s" :value="s" />
         </el-select>
       </el-form-item>
     </el-form>
     <el-table :data="filtered" size="small" max-height="480">
       <el-table-column prop="clientOrderId" label="ClientOrderId" width="210" />
-      <el-table-column label="標的" width="110">
+      <el-table-column :label="t('orders.s1')" width="110">
         <template #default="{ row }">
           <span style="display:inline-flex;align-items:center;gap:6px"><coin-icon v-if="row.symbol && row.symbol !== 'ALL'" :symbol="row.symbol" :size="16" />{{ row.symbol }}</span>
         </template>
       </el-table-column>
-      <el-table-column prop="side" label="方向" width="70" />
-      <el-table-column prop="type" label="類型" width="90" />
-      <el-table-column prop="quantity" label="數量" width="100" />
-      <el-table-column prop="filledQty" label="成交量" width="100" />
-      <el-table-column prop="status" label="狀態" width="140" />
-      <el-table-column prop="env" label="環境" width="110">
+      <el-table-column prop="side" :label="t('orders.s4')" width="70" />
+      <el-table-column prop="type" :label="t('orders.s5')" width="90" />
+      <el-table-column prop="quantity" :label="t('orders.s6')" width="100" />
+      <el-table-column prop="filledQty" :label="t('orders.s7')" width="100" />
+      <el-table-column prop="status" :label="t('orders.s3')" width="140" />
+      <el-table-column prop="env" :label="t('orders.s8')" width="110">
         <template #default="{ row }">
           <el-tag v-if="row.env" :type="row.env.startsWith('mainnet') ? (row.env.endsWith('/dry') ? 'warning' : 'danger') : 'info'" size="small">
-            {{ row.env.startsWith('mainnet') ? '正式網' : '測試網' }}{{ row.env.endsWith('/dry') ? ' · 模擬' : '' }}
+            {{ row.env.startsWith('mainnet') ? t('orders.s12') : t('orders.s13') }}{{ row.env.endsWith('/dry') ? t('orders.s14') : '' }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="strategyId" label="策略" />
+      <el-table-column prop="strategyId" :label="t('orders.s9')" />
     </el-table>
   </el-card>
 </template>
 
 <script setup>
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 import { reactive, ref, computed, onMounted } from 'vue'
 import { SYMBOLS } from '@/config/symbols'
 import { orderApi } from '@/api'
