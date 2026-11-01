@@ -428,7 +428,8 @@ export default {
     "diagNoBars": "まだ行情なし",
     "diagWarmup": "ウォームアップ中、銘柄ごと {n} 本必要",
     "diagSignals": "シグナル {n} 回",
-    "diagLastBar": "最終足："
+    "diagLastBar": "最終足：",
+    "allSymbols": "全銘柄（20 ペア）"
   },
   "system": {
     "s1": "サービス",

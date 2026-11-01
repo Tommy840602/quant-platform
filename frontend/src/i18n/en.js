@@ -428,7 +428,8 @@ export default {
     "diagNoBars": "no market data yet",
     "diagWarmup": "warming up, needs {n} per symbol",
     "diagSignals": "{n} signals",
-    "diagLastBar": "Last bar: "
+    "diagLastBar": "Last bar: ",
+    "allSymbols": "All symbols (20 pairs)"
   },
   "system": {
     "s1": "Service",

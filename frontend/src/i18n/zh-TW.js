@@ -428,7 +428,8 @@ export default {
     "diagNoBars": "還沒收到行情",
     "diagWarmup": "暖機中，每標的要 {n} 根",
     "diagSignals": "訊號 {n} 次",
-    "diagLastBar": "最後一根："
+    "diagLastBar": "最後一根：",
+    "allSymbols": "全部標的（20 對）"
   },
   "system": {
     "s1": "服務",

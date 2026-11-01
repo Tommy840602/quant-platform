@@ -80,7 +80,7 @@
           </el-select>
         </el-form-item>
         <el-form-item :label="t('strategy.s2')">
-          <symbol-select v-model="bot.symbol" style="width:150px" />
+          <symbol-select v-model="bot.symbol" allow-all :all-label="t('strategy.allSymbols')" style="width:190px" />
         </el-form-item>
         <el-form-item :label="t('strategy.s10')"><el-input-number v-model="bot.qty" :step="0.001" :min="0.001" /></el-form-item>
         <el-form-item><el-button type="primary" @click="createBot">{{ t('strategy.s22') }}</el-button></el-form-item>
@@ -199,7 +199,7 @@ async function saveEdit() {
 }
 async function createBot() {
   if (!bot.id) return ElMessage.warning(t('strategy.s38'))
-  const resp = await strategyApi.create({ id: bot.id, type: bot.type, symbol: bot.symbol, params: { qty: bot.qty } })
+  const resp = await strategyApi.create({ id: bot.id, type: bot.type, symbol: bot.symbol === 'ALL' ? null : bot.symbol, params: { qty: bot.qty } })
   ElMessage.success(resp.data || t('strategy.s39')); bot.id = ''; load()
 }
 async function testSlack() {
