@@ -11,4 +11,8 @@ import java.util.Map;
 public interface RiskClient {
     @PostMapping("/kill-switch")
     Map<String, Object> killSwitch(@RequestParam boolean on, @RequestParam String reason);
+
+    /** 切 env 後重置風控日計數 / 日初權益（testnet 的 39 萬假錢不能當 mainnet 的日初）。 */
+    @PostMapping("/status/reset")
+    Object resetDay(@RequestParam String account);
 }

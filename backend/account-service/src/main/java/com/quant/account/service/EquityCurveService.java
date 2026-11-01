@@ -156,6 +156,25 @@ public class EquityCurveService {
     }
 
     /** 手動解除熔斷並以目前權益重置峰值（見架構文件 §10.3）。 */
+    /**
+     * 切 env（testnet ⇄ mainnet）：兩邊權益數字完全不同（測試網送的 39 萬假錢 vs 正式網真錢），
+     * 不重置峰值會立刻判成 −99% 回撤觸發熔斷。只重置峰值與日初基準；若熔斷是因此誤觸發也一併解除。
+     */
+    public void rebaseForEnvSwitch(String newEnv) {
+        double eq = computeEquity();
+        boolean wasTripped = tripped;
+        peak = eq; warned = false; tripped = false;
+        persist(K_PEAK, String.valueOf(peak));
+        persist(K_TRIPPED, "0");
+        try { redis.delete(K_PENDING_TRIP); } catch (Exception ignore) {}
+        if (wasTripped) {
+            try { riskClient.killSwitch(false, "env switch rebase"); } catch (Exception e) { log.warn("解除熔斷失敗: {}", e.getMessage()); }
+        }
+        try { riskClient.resetDay("main"); } catch (Exception e) { log.warn("重置風控日計數失敗: {}", e.getMessage()); }
+        log.warn("切換 env={}：回撤峰值重置為 {}，風控日初權益重置{}", newEnv, Math.round(eq), wasTripped ? "，並解除因此誤觸發的熔斷" : "");
+        notify(":arrows_counterclockwise: 已切換到 " + newEnv + "，回撤峰值 / 日初權益重置為 " + Math.round(eq) + (wasTripped ? "；誤觸發的熔斷已解除" : ""));
+    }
+
     public void resetBreaker() {
         tripped = false; warned = false;
         peak = computeEquity();

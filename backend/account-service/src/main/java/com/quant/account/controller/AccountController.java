@@ -69,7 +69,8 @@ public class AccountController {
     /** 套用連線設定：POST /api/account/config { env, apiKey, apiSecret } */
     @PostMapping("/config")
     public ApiResponse<Map<String, Object>> setConfig(@RequestBody Map<String, String> body) {
-        binanceAccount.applyConfig(body.get("env"), body.get("apiKey"), body.get("apiSecret"));
+        boolean envChanged = binanceAccount.applyConfig(body.get("env"), body.get("apiKey"), body.get("apiSecret"));
+        if (envChanged) equity.rebaseForEnvSwitch(String.valueOf(body.get("env")));
         return ApiResponse.ok(binanceAccount.configStatus());
     }
 }
