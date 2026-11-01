@@ -1,0 +1,60 @@
+export default {
+  "menu": {
+    "trade": "Trade",
+    "chart": "Live Chart",
+    "live": "Live Trading",
+    "orders": "Orders",
+    "account": "Account",
+    "analysis": "Analysis",
+    "dashboard": "Dashboard",
+    "strategy": "Strategies / Bots",
+    "backtest": "Backtest",
+    "settings": "Settings",
+    "login": "Connection",
+    "risk": "Risk",
+    "system": "System Status"
+  },
+  "header": {
+    "title": "Quant Trading Platform",
+    "marketOn": "Market connected",
+    "marketOff": "Market offline",
+    "mainnet": "Mainnet",
+    "testnet": "Testnet",
+    "dryRun": "Dry-run (no orders)",
+    "live": "LIVE orders",
+    "remain": "left",
+    "fillsLive": "Fills: realtime",
+    "fillsPoll": "Fills: polling",
+    "logout": "Log out",
+    "signin": "Sign in",
+    "themeDark": "Dark mode",
+    "themeLight": "Light mode"
+  },
+  "locale": {
+    "title": "Region & Preferences",
+    "country": "Country / Region",
+    "lang": "Language",
+    "tz": "Time zone",
+    "currency": "Display currency",
+    "now": "Current time",
+    "rate": "Rate 1 USDT ≈",
+    "refreshRate": "Refresh rate",
+    "hint": "Picking a country sets language, time zone and currency at once; each can be overridden. Times and local-currency values follow these. Backend \"trading day\" (risk counters, 09:00 digest) is fixed to Asia/Taipei.",
+    "save": "Save",
+    "cancel": "Cancel",
+    "saved": "Applied",
+    "pageNote": "Page content translations are being added progressively; most pages are still in Traditional Chinese."
+  },
+  "common": {
+    "refresh": "Refresh",
+    "save": "Save",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "delete": "Delete",
+    "edit": "Edit",
+    "start": "Start",
+    "stop": "Stop",
+    "create": "Create",
+    "loading": "Loading…"
+  }
+}

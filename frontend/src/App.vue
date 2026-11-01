@@ -1,4 +1,5 @@
 <template>
+  <el-config-provider :locale="elLocale">
   <router-view v-if="$route.meta.public" />
 
   <el-container v-else class="layout">
@@ -13,69 +14,122 @@
       <el-menu :default-active="$route.path" router class="menu" :collapse="collapsed"
                :background-color="menuBg" :text-color="menuText" active-text-color="#ffffff">
         <el-menu-item-group>
-          <template #title><span class="grp">交易</span></template>
-          <el-menu-item index="/chart"><el-icon><TrendCharts /></el-icon><template #title>即時看盤</template></el-menu-item>
-          <el-menu-item index="/live"><el-icon><Monitor /></el-icon><template #title>實盤監控</template></el-menu-item>
-          <el-menu-item index="/orders"><el-icon><Document /></el-icon><template #title>訂單紀錄</template></el-menu-item>
-          <el-menu-item index="/account"><el-icon><Wallet /></el-icon><template #title>帳戶部位</template></el-menu-item>
+          <template #title><span class="grp">{{ t('menu.trade') }}</span></template>
+          <el-menu-item index="/chart"><el-icon><TrendCharts /></el-icon><template #title>{{ t('menu.chart') }}</template></el-menu-item>
+          <el-menu-item index="/live"><el-icon><Monitor /></el-icon><template #title>{{ t('menu.live') }}</template></el-menu-item>
+          <el-menu-item index="/orders"><el-icon><Document /></el-icon><template #title>{{ t('menu.orders') }}</template></el-menu-item>
+          <el-menu-item index="/account"><el-icon><Wallet /></el-icon><template #title>{{ t('menu.account') }}</template></el-menu-item>
         </el-menu-item-group>
         <el-menu-item-group>
-          <template #title><span class="grp">分析</span></template>
-          <el-menu-item index="/"><el-icon><DataLine /></el-icon><template #title>儀表板</template></el-menu-item>
-          <el-menu-item index="/strategy"><el-icon><SetUp /></el-icon><template #title>策略/機器人</template></el-menu-item>
-          <el-menu-item index="/backtest"><el-icon><Histogram /></el-icon><template #title>回測結果</template></el-menu-item>
+          <template #title><span class="grp">{{ t('menu.analysis') }}</span></template>
+          <el-menu-item index="/"><el-icon><DataLine /></el-icon><template #title>{{ t('menu.dashboard') }}</template></el-menu-item>
+          <el-menu-item index="/strategy"><el-icon><SetUp /></el-icon><template #title>{{ t('menu.strategy') }}</template></el-menu-item>
+          <el-menu-item index="/backtest"><el-icon><Histogram /></el-icon><template #title>{{ t('menu.backtest') }}</template></el-menu-item>
         </el-menu-item-group>
         <el-menu-item-group>
-          <template #title><span class="grp">設定</span></template>
-          <el-menu-item index="/login"><el-icon><Key /></el-icon><template #title>連線設定</template></el-menu-item>
-          <el-menu-item index="/risk"><el-icon><Warning /></el-icon><template #title>風控設定</template></el-menu-item>
-          <el-menu-item index="/system"><el-icon><Monitor /></el-icon><template #title>系統狀態</template></el-menu-item>
+          <template #title><span class="grp">{{ t('menu.settings') }}</span></template>
+          <el-menu-item index="/login"><el-icon><Key /></el-icon><template #title>{{ t('menu.login') }}</template></el-menu-item>
+          <el-menu-item index="/risk"><el-icon><Warning /></el-icon><template #title>{{ t('menu.risk') }}</template></el-menu-item>
+          <el-menu-item index="/system"><el-icon><Monitor /></el-icon><template #title>{{ t('menu.system') }}</template></el-menu-item>
         </el-menu-item-group>
       </el-menu>
     </el-aside>
     <el-container>
       <el-header class="header">
-        <span class="title">{{ $route.meta.title || '量化交易平台' }}</span>
+        <span class="title">{{ routeTitle }}</span>
         <div class="right">
           <!-- 全站常駐：env + 是否真送單，避免在正式網關了 Dry-Run 卻沒意識到 -->
           <el-tag v-if="trade.env" :type="trade.mainnet ? (effDry ? 'warning' : 'danger') : 'info'"
                   :effect="trade.mainnet && !effDry ? 'dark' : 'light'" size="small" @click="$router.push('/login')" style="cursor:pointer">
-            {{ trade.mainnet ? '正式網' : '測試網' }} · {{ effDry ? 'Dry-Run 不送單' : '真實送單' }}<span v-if="trade.mainnet && !effDry && trade.armRemainingSec > 0"> · 剩 {{ fmtRemain(trade.armRemainingSec) }}</span>
+            {{ trade.mainnet ? t('header.mainnet') : t('header.testnet') }} · {{ effDry ? t('header.dryRun') : t('header.live') }}<span v-if="trade.mainnet && !effDry && trade.armRemainingSec > 0"> · {{ t('header.remain') }} {{ fmtRemain(trade.armRemainingSec) }}</span>
           </el-tag>
           <!-- 成交回報：UDS 連著 = 即時；設定了但沒連上 = 退回 30 秒輪詢 -->
           <el-tag v-if="udsExpected" :type="udsConnected ? 'success' : 'warning'" size="small" :title="udsTitle">
-            成交回報 {{ udsConnected ? '即時' : '輪詢中' }}
+            {{ udsConnected ? t('header.fillsLive') : t('header.fillsPoll') }}
           </el-tag>
           <el-tag :type="wsConnected ? 'success' : 'danger'" size="small">
-            {{ wsConnected ? '行情已連線' : '行情斷線' }}
+            {{ wsConnected ? t('header.marketOn') : t('header.marketOff') }}
           </el-tag>
-          <el-button circle size="small" @click="theme.toggle()" :title="theme.dark ? '切換日間' : '切換夜間'">
+          <el-button size="small" text @click="pref.open()" :title="t('locale.title')" style="font-size:16px;padding:0 6px">{{ countryFlag }} <span style="font-size:11px;color:var(--el-text-color-secondary)">{{ locale.tzOffsetLabel }} {{ clock }}</span></el-button>
+          <el-button circle size="small" @click="theme.toggle()" :title="theme.dark ? t('header.themeLight') : t('header.themeDark')">
             <el-icon><Sunny v-if="theme.dark" /><Moon v-else /></el-icon>
           </el-button>
           <template v-if="auth.loggedIn">
             <span class="user">{{ auth.username }}</span>
-            <el-button size="small" text @click="doLogout">登出</el-button>
+            <el-button size="small" text @click="doLogout">{{ t('header.logout') }}</el-button>
           </template>
-          <el-button v-else size="small" text @click="$router.push('/signin')">登入</el-button>
+          <el-button v-else size="small" text @click="$router.push('/signin')">{{ t('header.signin') }}</el-button>
         </div>
       </el-header>
       <el-main><router-view /></el-main>
     </el-container>
   </el-container>
+
+  <!-- 地區與偏好：國家 → 語言 / 時區 / 幣別 -->
+  <el-dialog v-model="pref.show" :title="t('locale.title')" width="520px">
+    <el-form label-width="110px">
+      <el-form-item :label="t('locale.country')">
+        <el-select v-model="pref.country" style="width:100%" @change="pref.applyCountry">
+          <el-option v-for="c in COUNTRIES" :key="c.code" :value="c.code" :label="c.flag + ' ' + c.name + '（' + c.lang + ' · ' + c.tz + ' · ' + c.currency + '）'" />
+        </el-select>
+      </el-form-item>
+      <el-form-item :label="t('locale.lang')">
+        <el-select v-model="pref.lang" style="width:100%"><el-option v-for="l in LANGS" :key="l.value" :value="l.value" :label="l.label" /></el-select>
+      </el-form-item>
+      <el-form-item :label="t('locale.tz')">
+        <el-select v-model="pref.tz" filterable allow-create style="width:100%"><el-option v-for="z in TIMEZONES" :key="z" :value="z" :label="z" /></el-select>
+        <span class="hint">{{ t('locale.now') }}：{{ pref.preview }}</span>
+      </el-form-item>
+      <el-form-item :label="t('locale.currency')">
+        <el-select v-model="pref.currency" style="width:160px"><el-option v-for="c in CURRENCIES" :key="c.code" :value="c.code" :label="c.code + ' ' + c.symbol" /></el-select>
+        <span class="hint">{{ t('locale.rate') }} {{ pref.rateText }} <el-button link size="small" @click="locale.loadRates(true)">{{ t('locale.refreshRate') }}</el-button></span>
+      </el-form-item>
+    </el-form>
+    <div class="hint" style="line-height:1.6">{{ t('locale.hint') }}<br>{{ t('locale.pageNote') }}</div>
+    <template #footer>
+      <el-button @click="pref.show = false">{{ t('locale.cancel') }}</el-button>
+      <el-button type="primary" @click="pref.save">{{ t('locale.save') }}</el-button>
+    </template>
+  </el-dialog>
+  </el-config-provider>
 </template>
 
 <script setup>
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { useMarketStore } from '@/store/market'
 import { useAuthStore } from '@/store/auth'
 import { useThemeStore } from '@/store/theme'
 import { useTradeStore } from '@/store/trade'
 import { tradeConfigApi } from '@/api'
-import { watch } from 'vue'
+import { watch, reactive } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { useLocaleStore } from '@/store/locale'
+import { COUNTRIES, LANGS, TIMEZONES, CURRENCIES } from '@/config/countries'
+import { loadElLocale } from '@/i18n'
 
 const router = useRouter()
+const { t, locale: i18nLocale } = useI18n()
+const locale = useLocaleStore()
+const elLocale = ref(null)
+const countryFlag = computed(() => COUNTRIES.find(c => c.code === locale.country)?.flag || '🌐')
+const clock = ref(''); setInterval(() => { clock.value = locale.fmtClock() }, 1000)
+// 路由標題：有翻譯鍵用翻譯，沒有用 meta.title
+const ROUTE_KEYS = { '/': 'menu.dashboard', '/chart': 'menu.chart', '/live': 'menu.live', '/orders': 'menu.orders', '/account': 'menu.account', '/strategy': 'menu.strategy', '/backtest': 'menu.backtest', '/login': 'menu.login', '/risk': 'menu.risk', '/system': 'menu.system' }
+const routeTitle = computed(() => ROUTE_KEYS[router.currentRoute.value.path] ? t(ROUTE_KEYS[router.currentRoute.value.path]) : (router.currentRoute.value.meta.title || t('header.title')))
+async function applyLang(l) { i18nLocale.value = l; document.documentElement.lang = l; elLocale.value = await loadElLocale(l) }
+watch(() => locale.lang, applyLang, { immediate: true })
+
+const pref = reactive({
+  show: false, country: locale.country, lang: locale.lang, tz: locale.tz, currency: locale.currency,
+  get preview() { try { return new Intl.DateTimeFormat(this.lang, { timeZone: this.tz, hour12: false, dateStyle: 'medium', timeStyle: 'medium' }).format(new Date()) } catch { return '—' } },
+  get rateText() { const r = this.currency === 'USD' ? 1 : locale.rates[this.currency]; return r ? r.toFixed(3) + ' ' + this.currency : '…' },
+  open() { this.country = locale.country; this.lang = locale.lang; this.tz = locale.tz; this.currency = locale.currency; this.show = true; locale.loadRates() },
+  applyCountry(code) { const c = COUNTRIES.find(x => x.code === code); if (c) { this.lang = c.lang; this.tz = c.tz; this.currency = c.currency } },
+  save() { locale.country = this.country; locale.lang = this.lang; locale.tz = this.tz; locale.currency = this.currency; locale.loadRates(); this.show = false; ElMessage.success(t('locale.saved')) }
+})
 const market = useMarketStore()
 const auth = useAuthStore()
 const theme = useThemeStore()
@@ -123,5 +177,6 @@ body { margin: 0; }
 .header .title { font-weight: 600; }
 .header .right { display: flex; align-items: center; gap: 12px; }
 .header .user { color: var(--el-text-color-secondary); font-size: 13px; }
+.hint { color: #999; font-size: 12px; margin-left: 8px; }
 .el-main { background: var(--el-bg-color-page); }
 </style>

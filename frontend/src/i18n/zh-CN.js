@@ -1,0 +1,60 @@
+export default {
+  "menu": {
+    "trade": "交易",
+    "chart": "实时看盘",
+    "live": "实盘监控",
+    "orders": "订单记录",
+    "account": "账户持仓",
+    "analysis": "分析",
+    "dashboard": "仪表板",
+    "strategy": "策略/机器人",
+    "backtest": "回测结果",
+    "settings": "设置",
+    "login": "连接设置",
+    "risk": "风控设置",
+    "system": "系统状态"
+  },
+  "header": {
+    "title": "量化交易平台",
+    "marketOn": "行情已连接",
+    "marketOff": "行情断线",
+    "mainnet": "正式网",
+    "testnet": "测试网",
+    "dryRun": "Dry-Run 不下单",
+    "live": "真实下单",
+    "remain": "剩",
+    "fillsLive": "成交回报 实时",
+    "fillsPoll": "成交回报 轮询中",
+    "logout": "退出",
+    "signin": "登录",
+    "themeDark": "切换夜间",
+    "themeLight": "切换日间"
+  },
+  "locale": {
+    "title": "地区与偏好",
+    "country": "国家 / 地区",
+    "lang": "界面语言",
+    "tz": "时区",
+    "currency": "计价币种",
+    "now": "当前时间",
+    "rate": "汇率 1 USDT ≈",
+    "refreshRate": "更新汇率",
+    "hint": "选择国家会同时设置语言、时区、币种；三项也可单独调整。后端「交易日」固定以 Asia/Taipei 计算。",
+    "save": "保存",
+    "cancel": "取消",
+    "saved": "已应用",
+    "pageNote": "各页内容翻译逐步补齐中。"
+  },
+  "common": {
+    "refresh": "刷新",
+    "save": "保存",
+    "cancel": "取消",
+    "confirm": "确认",
+    "delete": "删除",
+    "edit": "编辑",
+    "start": "上线",
+    "stop": "下线",
+    "create": "创建",
+    "loading": "加载中…"
+  }
+}

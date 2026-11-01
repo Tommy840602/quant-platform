@@ -21,7 +21,7 @@
         <el-table-column prop="position" label="部位" width="90" />
         <el-table-column label="執行時長" width="120">
           <template #default="{ row }">
-            <span v-if="row.status === 'RUNNING'" :title="row.startedAt ? '上線於 ' + new Date(row.startedAt).toLocaleString() : ''">{{ fmtDur(row.runningSec) }}</span>
+            <span v-if="row.status === 'RUNNING'" :title="row.startedAt ? '上線於 ' + locale.fmtTime(row.startedAt) : ''">{{ fmtDur(row.runningSec) }}</span>
             <span v-else class="hint">—</span>
           </template>
         </el-table-column>
@@ -106,6 +106,8 @@ import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { strategyApi, notifyApi } from '@/api'
 import { STRATEGY_TYPES } from '@/config/strategies'
+import { useLocaleStore } from '@/store/locale'
+const locale = useLocaleStore()
 import { SYMBOLS } from '@/config/symbols'
 
 const list = ref([]); const loading = ref(false)

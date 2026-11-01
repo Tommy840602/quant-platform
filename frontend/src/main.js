@@ -10,11 +10,13 @@ import CoinIcon from './components/CoinIcon.vue'
 import PriceChange from './components/PriceChange.vue'
 import SymbolSelect from './components/SymbolSelect.vue'
 import './styles/theme.css'
+import { i18n } from './i18n'
 
 const app = createApp(App)
 app.use(createPinia())
 app.use(router)
 app.use(ElementPlus)
+app.use(i18n)
 for (const [name, comp] of Object.entries(ElIcons)) app.component(name, comp)
 app.component('CoinIcon', CoinIcon)
 app.component('PriceChange', PriceChange)

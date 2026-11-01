@@ -20,10 +20,10 @@
         <el-descriptions-item label="USDT 可用">{{ fmt(balance.free) }}</el-descriptions-item>
         <el-descriptions-item label="USDT 凍結">{{ fmt(balance.locked) }}</el-descriptions-item>
         <el-descriptions-item label="總資產 (USDT)"><b>{{ fmt(balance.totalUsdt) }}</b></el-descriptions-item>
-        <el-descriptions-item label="總資產 (TWD)"><b style="color:#2962ff">{{ twd(balance.totalUsdt) }}</b></el-descriptions-item>
+        <el-descriptions-item :label="'總資產 (' + locale.currency + ')'"><b style="color:#2962ff">{{ locale.fmtMoney(balance.totalUsdt) }}</b></el-descriptions-item>
         <el-descriptions-item label="持有幣種">{{ assets.length }} 種</el-descriptions-item>
-        <el-descriptions-item label="匯率 USDT/TWD">
-          {{ rate ? rate.toFixed(3) : '…' }} <el-button link size="small" @click="loadRate">更新</el-button>
+        <el-descriptions-item :label="'匯率 USDT/' + locale.currency">
+          {{ locale.rate ? locale.rate.toFixed(3) : '…' }} <el-button link size="small" @click="locale.loadRates(true)">更新</el-button>
         </el-descriptions-item>
         <el-descriptions-item label="估值來源">
           幣安正式網公開行情<span class="hint" v-if="balance.real && !balance.mainnet">（餘額來自測試網，數量是測試幣，估值用正式網價格換算）</span>
@@ -57,8 +57,8 @@
             <el-table-column label="估值(USDT)" align="right">
               <template #default="{ row }">{{ fmt(row.valueUsdt) }}</template>
             </el-table-column>
-            <el-table-column label="估值(TWD)" align="right">
-              <template #default="{ row }">{{ twd(row.valueUsdt) }}</template>
+            <el-table-column :label="'估值(' + locale.currency + ')'" align="right">
+              <template #default="{ row }">{{ locale.fmtMoney(row.valueUsdt) }}</template>
             </el-table-column>
             <el-table-column label="佔比" width="140">
               <template #default="{ row }">
@@ -93,10 +93,11 @@ import { ElMessage } from 'element-plus'
 import { useAccountStore } from '@/store/account'
 import { accountApi } from '@/api'
 import { useTradeStore } from '@/store/trade'
+import { useLocaleStore } from '@/store/locale'
+const locale = useLocaleStore()
 
 const store = useAccountStore()
 const { balance, positions } = storeToRefs(store)
-const rate = ref(Number(localStorage.getItem('qp-usdtwd')) || 32.5)
 const summarizing = ref(false)
 const tradeStore = useTradeStore()
 const { cfg: trade } = storeToRefs(tradeStore)
@@ -111,7 +112,6 @@ const pieEl = ref(null)
 let pie = null
 
 function fmt(v) { return v == null ? '—' : Number(v).toLocaleString(undefined, { maximumFractionDigits: 4 }) }
-function twd(v) { return v == null || !rate.value ? '—' : 'NT$ ' + (Number(v) * rate.value).toLocaleString(undefined, { maximumFractionDigits: 0 }) }
 
 function drawPie() {
   if (!pieEl.value) return
@@ -128,15 +128,9 @@ function drawPie() {
   })
 }
 
-async function loadRate() {
-  try {
-    const r = await fetch('https://open.er-api.com/v6/latest/USD').then(x => x.json())
-    if (r?.rates?.TWD) { rate.value = r.rates.TWD; localStorage.setItem('qp-usdtwd', String(rate.value)) }
-  } catch {}
-}
 
 watch(assets, async () => { await nextTick(); drawPie() })
-onMounted(() => { store.refresh().catch(() => {}); loadRate(); tradeStore.load() })
+onMounted(() => { store.refresh().catch(() => {}); locale.loadRates(); tradeStore.load() })
 </script>
 
 <style scoped>

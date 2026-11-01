@@ -1,0 +1,60 @@
+export default {
+  "menu": {
+    "trade": "Handel",
+    "chart": "Live-Chart",
+    "live": "Live-Handel",
+    "orders": "Aufträge",
+    "account": "Konto",
+    "analysis": "Analyse",
+    "dashboard": "Dashboard",
+    "strategy": "Strategien / Bots",
+    "backtest": "Backtest",
+    "settings": "Einstellungen",
+    "login": "Verbindung",
+    "risk": "Risiko",
+    "system": "Systemstatus"
+  },
+  "header": {
+    "title": "Quant-Handelsplattform",
+    "marketOn": "Markt verbunden",
+    "marketOff": "Markt getrennt",
+    "mainnet": "Mainnet",
+    "testnet": "Testnet",
+    "dryRun": "Dry-Run (keine Orders)",
+    "live": "LIVE-Orders",
+    "remain": "übrig",
+    "fillsLive": "Ausführungen: Echtzeit",
+    "fillsPoll": "Ausführungen: Polling",
+    "logout": "Abmelden",
+    "signin": "Anmelden",
+    "themeDark": "Dunkel",
+    "themeLight": "Hell"
+  },
+  "locale": {
+    "title": "Region & Einstellungen",
+    "country": "Land / Region",
+    "lang": "Sprache",
+    "tz": "Zeitzone",
+    "currency": "Anzeigewährung",
+    "now": "Aktuelle Zeit",
+    "rate": "Kurs 1 USDT ≈",
+    "refreshRate": "Kurs aktualisieren",
+    "hint": "Ein Land setzt Sprache, Zeitzone und Währung auf einmal; jedes kann einzeln geändert werden. Der Backend-„Handelstag\" ist fest Asia/Taipei.",
+    "save": "Speichern",
+    "cancel": "Abbrechen",
+    "saved": "Übernommen",
+    "pageNote": "Seiteninhalte werden schrittweise übersetzt."
+  },
+  "common": {
+    "refresh": "Aktualisieren",
+    "save": "Speichern",
+    "cancel": "Abbrechen",
+    "confirm": "Bestätigen",
+    "delete": "Löschen",
+    "edit": "Bearbeiten",
+    "start": "Starten",
+    "stop": "Stoppen",
+    "create": "Erstellen",
+    "loading": "Laden…"
+  }
+}
