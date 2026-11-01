@@ -42,8 +42,7 @@ export default {
     "hint": "Picking a country sets language, time zone and currency at once; each can be overridden. Times and local-currency values follow these. Backend \"trading day\" (risk counters, 09:00 digest) is fixed to Asia/Taipei.",
     "save": "Save",
     "cancel": "Cancel",
-    "saved": "Applied",
-    "pageNote": "Page content translations are being added progressively; most pages are still in Traditional Chinese."
+    "saved": "Applied"
   },
   "common": {
     "refresh": "Refresh",

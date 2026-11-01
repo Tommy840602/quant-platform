@@ -42,8 +42,7 @@ export default {
     "hint": "国を選ぶと言語・タイムゾーン・通貨がまとめて設定されます（個別変更可）。バックエンドの「取引日」は Asia/Taipei 固定です。",
     "save": "保存",
     "cancel": "キャンセル",
-    "saved": "適用しました",
-    "pageNote": "各ページの翻訳は順次追加中です。"
+    "saved": "適用しました"
   },
   "common": {
     "refresh": "更新",
