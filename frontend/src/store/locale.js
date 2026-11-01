@@ -12,7 +12,7 @@ export const useLocaleStore = defineStore('locale', () => {
   const guessCountry = COUNTRIES.find(c => c.tz === guessTz)?.code || 'TW'
   const country = ref(saved.country || guessCountry)
   const def = () => COUNTRIES.find(c => c.code === country.value) || COUNTRIES[0]
-  const lang = ref(saved.lang || def().lang)
+  const lang = ref(saved.lang === 'de' ? 'en' : (saved.lang || def().lang))
   const tz = ref(saved.tz || def().tz)
   const currency = ref(saved.currency || def().currency)
   const rates = ref(saved.rates || {})          // USD 基準匯率快取

@@ -8,12 +8,12 @@ export const COUNTRIES = [
   { code: 'SG', flag: '🇸🇬', name: 'Singapore',  lang: 'en',    tz: 'Asia/Singapore',   currency: 'SGD', symbol: 'S$' },
   { code: 'AU', flag: '🇦🇺', name: 'Australia',  lang: 'en',    tz: 'Australia/Sydney', currency: 'AUD', symbol: 'A$' },
   { code: 'GB', flag: '🇬🇧', name: 'United Kingdom', lang: 'en', tz: 'Europe/London',  currency: 'GBP', symbol: '£' },
-  { code: 'DE', flag: '🇩🇪', name: 'Deutschland', lang: 'de',   tz: 'Europe/Berlin',    currency: 'EUR', symbol: '€' },
+  { code: 'DE', flag: '🇩🇪', name: 'Deutschland', lang: 'en',   tz: 'Europe/Berlin',    currency: 'EUR', symbol: '€' },
   { code: 'US', flag: '🇺🇸', name: 'United States', lang: 'en', tz: 'America/New_York', currency: 'USD', symbol: '$' }
 ]
 export const LANGS = [
   { value: 'zh-TW', label: '繁體中文' }, { value: 'zh-CN', label: '简体中文' },
-  { value: 'en', label: 'English' }, { value: 'ja', label: '日本語' }, { value: 'ko', label: '한국어' }, { value: 'de', label: 'Deutsch' }
+  { value: 'en', label: 'English' }, { value: 'ja', label: '日本語' }, { value: 'ko', label: '한국어' }
 ]
 export const TIMEZONES = [
   'Asia/Taipei', 'Asia/Hong_Kong', 'Asia/Shanghai', 'Asia/Tokyo', 'Asia/Seoul', 'Asia/Singapore', 'Asia/Kolkata', 'Asia/Dubai',
