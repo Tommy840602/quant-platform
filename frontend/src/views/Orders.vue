@@ -28,6 +28,13 @@
       <el-table-column prop="quantity" label="數量" width="100" />
       <el-table-column prop="filledQty" label="成交量" width="100" />
       <el-table-column prop="status" label="狀態" width="140" />
+      <el-table-column prop="env" label="環境" width="110">
+        <template #default="{ row }">
+          <el-tag v-if="row.env" :type="row.env.startsWith('mainnet') ? (row.env.endsWith('/dry') ? 'warning' : 'danger') : 'info'" size="small">
+            {{ row.env.startsWith('mainnet') ? '正式網' : '測試網' }}{{ row.env.endsWith('/dry') ? ' · 模擬' : '' }}
+          </el-tag>
+        </template>
+      </el-table-column>
       <el-table-column prop="strategyId" label="策略" />
     </el-table>
   </el-card>

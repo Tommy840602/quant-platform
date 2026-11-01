@@ -14,6 +14,7 @@ public interface OrderRepository extends JpaRepository<OrderEntity, Long> {
     java.util.List<OrderEntity> findByStatusOrderByIdAsc(String status);
     List<OrderEntity> findTop50ByStatusOrderByUpdatedAtAsc(String status);
     List<OrderEntity> findByStrategyIdIsNotNullOrderByIdAsc();
+    List<OrderEntity> findByEnvAndAccountAndStrategyIdIsNotNullOrderByIdAsc(String env, String account);
     List<OrderEntity> findTop1000ByStrategyIdAndStatusOrderByIdAsc(String strategyId, String status);
     List<OrderEntity> findTop200ByStatusInAndMarketOrderByUpdatedAtAsc(List<String> statuses, String market);
     List<OrderEntity> findTop200ByStatusAndExchangeOrderIdOrderByIdAsc(String status, String exchangeOrderId);
@@ -21,6 +22,6 @@ public interface OrderRepository extends JpaRepository<OrderEntity, Long> {
     Page<OrderEntity> findAllByOrderByIdDesc(Pageable pageable);
 
     @Query("select o.strategyId, count(o), coalesce(sum(o.filledQty),0) " +
-           "from OrderEntity o where o.status = 'FILLED' group by o.strategyId")
-    List<Object[]> attribution();
+           "from OrderEntity o where o.status = 'FILLED' and o.env = :env group by o.strategyId")
+    List<Object[]> attribution(@org.springframework.data.repository.query.Param("env") String env);
 }
