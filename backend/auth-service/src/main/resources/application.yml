@@ -30,6 +30,9 @@ spring:
     bootstrap-servers: ${KAFKA_ADDR:localhost:9092}
 
 management:
+  endpoint:
+    health:
+      show-details: always     # 系統狀態頁要看 db / redis / kafka / discovery 各元件
   endpoints:
     web:
       exposure:

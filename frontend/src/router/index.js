@@ -12,7 +12,8 @@ const routes = [
   { path: '/orders', component: () => import('@/views/Orders.vue'), meta: { title: '訂單紀錄' } },
   { path: '/risk', component: () => import('@/views/Risk.vue'), meta: { title: '風控設定' } },
   // 幣安金鑰 / 環境設定：會換金鑰、切 mainnet、關 dry-run，必須登入
-  { path: '/login', component: () => import('@/views/Login.vue'), meta: { title: '連線設定' } }
+  { path: '/login', component: () => import('@/views/Login.vue'), meta: { title: '連線設定' } },
+  { path: '/system', component: () => import('@/views/System.vue'), meta: { title: '系統狀態' } }
 ]
 
 const router = createRouter({ history: createWebHistory(), routes })

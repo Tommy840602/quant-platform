@@ -80,6 +80,15 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
         }
     }
 
+    /** 給 gateway 自己的端點（如 /api/system）用：Bearer token 是否有效。JWT 關閉時一律 true。 */
+    public boolean isAuthorized(ServerHttpRequest req) {
+        if (!jwtEnabled) return true;
+        String token = bearer(req);
+        if (token == null) return false;
+        try { Jwts.parser().verifyWith(key).build().parseSignedClaims(token); return true; }
+        catch (Exception e) { return false; }
+    }
+
     /** 與 common 的 JwtSecretPolicy 同規則（gateway 是 WebFlux，不引 common 以免帶進 servlet 依賴）。 */
     static void assertStrongSecret(String secret) {
         String s = secret == null ? "" : secret.trim();
