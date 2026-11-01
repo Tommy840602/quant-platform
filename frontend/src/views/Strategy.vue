@@ -25,10 +25,14 @@
             <span v-else class="hint">—</span>
           </template>
         </el-table-column>
-        <el-table-column label="收益（本次上線）" width="200">
+        <el-table-column label="收益（本次上線）" width="300">
           <template #default="{ row }">
             <template v-if="row.pnl">
               <b :style="{ color: row.pnl.pnl > 0 ? '#67c23a' : row.pnl.pnl < 0 ? '#f56c6c' : 'inherit' }">{{ sign(row.pnl.pnl) }} USDT</b>
+              <svg v-if="spark(row.id)" :width="spark(row.id).w" :height="spark(row.id).hh" style="vertical-align:middle;margin-left:6px">
+                <line :x1="0" :x2="spark(row.id).w" :y1="spark(row.id).zero" :y2="spark(row.id).zero" stroke="#ddd" stroke-dasharray="2,2" />
+                <polyline :points="spark(row.id).pts" fill="none" :stroke="spark(row.id).color" stroke-width="1.5" />
+              </svg>
               <span class="hint" :title="'已實現 ' + sign(row.pnl.realized) + ' · 未實現 ' + sign(row.pnl.unrealized) + ' · 手續費 ' + row.pnl.fees + ' · 成交 ' + row.pnl.trades + ' 筆' + (row.pnl.openQty ? ' · 持倉 ' + row.pnl.openQty + ' @ ' + row.pnl.avgCost : '')">
                 {{ (row.pnl.pnlPct * 100).toFixed(2) }}% · {{ row.pnl.trades }} 筆
               </span>
@@ -107,11 +111,27 @@ import { SYMBOLS } from '@/config/symbols'
 const list = ref([]); const loading = ref(false)
 const bot = reactive({ id: '', type: 'rsi', symbol: 'BTCUSDT', qty: 0.001 })
 
-async function load() {
-  loading.value = true
-  try { list.value = (await strategyApi.list()).data || [] }
-  catch { ElMessage.error('載入失敗（後端未啟動？）') }
-  finally { loading.value = false }
+async function load(silent = false) {
+  if (!silent) loading.value = true
+  try {
+    list.value = (await strategyApi.list()).data || []
+    // 收益走勢：每次刷新把各機器人 pnl 推進記憶體序列（最多 120 點 ≈ 30 分鐘）
+    for (const b of list.value) {
+      if (!b.pnl) { delete pnlHist[b.id]; continue }
+      const h = (pnlHist[b.id] ||= []); h.push(+b.pnl.pnl || 0); if (h.length > 120) h.shift()
+    }
+  }
+  catch { if (!silent) ElMessage.error('載入失敗（後端未啟動？）') }
+  finally { if (!silent) loading.value = false }
+}
+const pnlHist = reactive({})
+/** 小型走勢（SVG polyline）：以 0 為基準，上綠下紅 */
+function spark(id) {
+  const h = pnlHist[id]; if (!h || h.length < 2) return null
+  const w = 80, hh = 22, min = Math.min(0, ...h), max = Math.max(0, ...h), span = (max - min) || 1
+  const pts = h.map((v, i) => `${(i / (h.length - 1) * w).toFixed(1)},${(hh - (v - min) / span * hh).toFixed(1)}`).join(' ')
+  const zero = (hh - (0 - min) / span * hh).toFixed(1)
+  return { pts, zero, w, hh, color: h[h.length - 1] >= 0 ? '#67c23a' : '#f56c6c' }
 }
 async function start(id) { await strategyApi.start(id); ElMessage.success('已上線'); load() }
 async function stop(id, flatten) {
@@ -170,7 +190,7 @@ async function testSlack() {
   catch { ElMessage.error('通知服務未啟動？') }
 }
 let timer
-onMounted(() => { load(); timer = setInterval(() => load(), 15000) })   // 執行時長 / 收益每 15 秒更新
+onMounted(() => { load(); timer = setInterval(() => load(true), 15000) })   // 背景靜默更新，不閃 loading
 onUnmounted(() => clearInterval(timer))
 </script>
 <style scoped>.hint{color:#999;font-size:12px;margin-top:8px}</style>
