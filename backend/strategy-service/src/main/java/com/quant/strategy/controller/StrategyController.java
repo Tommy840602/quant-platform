@@ -21,8 +21,22 @@ public class StrategyController {
     @PostMapping("/{id}/start")
     public ApiResponse<String> start(@PathVariable String id) { return ApiResponse.ok(runner.start(id)); }
 
+    /** 下線；flatten=true 同時對該策略持倉送市價賣單平倉 */
     @PostMapping("/{id}/stop")
-    public ApiResponse<String> stop(@PathVariable String id) { return ApiResponse.ok(runner.stop(id)); }
+    public ApiResponse<String> stop(@PathVariable String id, @RequestParam(defaultValue = "false") boolean flatten) {
+        return ApiResponse.ok(flatten ? runner.stop(id, true) : runner.stop(id));
+    }
+
+    /** 任一類型改參數：POST /strategies/{id}/params-any {period: 14, mult: 2, qty: 0.002 …} */
+    @PostMapping("/{id}/params-any")
+    public ApiResponse<String> paramsAny(@PathVariable String id, @RequestBody Map<String, Object> b) { return ApiResponse.ok(runner.updateParamsAny(id, b)); }
+
+    /** 刪除：DELETE /strategies/{id}?flatten=false */
+    @DeleteMapping("/{id}")
+    public ApiResponse<String> delete(@PathVariable String id, @RequestParam(defaultValue = "false") boolean flatten) {
+        String r = runner.deleteBot(id, flatten);
+        return r.startsWith("deleted") ? ApiResponse.ok(r) : ApiResponse.error(400, r);
+    }
 
     @PostMapping("/{id}/params")
     public ApiResponse<String> params(@PathVariable String id, @RequestBody Map<String, Object> b) {
