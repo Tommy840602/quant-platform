@@ -27,7 +27,15 @@
           </div>
         </el-col>
       </el-row>
-      <el-alert v-if="optBest" :title="optBest" type="success" :closable="false" style="margin-top:10px" />
+      <el-alert v-if="optBest" :title="optBest" type="success" :closable="false" style="margin-top:10px">
+        <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
+          <span>用這組參數建機器人：</span>
+          <el-input v-model="botId" placeholder="機器人 ID" size="small" style="width:160px" />
+          <el-input-number v-model="botQty" :step="0.001" :min="0.0001" size="small" style="width:130px" title="每筆數量（每單名目 > 0 時會被換算覆蓋）" />
+          <el-button size="small" type="primary" :loading="creating" @click="createFromBest">建立機器人</el-button>
+          <span class="hint" v-if="bestParams">{{ btType }} · {{ btSymbol }} · {{ Object.entries(bestParams).map(([k, v]) => k + '=' + v).join(', ') }}</span>
+        </div>
+      </el-alert>
     </el-card>
 
     <el-card header="權益曲線與回撤" style="margin-top:16px">
@@ -41,7 +49,7 @@
 import { computed, onMounted, ref } from 'vue'
 import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
-import { researchApi, backtestApi, marketApi } from '@/api'
+import { researchApi, backtestApi, marketApi, strategyApi } from '@/api'
 import { STRATEGY_TYPES } from '@/config/strategies'
 import { SYMBOLS } from '@/config/symbols'
 
@@ -52,6 +60,19 @@ const btSymbol = ref('BTCUSDT')
 const btInterval = ref('1m')   // 後端已支援任意 interval / 根數（PR #13），以前前端寫死 1m × 300
 const btBars = ref(300)
 const optBest = ref('')
+const bestParams = ref(null)
+const botId = ref(''); const botQty = ref(0.001); const creating = ref(false)
+async function createFromBest() {
+  if (!bestParams.value) return
+  const id = (botId.value || `${btType.value}-${btSymbol.value.toLowerCase().replace('usdt', '')}-${Date.now().toString().slice(-4)}`).trim()
+  creating.value = true
+  try {
+    const r = await strategyApi.create({ id, type: btType.value, symbol: btSymbol.value, params: { ...bestParams.value, qty: botQty.value } })
+    if (r.code && r.code !== 0) throw new Error(r.message)
+    ElMessage.success(`已建立機器人 ${id}（未上線，到「策略/機器人」上線）`); botId.value = ''
+  } catch (e) { ElMessage.error('建立失敗：' + (e?.message || '')) }
+  finally { creating.value = false }
+}
 const result = ref(null)
 const source = ref('尚未執行')
 let chartInst = null
@@ -93,6 +114,7 @@ async function runOptimize() {
   try {
     const resp = await backtestApi.optimize({ type: btType.value, symbol: btSymbol.value, interval: btInterval.value, bars: btBars.value, grid: gridFor(btType.value) })
     const d = resp.data; const b = d.best
+    bestParams.value = Object.fromEntries(Object.entries(b).filter(([k]) => !['sharpe','total_return','max_drawdown','trades'].includes(k)))
     optBest.value = `最佳參數（共 ${d.combinations} 組）：` + Object.entries(b).filter(([k]) => !['sharpe','total_return','max_drawdown','trades'].includes(k)).map(([k,v]) => k + '=' + v).join(', ') + ` ｜ Sharpe ${b.sharpe} · 交易 ${b.trades}`
     ElMessage.success('最佳化完成')
   } catch (e) { ElMessage.error('最佳化失敗') }
