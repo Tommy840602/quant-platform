@@ -1,0 +1,60 @@
+export default {
+  "menu": {
+    "trade": "取引",
+    "chart": "リアルタイムチャート",
+    "live": "実取引モニター",
+    "orders": "注文履歴",
+    "account": "口座・ポジション",
+    "analysis": "分析",
+    "dashboard": "ダッシュボード",
+    "strategy": "戦略 / ボット",
+    "backtest": "バックテスト",
+    "settings": "設定",
+    "login": "接続設定",
+    "risk": "リスク設定",
+    "system": "システム状態"
+  },
+  "header": {
+    "title": "クオンツ取引プラットフォーム",
+    "marketOn": "相場接続中",
+    "marketOff": "相場切断",
+    "mainnet": "本番",
+    "testnet": "テストネット",
+    "dryRun": "Dry-Run 発注なし",
+    "live": "実発注中",
+    "remain": "残り",
+    "fillsLive": "約定通知 リアルタイム",
+    "fillsPoll": "約定通知 ポーリング",
+    "logout": "ログアウト",
+    "signin": "ログイン",
+    "themeDark": "ダークモード",
+    "themeLight": "ライトモード"
+  },
+  "locale": {
+    "title": "地域と設定",
+    "country": "国 / 地域",
+    "lang": "表示言語",
+    "tz": "タイムゾーン",
+    "currency": "表示通貨",
+    "now": "現在時刻",
+    "rate": "レート 1 USDT ≈",
+    "refreshRate": "レート更新",
+    "hint": "国を選ぶと言語・タイムゾーン・通貨がまとめて設定されます（個別変更可）。バックエンドの「取引日」は Asia/Taipei 固定です。",
+    "save": "保存",
+    "cancel": "キャンセル",
+    "saved": "適用しました",
+    "pageNote": "各ページの翻訳は順次追加中です。"
+  },
+  "common": {
+    "refresh": "更新",
+    "save": "保存",
+    "cancel": "キャンセル",
+    "confirm": "確認",
+    "delete": "削除",
+    "edit": "編集",
+    "start": "起動",
+    "stop": "停止",
+    "create": "作成",
+    "loading": "読み込み中…"
+  }
+}

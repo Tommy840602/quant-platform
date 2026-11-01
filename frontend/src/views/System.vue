@@ -107,6 +107,8 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { systemApi, accountApi, riskApi, strategyApi, tradeConfigApi } from '@/api'
 import { useTradeStore } from '@/store/trade'
+import { useLocaleStore } from '@/store/locale'
+const locale = useLocaleStore()
 
 const tradeStore = useTradeStore(); const { cfg: trade } = storeToRefs(tradeStore)
 const effDry = computed(() => trade.value.effectiveDryRun ?? trade.value.dryRun)
@@ -142,7 +144,7 @@ async function refresh() {
     safe(strategyApi.list, d => { const l = d || []; bots.value = { total: l.length, running: l.filter(b => b.status === 'RUNNING').length, names: l.filter(b => b.status === 'RUNNING').map(b => b.id || b.name) } }),
     tradeStore.load()
   ])
-  lastAt.value = new Date().toLocaleTimeString()
+  lastAt.value = locale.fmtClock()
   loading.value = false
 }
 let timer

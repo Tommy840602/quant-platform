@@ -1,0 +1,60 @@
+export default {
+  "menu": {
+    "trade": "거래",
+    "chart": "실시간 차트",
+    "live": "실거래 모니터",
+    "orders": "주문 내역",
+    "account": "계좌·포지션",
+    "analysis": "분석",
+    "dashboard": "대시보드",
+    "strategy": "전략 / 봇",
+    "backtest": "백테스트",
+    "settings": "설정",
+    "login": "연결 설정",
+    "risk": "리스크 설정",
+    "system": "시스템 상태"
+  },
+  "header": {
+    "title": "퀀트 트레이딩 플랫폼",
+    "marketOn": "시세 연결됨",
+    "marketOff": "시세 끊김",
+    "mainnet": "메인넷",
+    "testnet": "테스트넷",
+    "dryRun": "Dry-Run 주문 안 함",
+    "live": "실주문 중",
+    "remain": "남음",
+    "fillsLive": "체결 알림 실시간",
+    "fillsPoll": "체결 알림 폴링",
+    "logout": "로그아웃",
+    "signin": "로그인",
+    "themeDark": "다크 모드",
+    "themeLight": "라이트 모드"
+  },
+  "locale": {
+    "title": "지역 및 환경설정",
+    "country": "국가 / 지역",
+    "lang": "언어",
+    "tz": "시간대",
+    "currency": "표시 통화",
+    "now": "현재 시각",
+    "rate": "환율 1 USDT ≈",
+    "refreshRate": "환율 갱신",
+    "hint": "국가를 선택하면 언어·시간대·통화가 함께 설정됩니다(개별 변경 가능). 백엔드 \"거래일\"은 Asia/Taipei 고정입니다.",
+    "save": "저장",
+    "cancel": "취소",
+    "saved": "적용됨",
+    "pageNote": "각 페이지 번역은 순차적으로 추가 중입니다."
+  },
+  "common": {
+    "refresh": "새로고침",
+    "save": "저장",
+    "cancel": "취소",
+    "confirm": "확인",
+    "delete": "삭제",
+    "edit": "편집",
+    "start": "시작",
+    "stop": "중지",
+    "create": "생성",
+    "loading": "불러오는 중…"
+  }
+}

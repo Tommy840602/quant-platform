@@ -1,0 +1,60 @@
+export default {
+  "menu": {
+    "trade": "交易",
+    "chart": "即時看盤",
+    "live": "實盤監控",
+    "orders": "訂單紀錄",
+    "account": "帳戶部位",
+    "analysis": "分析",
+    "dashboard": "儀表板",
+    "strategy": "策略/機器人",
+    "backtest": "回測結果",
+    "settings": "設定",
+    "login": "連線設定",
+    "risk": "風控設定",
+    "system": "系統狀態"
+  },
+  "header": {
+    "title": "量化交易平台",
+    "marketOn": "行情已連線",
+    "marketOff": "行情斷線",
+    "mainnet": "正式網",
+    "testnet": "測試網",
+    "dryRun": "Dry-Run 不送單",
+    "live": "真實送單",
+    "remain": "剩",
+    "fillsLive": "成交回報 即時",
+    "fillsPoll": "成交回報 輪詢中",
+    "logout": "登出",
+    "signin": "登入",
+    "themeDark": "切換夜間",
+    "themeLight": "切換日間"
+  },
+  "locale": {
+    "title": "地區與偏好",
+    "country": "國家 / 地區",
+    "lang": "介面語言",
+    "tz": "時區",
+    "currency": "計價幣別",
+    "now": "目前時間",
+    "rate": "匯率 1 USDT ≈",
+    "refreshRate": "更新匯率",
+    "hint": "選國家會一次帶出語言、時區、幣別；三項也可各自調整。時間顯示、本幣估值跟著走。後端的「交易日」（風控日計數、每日摘要 09:00）固定以 Asia/Taipei 計算。",
+    "save": "儲存",
+    "cancel": "取消",
+    "saved": "已套用",
+    "pageNote": "各頁內文翻譯逐步補齊中，目前以繁體中文為主。"
+  },
+  "common": {
+    "refresh": "重新整理",
+    "save": "儲存",
+    "cancel": "取消",
+    "confirm": "確認",
+    "delete": "刪除",
+    "edit": "編輯",
+    "start": "上線",
+    "stop": "下線",
+    "create": "建立",
+    "loading": "載入中…"
+  }
+}
