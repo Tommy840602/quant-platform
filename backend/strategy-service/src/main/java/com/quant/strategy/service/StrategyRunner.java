@@ -317,7 +317,6 @@ public class StrategyRunner {
         return new Built(s, name);
     }
 
-    public String createBot(String id, String type, String symbol, Map<String, Object> p) { return createBot(id, type, symbol, p, true); }
 
     public String createBot(String id, String type, String symbol, Map<String, Object> p, boolean persist) {
         if (factories.containsKey(id)) return "id 已存在: " + id;
