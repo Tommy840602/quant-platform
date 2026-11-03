@@ -68,6 +68,7 @@ public class BotRiskManager implements StrategyContextImpl.BuyRouter {
         Thread t = new Thread(r, "bot-risk"); t.setDaemon(true); return t;
     });
 
+    @org.springframework.beans.factory.annotation.Autowired
     public BotRiskManager(StrategyPositionBook book, NotifyClient notify) {
         this(book, notify, new ConcurrentHashMap<>());
     }

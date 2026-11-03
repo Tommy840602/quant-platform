@@ -110,4 +110,13 @@ class BotRiskManagerTest {
         verify(oms).submit(cap.capture());
         assertEquals(0.37, cap.getValue().quantity(), 1e-12);
     }
+
+    /** Spring 只認一個建構子：多個時必須有 @Autowired，否則開機失敗（No default constructor found）。 */
+    @Test
+    void springConstructorIsUnambiguous() {
+        var ctors = BotRiskManager.class.getConstructors();
+        long autowired = java.util.Arrays.stream(BotRiskManager.class.getDeclaredConstructors())
+                .filter(c -> c.isAnnotationPresent(org.springframework.beans.factory.annotation.Autowired.class)).count();
+        assertTrue(ctors.length == 1 || autowired == 1);
+    }
 }
