@@ -519,5 +519,34 @@ export default {
     "riskLow": "⚠ Binance 最低 5 USDT 未満、すべて拒否されます",
     "riskZero": "⚠ 0＝戦略の固定数量（既定 0.001）。多くの銘柄で 5 USDT 未満となり拒否されます。推奨 6",
     "rejectHint": "→「リスク設定」で1注文名目を 5 以上に（クリックで移動）"
+  },
+  "botRisk": {
+    "section": "決済とボットリスク（即時反映、ウォームアップなし）",
+    "strategySection": "戦略パラメータ（変更で再ウォームアップ）",
+    "paused": "新規停止",
+    "resume": "再開",
+    "resumed": "新規エントリーを再開しました",
+    "line": "保有 {open}/{max} · 連敗 {loss} · 今回 {pnl} USDT",
+    "stop": "損切",
+    "trail": "トレール",
+    "tp": "利確",
+    "k": {
+      "stopAtr": "損切り（ATR 倍）",
+      "trailAtr": "トレーリング（ATR 倍）",
+      "takeProfitPct": "固定利確 %",
+      "maxPositions": "同時保有上限",
+      "maxConsecLosses": "連敗で停止（回）",
+      "maxLossUsdt": "今回の損失上限 USDT",
+      "cooldownBars": "決済後クールダウン（本）"
+    },
+    "h": {
+      "stopAtr": "建値 − N×ATR；0=オフ",
+      "trailAtr": "利益後、高値から N×ATR 下落で決済；0=オフ",
+      "takeProfitPct": "+N% で決済；0=オフ",
+      "maxPositions": "ランキング上位 N のみ",
+      "maxConsecLosses": "新規停止、決済は継続；0=オフ",
+      "maxLossUsdt": "実現+未実現 ≤ −N で停止；0=オフ",
+      "cooldownBars": "同銘柄を N 本は再エントリーしない"
+    }
   }
 }

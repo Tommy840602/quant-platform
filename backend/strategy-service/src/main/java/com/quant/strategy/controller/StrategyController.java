@@ -25,6 +25,10 @@ public class StrategyController {
     }
 
     /** 下線；flatten=true 同時對該策略持倉送市價賣單平倉 */
+    /** 熔斷後恢復進場：POST /api/strategy/strategies/{id}/resume */
+    @PostMapping("/{id}/resume")
+    public ApiResponse<String> resume(@PathVariable String id) { return ApiResponse.ok(runner.resume(id)); }
+
     @PostMapping("/{id}/stop")
     public ApiResponse<String> stop(@PathVariable String id, @RequestParam(defaultValue = "false") boolean flatten) {
         return ApiResponse.ok(flatten ? runner.stop(id, true) : runner.stop(id));

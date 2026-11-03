@@ -16,6 +16,7 @@ export const strategyApi = {
   start: (id) => http.post(`/strategy/strategies/${id}/start`),
   stop: (id, flatten = false) => http.post(`/strategy/strategies/${id}/stop`, null, { params: { flatten } }),
   remove: (id, flatten = false) => http.delete(`/strategy/strategies/${id}`, { params: { flatten } }),
+  resume: (id) => http.post(`/strategy/strategies/${id}/resume`),
   paramsAny: (id, body) => http.post(`/strategy/strategies/${id}/params-any`, body),
   create: (body) => http.post('/strategy/strategies', body),
   params: (id, body) => http.post(`/strategy/strategies/${id}/params`, body),

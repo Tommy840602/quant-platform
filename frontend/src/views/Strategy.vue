@@ -48,14 +48,20 @@
             <span v-else class="hint">{{ row.status === 'RUNNING' ? t('strategy.s43') : '—' }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="status" :label="t('strategy.s6')" width="210">
+        <el-table-column prop="status" :label="t('strategy.s6')" width="300">
           <template #default="{ row }">
-            <el-tag :type="row.status === 'RUNNING' ? 'success' : 'info'">{{ row.status }}</el-tag>
+            <el-tag :type="row.status === 'RUNNING' ? (row.risk?.paused ? 'warning' : 'success') : 'info'">{{ row.status === 'RUNNING' && row.risk?.paused ? t('botRisk.paused') : row.status }}</el-tag>
+            <el-button v-if="row.status === 'RUNNING' && row.risk?.paused" size="small" type="warning" link style="margin-left:6px" @click="resume(row.id)">{{ t('botRisk.resume') }}</el-button>
+            <div v-if="row.status === 'RUNNING' && row.risk?.paused" style="color:#e6a23c;font-size:12px">{{ row.risk.paused }}</div>
             <div v-if="row.status === 'RUNNING' && row.diag" class="hint" style="line-height:1.5;margin-top:4px">
               <div :title="row.diag.lastBarAt ? t('strategy.diagLastBar') + locale.fmtTime(row.diag.lastBarAt) : ''">
                 {{ t('strategy.diagBars', { n: row.diag.closedBars, syms: row.diag.symbols }) }}
                 <span v-if="!row.diag.closedBars" style="color:#e6a23c">· {{ t('strategy.diagNoBars') }}</span>
                 <span v-else-if="row.diag.closedBars < (row.params?.slow || 8) * row.diag.symbols" style="color:#e6a23c">· {{ t('strategy.diagWarmup', { n: row.params?.slow || 8 }) }}</span>
+              </div>
+              <div v-if="row.risk">{{ t('botRisk.line', { open: row.risk.openSlots, max: row.risk.params.maxPositions, loss: row.risk.consecLosses, pnl: num(row.risk.sessionPnl) }) }}</div>
+              <div v-for="x in row.risk?.exits || []" :key="x.symbol" style="color:var(--el-text-color-regular)">
+                {{ x.symbol }} {{ +x.qty.toPrecision(4) }} @{{ +x.entry.toPrecision(6) }} → {{ t('botRisk.stop') }} {{ x.stop ? +x.stop.toPrecision(6) : '—' }}<template v-if="x.trail"> · {{ t('botRisk.trail') }} {{ +x.trail.toPrecision(6) }}</template><template v-if="x.takeProfit"> · {{ t('botRisk.tp') }} {{ +x.takeProfit.toPrecision(6) }}</template>
               </div>
               <div :title="row.diag.lastSignalAt ? locale.fmtTime(row.diag.lastSignalAt) : ''">
                 {{ t('strategy.diagSignals', { n: row.diag.signals }) }}<template v-if="row.diag.lastSignal"> · {{ row.diag.lastSignal }} → {{ row.diag.lastOutcome }}</template>
@@ -96,9 +102,17 @@
       <div class="hint">{{ t('strategy.s23') }}</div>
     </el-card>
 
-    <el-dialog v-model="edit.show" :title="t('strategy.s52') + edit.id" width="480px">
+    <el-dialog v-model="edit.show" :title="t('strategy.s52') + edit.id" width="560px">
+      <el-divider content-position="left">{{ t('botRisk.section') }}</el-divider>
+      <el-form label-width="170px">
+        <el-form-item v-for="k in RISK_KEYS" :key="k" :label="t('botRisk.k.' + k)">
+          <el-input-number v-model="edit.params[k]" :min="0" :step="k.endsWith('Atr') ? 0.5 : 1" :precision="k.endsWith('Atr') || k === 'takeProfitPct' ? 1 : 0" style="width:150px" />
+          <span class="hint" style="margin-left:8px">{{ t('botRisk.h.' + k) }}</span>
+        </el-form-item>
+      </el-form>
+      <el-divider content-position="left">{{ t('botRisk.strategySection') }}</el-divider>
       <el-form label-width="120px">
-        <el-form-item v-for="k in edit.keys" :key="k" :label="k">
+        <el-form-item v-for="k in edit.keys.filter(k => !RISK_KEYS.includes(k))" :key="k" :label="k">
           <el-input-number v-model="edit.params[k]" :step="stepFor(k, edit.params[k])" :precision="precisionFor(edit.params[k])" style="width:200px" />
         </el-form-item>
         <el-form-item :label="t('strategy.s11')">
@@ -177,6 +191,7 @@ const sizingWarn = computed(() => {
   }
   return null
 })
+async function resume(id) { await strategyApi.resume(id); ElMessage.success(t('botRisk.resumed')); load() }
 async function start(id) {
   await loadNotional()
   const bot = list.value.find(b => b.id === id)
@@ -217,11 +232,12 @@ const DEFAULT_KEYS = { ma: ['fast','slow'], ema: ['fast','slow'], wma: ['fast','
   boll: ['period','mult'], bollbreak: ['period','mult'], keltner: ['period','mult'], atr: ['period','mult'], volbreak: ['period','mult'],
   rsi: ['window','oversold','overbought'], grid: ['gridPct'], dualthrust: ['period','k'], momentum: ['period','threshold'], roc: ['period','threshold'],
   zscore: ['period','threshold'], vwap: ['period','dev'], sar: ['step','max'], supertrend: ['period','mult'] }
+const RISK_KEYS = ['stopAtr', 'trailAtr', 'takeProfitPct', 'maxPositions', 'maxConsecLosses', 'maxLossUsdt', 'cooldownBars']
 function openEdit(row) {
-  const p = { ...(row.params || {}) }
+  const p = { ...(row.risk?.params || {}), ...(row.params || {}) }
   for (const k of (DEFAULT_KEYS[row.type] || ['period'])) if (!(k in p)) p[k] = null
   if (!('qty' in p)) p.qty = 0.001
-  edit.id = row.id; edit.params = Object.fromEntries(Object.entries(p).map(([k, v]) => [k, v == null ? undefined : +v])); edit.keys = Object.keys(edit.params); edit.show = true
+  edit.id = row.id; edit.params = Object.fromEntries(Object.entries(p).map(([k, v]) => [k, v == null ? undefined : +v])); edit.keys = Object.keys(edit.params); edit.orig = { ...edit.params }; edit.show = true
 }
 function addKey() { if (!edit.newKey) return; edit.params[edit.newKey] = +edit.newVal; edit.keys = Object.keys(edit.params); edit.newKey = '' }
 const precisionFor = v => (v != null && !Number.isInteger(+v)) ? 4 : 0
@@ -229,7 +245,9 @@ const stepFor = (k, v) => ['qty','gridPct','threshold','dev','step','max','k','m
 async function saveEdit() {
   edit.saving = true
   try {
-    const body = Object.fromEntries(Object.entries(edit.params).filter(([, v]) => v != null && v !== undefined && !Number.isNaN(v)))
+    // 只送有改的鍵：只改風控參數時後端不重建策略、不重新暖機
+    const body = Object.fromEntries(Object.entries(edit.params).filter(([k, v]) => v != null && !Number.isNaN(v) && v !== edit.orig?.[k]))
+    if (!Object.keys(body).length) { edit.show = false; return }
     const r = await strategyApi.paramsAny(edit.id, body)
     if (r.code && r.code !== 0) throw new Error(r.message)
     ElMessage.success(t('strategy.s36')); edit.show = false; load()
