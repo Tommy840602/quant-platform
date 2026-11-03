@@ -63,5 +63,10 @@ export default {
     "unrealized": "미실현",
     "fees": "수수료",
     "trades": "체결"
+  },
+  "alerts": {
+    "rejected": "주문 거부 {n}건",
+    "unknown": "주문 상태 불명 {n}건 (대사 중, 재전송 금지)",
+    "noReason": "(사유 미기록)"
   }
 }

@@ -79,6 +79,7 @@ import { useAuthStore } from '@/store/auth'
 import { useThemeStore } from '@/store/theme'
 import { useTradeStore } from '@/store/trade'
 import { tradeConfigApi } from '@/api'
+import { useOrderAlerts } from '@/composables/useOrderAlerts'
 import { watch, reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLocaleStore } from '@/store/locale'
@@ -120,7 +121,9 @@ async function loadUds() { try { uds.value = (await tradeConfigApi.uds()).data |
 const udsExpected = computed(() => Object.values(uds.value).some(m => m?.expected))
 const udsConnected = computed(() => Object.entries(uds.value).filter(([, m]) => m?.expected).every(([, m]) => m?.connected))
 const udsTitle = computed(() => Object.entries(uds.value).map(([k, m]) => `${k}: ${m?.connected ? '已連線' : (m?.expected ? '未連線 ' + (m?.lastError || '') : '未啟用')}`).join('\n'))
-onMounted(() => { market.connect(); if (auth.loggedIn) { tradeStore.load(); loadUds(); setInterval(() => { if (auth.loggedIn) { tradeStore.load(); loadUds() } }, 30000) } })
+const orderAlerts = useOrderAlerts({ t, router, enabled: () => auth.loggedIn })
+watch(() => auth.loggedIn, v => { if (v) orderAlerts.start() })
+onMounted(() => { market.connect(); if (auth.loggedIn) { orderAlerts.start(); tradeStore.load(); loadUds(); setInterval(() => { if (auth.loggedIn) { tradeStore.load(); loadUds() } }, 30000) } })
 watch(() => router.currentRoute.value.path, () => { if (auth.loggedIn) tradeStore.load() })
 function doLogout() { auth.logout(); router.push('/signin') }
 </script>
@@ -148,4 +151,7 @@ body { margin: 0; }
 .header .user { color: var(--el-text-color-secondary); font-size: 13px; }
 .hint { color: #999; font-size: 12px; margin-left: 8px; }
 .el-main { background: var(--el-bg-color-page); }
+</style>
+<style>
+.order-alert .el-notification__content p { white-space: pre-line; cursor: pointer; }
 </style>
