@@ -5,6 +5,8 @@
         <el-form-item :label="t('risk.s2')">
           <el-input-number v-model="cfg.notional" :min="0" :step="1" />
           <span class="hint">{{ t('risk.s27') }}</span>
+          <div v-if="cfg.notional > 0 && cfg.notional < 5" style="color:#f56c6c;font-size:12px;width:100%">{{ t('sizing.riskLow') }}</div>
+          <div v-else-if="!cfg.notional" style="color:#e6a23c;font-size:12px;width:100%">{{ t('sizing.riskZero') }}</div>
         </el-form-item>
         <el-form-item :label="t('risk.s3')">
           <el-input-number v-model="cfg.maxNotional" :min="0" :step="5" />

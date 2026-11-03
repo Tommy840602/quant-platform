@@ -508,5 +508,16 @@ export default {
     "rejected": "{n} order(s) rejected",
     "unknown": "{n} order(s) in unknown state (reconciling — do not resend)",
     "noReason": "(no reason recorded)"
+  },
+  "sizing": {
+    "title": "Orders will be rejected by Binance with current settings",
+    "fixed": "Per-order notional is 0, so the strategy's fixed qty {qty} is used; e.g. {sym} is only {v} USDT, below Binance's minimum {min} USDT.",
+    "notional": "Per-order notional {n} USDT is below Binance's minimum {min} USDT.",
+    "fix": "Set Risk → Notional per order to ≥ {min} (6 recommended) and save.",
+    "go": "Open Risk settings",
+    "anyway": "Start anyway",
+    "riskLow": "⚠ Below Binance minimum 5 USDT — every order will be rejected",
+    "riskZero": "⚠ 0 = strategy fixed qty (0.001 by default); most coins fall below 5 USDT and get rejected. 6 recommended",
+    "rejectHint": "→ Raise Risk → Notional per order to ≥ 5 (click to open)"
   }
 }

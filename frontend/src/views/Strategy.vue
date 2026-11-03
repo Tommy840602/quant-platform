@@ -10,6 +10,14 @@
           </div>
         </div>
       </template>
+      <el-alert v-if="sizingWarn" type="error" :closable="false" show-icon style="margin-bottom:12px">
+        <template #title>{{ t('sizing.title') }}</template>
+        <div style="line-height:1.7">
+          {{ sizingText(sizingWarn.p) }}<br>
+          <b>{{ t('sizing.fix', { min: MIN_NOTIONAL }) }}</b>
+          <el-button type="danger" size="small" style="margin-left:10px" @click="$router.push('/risk')">{{ t('sizing.go') }}</el-button>
+        </div>
+      </el-alert>
       <el-table :data="list" v-loading="loading">
         <el-table-column prop="id" label="ID" width="140" />
         <el-table-column prop="name" :label="t('strategy.s1')" />
@@ -116,9 +124,12 @@ const { t } = useI18n()
 const { fmtDur, fmtPnl, num } = useFmt()
 const fetchedAt = ref(0)
 const sign = v => (v > 0 ? '+' : '') + Number(v || 0).toFixed(2)
-import { onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { strategyApi, notifyApi } from '@/api'
+import { useRouter } from 'vue-router'
+import { useMarketStore } from '@/store/market'
+import { sizingProblem, MIN_NOTIONAL } from '@/composables/useSizingCheck'
 import { STRATEGY_TYPES } from '@/config/strategies'
 import { useLocaleStore } from '@/store/locale'
 const locale = useLocaleStore()
@@ -150,7 +161,35 @@ function spark(id) {
   const zero = (hh - (0 - min) / span * hh).toFixed(1)
   return { pts, zero, w, hh, color: h[h.length - 1] >= 0 ? '#67c23a' : '#f56c6c' }
 }
-async function start(id) { await strategyApi.start(id); ElMessage.success(t('strategy.s29')); load() }
+const router = useRouter()
+const market = useMarketStore()
+const orderNotional = ref(0)
+async function loadNotional() { try { orderNotional.value = Number((await strategyApi.getOrderNotional()).data) || 0 } catch {} }
+const sizingText = p => p.kind === 'notional'
+  ? t('sizing.notional', { n: p.notional, min: MIN_NOTIONAL })
+  : t('sizing.fixed', { qty: p.qty, sym: p.symbol, v: p.value < 0.01 ? p.value.toFixed(4) : p.value.toFixed(2), min: MIN_NOTIONAL })
+/** 運行中的機器人有任何一個「下單一定被幣安拒絕」→ 頁面頂端紅色警告 */
+const sizingWarn = computed(() => {
+  for (const b of list.value) {
+    if (b.status !== 'RUNNING') continue
+    const p = sizingProblem(b, orderNotional.value, market.prices)
+    if (p) return { id: b.id, p }
+  }
+  return null
+})
+async function start(id) {
+  await loadNotional()
+  const bot = list.value.find(b => b.id === id)
+  const p = sizingProblem(bot, orderNotional.value, market.prices)
+  if (p) {
+    try {
+      await ElMessageBox.confirm(sizingText(p) + '\n\n' + t('sizing.fix', { min: MIN_NOTIONAL }), t('sizing.title'),
+        { type: 'error', confirmButtonText: t('sizing.go'), cancelButtonText: t('sizing.anyway'), distinguishCancelAndClose: true })
+      router.push('/risk'); return
+    } catch (e) { if (e === 'close') return }
+  }
+  await strategyApi.start(id); ElMessage.success(t('strategy.s29')); load()
+}
 async function stop(id, flatten) {
   if (flatten) {
     try { await ElMessageBox.confirm(t('strategy.s53', { id }), t('strategy.s30'), { type: 'warning' }) } catch { return }
@@ -207,7 +246,7 @@ async function testSlack() {
   catch { ElMessage.error(t('strategy.s42')) }
 }
 let timer
-onMounted(() => { load(); timer = setInterval(() => load(true), 15000) })   // 背景靜默更新，不閃 loading
+onMounted(() => { load(); loadNotional(); timer = setInterval(() => { load(true); loadNotional() }, 15000) })   // 背景靜默更新，不閃 loading
 onUnmounted(() => clearInterval(timer))
 </script>
 <style scoped>.hint{color:#999;font-size:12px;margin-top:8px}</style>

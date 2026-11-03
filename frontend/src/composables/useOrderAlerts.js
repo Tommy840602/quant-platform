@@ -34,13 +34,15 @@ export function useOrderAlerts({ t, router, enabled }) {
       const syms = g.symbols.slice(0, 4).join(', ') + (g.symbols.length > 4 ? ` +${g.symbols.length - 4}` : '')
       return `${g.strategy ? '[' + g.strategy + '] ' : ''}${syms}（${g.symbols.length}）\n→ ${g.reason || t('alerts.noReason')}`
     })
+    const sizing = list.some(g => /NOTIONAL|LOT_SIZE|名目|minNotional|最低/i.test(g.reason || ''))
+    if (sizing) lines.push(t('sizing.rejectHint'))
     ElNotification({
       type: rejected ? 'error' : 'warning',
       title: rejected ? t('alerts.rejected', { n: rejected }) : t('alerts.unknown', { n: fresh.length }),
       message: lines.join('\n\n'),
       duration: rejected ? 20000 : 0,
       customClass: 'order-alert',
-      onClick: () => router.push('/orders')
+      onClick: () => router.push(sizing ? '/risk' : '/orders')
     })
   }
   function start() { if (timer) return; poll(); timer = setInterval(poll, 15000) }
