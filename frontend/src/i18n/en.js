@@ -503,5 +503,10 @@ export default {
     "s67": " bars",
     "s68": "Triggered",
     "s69": "Normal"
+  },
+  "alerts": {
+    "rejected": "{n} order(s) rejected",
+    "unknown": "{n} order(s) in unknown state (reconciling — do not resend)",
+    "noReason": "(no reason recorded)"
   }
 }
