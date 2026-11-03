@@ -519,5 +519,34 @@ export default {
     "riskLow": "⚠ 低於幣安最低 5 USDT，下單會全部被拒",
     "riskZero": "⚠ 0 = 用策略固定數量（預設 0.001 顆），多數幣會低於 5 USDT 被幣安拒絕；建議填 6",
     "rejectHint": "→ 到「風控設定」把每單名目金額調到 ≥ 5（點此前往）"
+  },
+  "botRisk": {
+    "section": "出場與機器人風控（改了立即生效，不重新暖機）",
+    "strategySection": "策略參數（改了會重新暖機）",
+    "paused": "暫停進場",
+    "resume": "恢復",
+    "resumed": "已恢復進場",
+    "line": "持倉 {open}/{max} · 連虧 {loss} · 本次 {pnl} USDT",
+    "stop": "停損",
+    "trail": "移動",
+    "tp": "停利",
+    "k": {
+      "stopAtr": "停損（ATR 倍數）",
+      "trailAtr": "移動停利（ATR 倍數）",
+      "takeProfitPct": "固定停利 %",
+      "maxPositions": "同時持倉上限",
+      "maxConsecLosses": "連虧幾筆暫停",
+      "maxLossUsdt": "本次虧損上限 USDT",
+      "cooldownBars": "出場後冷卻（根）"
+    },
+    "h": {
+      "stopAtr": "進場價 − N×ATR；0=關",
+      "trailAtr": "獲利後從最高價回落 N×ATR 出場；0=關",
+      "takeProfitPct": "漲到 +N% 出場；0=關",
+      "maxPositions": "多個訊號只做排名前 N",
+      "maxConsecLosses": "暫停進場，持倉停損照常；0=關",
+      "maxLossUsdt": "已實現+未實現 ≤ −N 暫停；0=關",
+      "cooldownBars": "出場後同幣 N 根 K 內不再買"
+    }
   }
 }

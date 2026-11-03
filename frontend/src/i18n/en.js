@@ -519,5 +519,34 @@ export default {
     "riskLow": "⚠ Below Binance minimum 5 USDT — every order will be rejected",
     "riskZero": "⚠ 0 = strategy fixed qty (0.001 by default); most coins fall below 5 USDT and get rejected. 6 recommended",
     "rejectHint": "→ Raise Risk → Notional per order to ≥ 5 (click to open)"
+  },
+  "botRisk": {
+    "section": "Exits & bot risk (applies immediately, no warm-up)",
+    "strategySection": "Strategy params (re-warms indicators)",
+    "paused": "Entries paused",
+    "resume": "Resume",
+    "resumed": "Entries resumed",
+    "line": "Positions {open}/{max} · losing streak {loss} · session {pnl} USDT",
+    "stop": "Stop",
+    "trail": "Trail",
+    "tp": "TP",
+    "k": {
+      "stopAtr": "Stop loss (× ATR)",
+      "trailAtr": "Trailing stop (× ATR)",
+      "takeProfitPct": "Take profit %",
+      "maxPositions": "Max concurrent positions",
+      "maxConsecLosses": "Pause after N losses",
+      "maxLossUsdt": "Session loss limit USDT",
+      "cooldownBars": "Cooldown after exit (bars)"
+    },
+    "h": {
+      "stopAtr": "entry − N×ATR; 0=off",
+      "trailAtr": "once in profit, exit N×ATR below the high; 0=off",
+      "takeProfitPct": "exit at +N%; 0=off",
+      "maxPositions": "only the top-N ranked signals",
+      "maxConsecLosses": "pause entries, exits keep running; 0=off",
+      "maxLossUsdt": "realized+unrealized ≤ −N pauses; 0=off",
+      "cooldownBars": "no re-entry on that coin for N bars"
+    }
   }
 }

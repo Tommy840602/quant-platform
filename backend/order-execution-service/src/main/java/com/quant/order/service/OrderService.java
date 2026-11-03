@@ -571,14 +571,22 @@ public class OrderService {
     public ApiResponse<List<Map<String, Object>>> strategyPositions(String account) {
         String env = gateway.currentEnv() == null ? "testnet" : gateway.currentEnv().toLowerCase();
         boolean dry = gateway.isDryRun();
-        Map<String, double[]> agg = new java.util.LinkedHashMap<>();   // key strategy|symbol -> [qty, open]
+        Map<String, double[]> agg = new java.util.LinkedHashMap<>();   // key strategy|symbol -> [qty, open, cost]
         for (OrderEntity o : orders.findByEnvAndAccountAndStrategyIdIsNotNullOrderByIdAsc(env, account == null ? "main" : account)) {
             if (DRYRUN_MARK.equals(o.getExchangeOrderId()) != dry) continue;   // 模擬單 / 真單分開
             String key = o.getStrategyId() + "|" + o.getSymbol();
-            double[] a = agg.computeIfAbsent(key, k -> new double[2]);
+            double[] a = agg.computeIfAbsent(key, k -> new double[3]);
             OrderStatus st = safeStatus(o.getStatus());
             double filled = o.getFilledQty() == null ? 0 : o.getFilledQty();
-            if (filled > 0) a[0] += "SELL".equals(o.getSide()) ? -filled : filled;
+            double px = o.getAvgPrice() == null ? 0 : o.getAvgPrice();
+            if (filled > 0) {
+                if ("SELL".equals(o.getSide())) {
+                    double q = Math.min(Math.max(a[0], 0), filled);
+                    if (a[0] > 1e-12) a[2] -= a[2] / a[0] * q;   // 賣出按平均成本沖銷
+                    a[0] -= filled;
+                    if (a[0] <= 1e-12) a[2] = 0;
+                } else { a[0] += filled; a[2] += filled * px; }
+            }
             boolean open = st == OrderStatus.CREATED || st == OrderStatus.RISK_APPROVED || st == OrderStatus.SUBMITTED
                     || st == OrderStatus.PARTIALLY_FILLED || st == OrderStatus.UNKNOWN;
             if (open) a[1] += 1;
@@ -586,7 +594,8 @@ public class OrderService {
         List<Map<String, Object>> rows = new java.util.ArrayList<>();
         agg.forEach((k, a) -> {
             String[] p = k.split("\\|", 2);
-            rows.add(Map.of("strategyId", p[0], "symbol", p[1], "qty", a[0], "openOrders", (int) a[1]));
+            rows.add(Map.of("strategyId", p[0], "symbol", p[1], "qty", a[0], "openOrders", (int) a[1],
+                    "avgCost", a[0] > 1e-12 ? a[2] / a[0] : 0.0));
         });
         return ApiResponse.ok(rows);
     }

@@ -51,6 +51,13 @@ public class StrategyRunner {
     // ── 資金配置守門（後續 8）──
     @Value("${strategy.max-exposure-pct:1.0}") private double maxExposurePct;          // 運行中機器人最大合計曝險 / 權益
     @Value("${strategy.max-total-allocation:5.0}") private double maxTotalAllocation;  // 每單名目=0（用固定數量）時退而求其次：Σ allocation 上限
+    private BotRiskManager risk;            // 機器人層級出場 / 持倉上限 / 熔斷；可為 null（單元測試）
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setRiskManager(BotRiskManager r) {
+        this.risk = r;
+        r.bind(id -> paramsOf.getOrDefault(id, Map.of()), id -> names.getOrDefault(id, id), null);
+        contexts.values().forEach(c -> c.setBuyRouter(r));
+    }
     private AccountClient accountClient;   // 可為 null（單元測試）
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     public void setAccountClient(AccountClient c) { this.accountClient = c; }
@@ -158,6 +165,7 @@ public class StrategyRunner {
         factories.put(id, factory);
         instances.put(id, new ConcurrentHashMap<>());
         contexts.putIfAbsent(id, new StrategyContextImpl(id, orderClient, prices, () -> orderNotional, book));
+        if (risk != null) contexts.get(id).setBuyRouter(risk);
         names.put(id, name);
         if (symbol != null) symbolFilter.put(id, symbol.toUpperCase());
     }
@@ -187,10 +195,13 @@ public class StrategyRunner {
         if (event == null || event.kline() == null) return;
         String sym = event.kline().symbol();
         prices.put(sym, event.kline().close());
+        if (risk != null) risk.onKline(event.kline());
         for (String id : running) {
             String filter = symbolFilter.get(id);
             if (filter != null && !filter.equals(sym)) continue;   // 機器人限定 symbol
             if (!factories.containsKey(id)) continue;
+            if (risk != null) try { risk.checkExits(id, event.kline(), contexts.get(id)); }
+                              catch (Exception e) { log.warn("[{}] 出場檢查失敗 {}: {}", id, sym, e.getMessage()); }
             long[] st = barStats.computeIfAbsent(id, k -> new long[3]);
             st[0]++; if (event.kline().closed()) st[1]++; st[2] = System.currentTimeMillis();
             try { instanceFor(id, sym).onBar(event.kline(), contexts.get(id)); }
@@ -239,6 +250,18 @@ public class StrategyRunner {
             diag.put("signals", c.signals()); diag.put("lastSignalAt", c.lastSignalAt());
             diag.put("lastSignal", c.lastSignal()); diag.put("lastOutcome", c.lastOutcome());
             m.put("diag", diag);
+            if (risk != null) {
+                Map<String, Object> rk = new java.util.LinkedHashMap<>();
+                rk.put("paused", risk.pausedReason(id));
+                rk.put("consecLosses", risk.consecLosses(id));
+                rk.put("sessionPnl", Math.round(risk.sessionPnl(id) * 10000) / 10000.0);
+                rk.put("openSlots", book.openSlots(id));
+                Map<String, Object> eff = new java.util.LinkedHashMap<>();
+                for (String k : BotRiskManager.DEFAULTS.keySet()) eff.put(k, risk.p(id, k));
+                rk.put("params", eff);
+                rk.put("exits", risk.exitLevels(id));
+                m.put("risk", rk);
+            }
             out.add(m);
         });
         out.sort(Comparator.comparing(m -> (String) m.get("id")));
@@ -250,13 +273,22 @@ public class StrategyRunner {
         String bad = exposureViolation(id, contexts.get(id) == null ? 1.0 : contexts.get(id).getAllocation());
         if (bad != null) { log.warn("拒絕上線 {}: {}", id, bad); return "rejected: " + bad; }
         running.add(id); startedAt.put(id, System.currentTimeMillis()); log.info("機器人上線: {}", id);
+        if (risk != null) risk.reset(id);
         if (repo != null) try { repo.setRunning(id, true); } catch (Exception e) { log.warn("持久化失敗: {}", e.getMessage()); }
         notify(":arrow_forward: 機器人上線 [" + names.getOrDefault(id, id) + "] (" + id
                 + ") 標的 " + symbolFilter.getOrDefault(id, "ALL"));
         return "started: " + id;
     }
+    /** 熔斷後恢復進場（清空連虧與本次損益統計）。 */
+    public String resume(String id) {
+        if (!factories.containsKey(id)) return "no such strategy: " + id;
+        if (risk != null) risk.reset(id);
+        notify(":arrow_forward: 機器人恢復進場 [" + names.getOrDefault(id, id) + "] (" + id + ")");
+        return "resumed: " + id;
+    }
+
     public String stop(String id) {
-        running.remove(id); startedAt.remove(id); barStats.remove(id); instances.put(id, new ConcurrentHashMap<>()); log.info("機器人下線: {}", id);
+        running.remove(id); startedAt.remove(id); barStats.remove(id); if (risk != null) risk.forget(id); instances.put(id, new ConcurrentHashMap<>()); log.info("機器人下線: {}", id);
         if (repo != null) try { repo.setRunning(id, false); } catch (Exception e) { log.warn("持久化失敗: {}", e.getMessage()); }
         notify(":pause_button: 機器人下線 [" + names.getOrDefault(id, id) + "] (" + id + ")");
         return "stopped: " + id;
@@ -392,6 +424,13 @@ public class StrategyRunner {
         String type = types.getOrDefault(id, "ma");
         Map<String, Object> merged = new java.util.LinkedHashMap<>(paramsOf.getOrDefault(id, Map.of()));
         if (patch != null) patch.forEach((k, v) -> { if (v != null) merged.put(k, v); });
+        if (patch != null && !patch.isEmpty() && patch.keySet().stream().allMatch(BotRiskManager::isRiskKey)) {
+            // 只改風控參數：不重建策略、不重新暖機
+            paramsOf.put(id, merged);
+            if (repo != null) try { repo.setParams(id, merged); } catch (Exception e) { log.warn("持久化失敗: {}", e.getMessage()); }
+            log.info("機器人 {} 風控參數更新 {}", id, patch);
+            return "updated: " + id + " " + merged;
+        }
         Built b = build(id, type, merged);
         if (b == null) return "未知類型: " + type;
         factories.put(id, b.factory());

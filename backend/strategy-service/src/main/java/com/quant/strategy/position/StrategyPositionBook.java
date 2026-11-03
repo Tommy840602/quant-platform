@@ -32,6 +32,13 @@ public class StrategyPositionBook {
     /** clientOrderId -> (strategyId, symbol) for orders this instance submitted */
     private final Map<String, String[]> inflight = new ConcurrentHashMap<>();
     private volatile boolean reconciled = false;
+    /** strategyId -> symbol -> 平均成本（出場風控算停損/停利、來回損益用） */
+    private final Map<String, Map<String, Double>> avgCost = new ConcurrentHashMap<>();
+    /** 平倉（SELL 成交）時回報一筆來回損益：(strategyId, symbol, pnlUsdt) */
+    public interface CloseListener { void onClose(String strategyId, String symbol, double pnl); }
+    private volatile CloseListener closeListener;
+    public void setCloseListener(CloseListener l) { this.closeListener = l; }
+    private static final double FEE_RATE = 0.001;   // 單邊手續費估計，來回 ×2
 
     public record Inflight(String strategyId, String symbol) {}
 
@@ -47,6 +54,17 @@ public class StrategyPositionBook {
     }
     public boolean isReconciled() { return reconciled; }
     public Map<String, Double> snapshot(String strategyId) { return Map.copyOf(positions.getOrDefault(strategyId, Map.of())); }
+    public double avgCost(String strategyId, String symbol) { return avgCost.getOrDefault(strategyId, Map.of()).getOrDefault(symbol, 0.0); }
+    /** 有部位或有未結單的標的數（同時持倉上限用） */
+    public int openSlots(String strategyId) {
+        Set<String> s = new java.util.HashSet<>(pending.getOrDefault(strategyId, Set.of()));
+        positions.getOrDefault(strategyId, Map.of()).forEach((k, v) -> { if (v > 1e-12) s.add(k); });
+        return s.size();
+    }
+    /** 補登入場成本（例如舊版 OMS 對帳沒帶成本時，以現價代替） */
+    public void seedCost(String strategyId, String symbol, double px) {
+        if (px > 0) avgCost.computeIfAbsent(strategyId, k -> new ConcurrentHashMap<>()).putIfAbsent(symbol, px);
+    }
 
     // ── mutations ──
     /** OMS 已接受（code==0）。部位先不動，只標 pending。 */
@@ -67,7 +85,20 @@ public class StrategyPositionBook {
         boolean fill = st == OrderStatus.FILLED || st == OrderStatus.PARTIALLY_FILLED;
         if (fill && e.filledQty() > 0 && e.side() != null) {
             double signed = e.side() == OrderSide.SELL ? -e.filledQty() : e.filledQty();
+            double before = position(sid, sym), px = e.avgPrice();
+            Map<String, Double> costs = avgCost.computeIfAbsent(sid, k -> new ConcurrentHashMap<>());
+            double avg = costs.getOrDefault(sym, 0.0);
+            if (signed > 0 && px > 0) {
+                double q = Math.max(0, before);
+                costs.put(sym, (avg * q + px * signed) / (q + signed));
+            } else if (signed < 0 && before > 1e-12 && avg > 0 && px > 0) {
+                double q = Math.min(before, -signed);
+                double pnl = (px - avg) * q - (px + avg) * q * FEE_RATE;
+                CloseListener l = closeListener;
+                if (l != null) try { l.onClose(sid, sym, pnl); } catch (Exception ex) { log.warn("平倉回報處理失敗: {}", ex.getMessage()); }
+            }
             positions.computeIfAbsent(sid, k -> new ConcurrentHashMap<>()).merge(sym, signed, Double::sum);
+            if (position(sid, sym) <= 1e-12) costs.remove(sym);
             log.info("[{}] 部位 {} {}{} → {}", sid, sym, signed >= 0 ? "+" : "", signed, position(sid, sym));
         }
         boolean terminal = st == OrderStatus.FILLED || st == OrderStatus.CANCELED
@@ -85,15 +116,21 @@ public class StrategyPositionBook {
     public void reconcile(List<Map<String, Object>> rows) {
         Map<String, Map<String, Double>> pos = new ConcurrentHashMap<>();
         Map<String, Set<String>> pend = new ConcurrentHashMap<>();
+        Map<String, Map<String, Double>> cost = new ConcurrentHashMap<>();
         for (Map<String, Object> r : rows) {
             String sid = String.valueOf(r.get("strategyId")), sym = String.valueOf(r.get("symbol"));
             double qty = ((Number) r.getOrDefault("qty", 0)).doubleValue();
             int open = ((Number) r.getOrDefault("openOrders", 0)).intValue();
             if (Math.abs(qty) > 1e-12) pos.computeIfAbsent(sid, k -> new ConcurrentHashMap<>()).put(sym, qty);
+            Object ac = r.get("avgCost");
+            if (qty > 1e-12 && ac instanceof Number n && n.doubleValue() > 0)
+                cost.computeIfAbsent(sid, k -> new ConcurrentHashMap<>()).put(sym, n.doubleValue());
+            else if (qty > 1e-12) { double old = avgCost(sid, sym); if (old > 0) cost.computeIfAbsent(sid, k -> new ConcurrentHashMap<>()).put(sym, old); }
             if (open > 0) pend.computeIfAbsent(sid, k -> ConcurrentHashMap.newKeySet()).add(sym);
         }
         positions.clear(); positions.putAll(pos);
         pending.clear(); pending.putAll(pend);
+        avgCost.clear(); avgCost.putAll(cost);
         reconciled = true;
         log.info("策略部位已與 OMS 對帳：{} 策略有部位，{} 策略有未結單", pos.size(), pend.size());
     }

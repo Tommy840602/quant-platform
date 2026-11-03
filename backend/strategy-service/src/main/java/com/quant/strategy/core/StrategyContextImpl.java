@@ -37,6 +37,23 @@ public class StrategyContextImpl implements StrategyContext {
     public String lastSignal() { return lastSignal; }
     public String lastOutcome() { return lastOutcome; }
     private void outcome(String o) { lastOutcome = o; }
+    public void markOutcome(String o) { lastOutcome = o; }
+
+    /** 進場路由：BUY 先交給它（暫停 / 冷卻 / 同時持倉上限 + 排名），回 true 代表它接手、稍後呼叫 {@link #execute}。null = 直接送（單元測試）。 */
+    public interface BuyRouter { boolean route(StrategyContextImpl ctx, OrderIntent intent); }
+    private volatile BuyRouter buyRouter;
+    public void setBuyRouter(BuyRouter r) { this.buyRouter = r; }
+    public String strategyId() { return strategyId; }
+
+    /** 風控出場：市價賣出該標的全部部位（停損 / 移動停利 / 停利）。 */
+    public void exit(String symbol, String reason) {
+        double q = position(symbol);
+        if (q <= 1e-12 || book.isPending(strategyId, symbol)) return;
+        log.warn("[{}] {} 觸發{}，市價賣出 {}", strategyId, symbol, reason, q);
+        lastSignal = "SELL " + symbol + "（" + reason + "）"; lastSignalAt = System.currentTimeMillis(); signals.incrementAndGet();
+        execute(new OrderIntent(java.util.UUID.randomUUID().toString(), strategyId, symbol,
+                com.quant.common.enums.OrderSide.SELL, com.quant.common.enums.OrderType.MARKET, null, q, false, "SPOT", "main"));
+    }
 
     public StrategyContextImpl(String strategyId, OrderClient orderClient,
                                Map<String, Double> sharedPrices, DoubleSupplier orderNotional,
@@ -64,10 +81,20 @@ public class StrategyContextImpl implements StrategyContext {
             log.info("[{}] {} 仍有未結單，略過本次 {} 訊號", strategyId, intent.symbol(), intent.side());
             outcome("仍有未結單，略過"); return;
         }
+        BuyRouter r = buyRouter;
+        if (intent.side() == com.quant.common.enums.OrderSide.BUY && r != null && r.route(this, intent)) return;
+        execute(intent);
+    }
+
+    /** 實際送單（尺寸換算 → OMS）。SELL 一律賣掉該標的全部部位，不按名目換算，避免賣不乾淨或超賣。 */
+    public void execute(OrderIntent intent) {
         double notional = orderNotional.getAsDouble();
         double px = price(intent.symbol());
         double qty;
-        if (notional > 0 && px > 0) {
+        double held = position(intent.symbol());
+        if (intent.side() == com.quant.common.enums.OrderSide.SELL && held > 1e-12) {
+            qty = held;                           // 出場：全部賣掉
+        } else if (notional > 0 && px > 0) {
             qty = (notional * allocation) / px;   // 名目下單：金額 / 現價
         } else {
             qty = intent.quantity() * allocation; // 沿用策略原始數量

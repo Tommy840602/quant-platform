@@ -519,5 +519,34 @@ export default {
     "riskLow": "⚠ 低于币安最低 5 USDT，下单会全部被拒",
     "riskZero": "⚠ 0 = 用策略固定数量（默认 0.001 颗），多数币会低于 5 USDT 被币安拒绝；建议填 6",
     "rejectHint": "→ 到「风控设置」把每单名义金额调到 ≥ 5（点此前往）"
+  },
+  "botRisk": {
+    "section": "出场与机器人风控（修改立即生效，不重新预热）",
+    "strategySection": "策略参数（修改会重新预热）",
+    "paused": "暂停进场",
+    "resume": "恢复",
+    "resumed": "已恢复进场",
+    "line": "持仓 {open}/{max} · 连亏 {loss} · 本次 {pnl} USDT",
+    "stop": "止损",
+    "trail": "移动",
+    "tp": "止盈",
+    "k": {
+      "stopAtr": "止损（ATR 倍数）",
+      "trailAtr": "移动止盈（ATR 倍数）",
+      "takeProfitPct": "固定止盈 %",
+      "maxPositions": "同时持仓上限",
+      "maxConsecLosses": "连亏几笔暂停",
+      "maxLossUsdt": "本次亏损上限 USDT",
+      "cooldownBars": "出场后冷却（根）"
+    },
+    "h": {
+      "stopAtr": "进场价 − N×ATR；0=关",
+      "trailAtr": "盈利后从最高价回落 N×ATR 出场；0=关",
+      "takeProfitPct": "涨到 +N% 出场；0=关",
+      "maxPositions": "多个信号只做排名前 N",
+      "maxConsecLosses": "暂停进场，持仓止损照常；0=关",
+      "maxLossUsdt": "已实现+未实现 ≤ −N 暂停；0=关",
+      "cooldownBars": "出场后同币 N 根 K 内不再买"
+    }
   }
 }
