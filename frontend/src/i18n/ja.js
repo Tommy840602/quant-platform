@@ -508,5 +508,16 @@ export default {
     "rejected": "注文拒否 {n} 件",
     "unknown": "注文状態不明 {n} 件（照合中、再送しないでください）",
     "noReason": "（理由未記録）"
+  },
+  "sizing": {
+    "title": "現在の設定では注文が Binance に拒否されます",
+    "fixed": "1注文名目が 0 のため戦略の固定数量 {qty} で発注；例：{sym} はわずか {v} USDT で、Binance 最低 {min} USDT 未満です。",
+    "notional": "1注文名目 {n} USDT は Binance 最低 {min} USDT 未満です。",
+    "fix": "「リスク設定 → 1注文の名目金額」を {min} 以上（推奨 6）にして保存してください。",
+    "go": "リスク設定へ",
+    "anyway": "それでも稼働",
+    "riskLow": "⚠ Binance 最低 5 USDT 未満、すべて拒否されます",
+    "riskZero": "⚠ 0＝戦略の固定数量（既定 0.001）。多くの銘柄で 5 USDT 未満となり拒否されます。推奨 6",
+    "rejectHint": "→「リスク設定」で1注文名目を 5 以上に（クリックで移動）"
   }
 }
