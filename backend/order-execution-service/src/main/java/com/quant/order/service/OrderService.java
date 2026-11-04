@@ -720,6 +720,22 @@ public class OrderService {
     }
     private double round4(double d){ return Math.round(d*10000.0)/10000.0; }
 
+    /** 每月已實現損益（目前 env）：months 個月內平倉的來回。 */
+    public List<MonthlyPnl.Row> monthly(int months) {
+        String env = gateway.currentEnv() == null ? "testnet" : gateway.currentEnv().toLowerCase();
+        List<MonthlyPnl.Fill> fills = new java.util.ArrayList<>();
+        for (OrderEntity o : orders.findByEnvAndFilledQtyGreaterThanOrderByIdAsc(env, 0.0)) {
+            if (o.getAvgPrice() == null || o.getAvgPrice() <= 0) continue;
+            var t = o.getUpdatedAt() != null ? o.getUpdatedAt() : o.getCreatedAt();
+            if (t == null) continue;
+            fills.add(new MonthlyPnl.Fill(t.toInstant().toEpochMilli(), o.getStrategyId(), o.getMarket(), o.getSymbol(),
+                    "BUY".equalsIgnoreCase(o.getSide()), o.getFilledQty(), o.getAvgPrice()));
+        }
+        String from = java.time.YearMonth.now(ZoneIdHolder.ZONE).minusMonths(Math.max(1, months) - 1).toString();
+        return MonthlyPnl.compute(fills, ZoneIdHolder.ZONE).stream().filter(r -> r.month.compareTo(from) >= 0).toList();
+    }
+    static final class ZoneIdHolder { static final java.time.ZoneId ZONE = java.time.ZoneId.of("Asia/Taipei"); }
+
     /** 當日統計：今日成交筆數 + 今日已實現盈虧（FIFO 沖銷，僅計今日平倉的 round-trip）。 */
     public ApiResponse<Map<String, Object>> dailyStats() {
         var today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Taipei"));

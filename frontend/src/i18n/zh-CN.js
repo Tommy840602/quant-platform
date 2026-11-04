@@ -454,6 +454,26 @@ export default {
     "diagLastBar": "最后一根：",
     "allSymbols": "全部标的（20 对）"
   },
+  "monthly": {
+    "title": "每月盈亏（已实现）",
+    "lastN": "近 {n} 个月",
+    "refresh": "刷新",
+    "csv": "导出 CSV",
+    "empty": "当前环境还没有平仓记录",
+    "bot": "机器人",
+    "market": "市场",
+    "fut": "合约",
+    "spot": "现货",
+    "trips": "来回",
+    "winRate": "胜率",
+    "realized": "已实现",
+    "fees": "手续费（估）",
+    "net": "净盈亏",
+    "month": "月份",
+    "fills": "成交",
+    "turnover": "成交额",
+    "note": "按平仓月份记账（FIFO），只含当前环境的成交。手续费为估计：现货 0.1%、合约 0.05%；报税请以币安对账单为准。点月份可展开各机器人明细。"
+  },
   "system": {
     "mdLabel": "行情",
     "mdAgo": "秒前",

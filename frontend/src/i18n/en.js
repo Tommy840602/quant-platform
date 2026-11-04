@@ -454,6 +454,26 @@ export default {
     "diagLastBar": "Last bar: ",
     "allSymbols": "All symbols (20 pairs)"
   },
+  "monthly": {
+    "title": "Monthly PnL (realized)",
+    "lastN": "Last {n} months",
+    "refresh": "Refresh",
+    "csv": "Export CSV",
+    "empty": "No closed trades in this environment yet",
+    "bot": "Bot",
+    "market": "Market",
+    "fut": "Futures",
+    "spot": "Spot",
+    "trips": "Trips",
+    "winRate": "Win rate",
+    "realized": "Realized",
+    "fees": "Fees (est.)",
+    "net": "Net",
+    "month": "Month",
+    "fills": "Fills",
+    "turnover": "Turnover",
+    "note": "Booked in the month of close (FIFO), current environment only. Fees are estimates (spot 0.1%, futures 0.05%); use Binance statements for tax. Expand a month for per-bot detail."
+  },
   "system": {
     "mdLabel": "Market data",
     "mdAgo": "s ago",

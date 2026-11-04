@@ -454,6 +454,26 @@ export default {
     "diagLastBar": "最終足：",
     "allSymbols": "全銘柄（20 ペア）"
   },
+  "monthly": {
+    "title": "月次損益（確定）",
+    "lastN": "直近 {n} か月",
+    "refresh": "更新",
+    "csv": "CSV 出力",
+    "empty": "この環境ではまだ決済がありません",
+    "bot": "ボット",
+    "market": "市場",
+    "fut": "先物",
+    "spot": "現物",
+    "trips": "往復",
+    "winRate": "勝率",
+    "realized": "確定損益",
+    "fees": "手数料（推定）",
+    "net": "純損益",
+    "month": "月",
+    "fills": "約定",
+    "turnover": "売買代金",
+    "note": "決済月で計上（FIFO）、現在の環境のみ。手数料は推定（現物 0.1%、先物 0.05%）。税務はバイナンスの明細を使用してください。月を展開するとボット別の内訳。"
+  },
   "system": {
     "mdLabel": "相場データ",
     "mdAgo": "秒前",

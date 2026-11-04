@@ -40,6 +40,8 @@ export const orderApi = {
   cancel: (id, symbol, market='SPOT') => http.delete(`/order/orders/${id}`, { params: { symbol, market } }),
   recent: (limit = 50) => http.get('/order/orders', { params: { limit } }),
   kpi: () => http.get('/order/orders/kpi'),
+  monthly: (months = 12) => http.get('/order/orders/monthly', { params: { months } }),
+  monthlyCsv: (months = 12) => http.get('/order/orders/monthly.csv', { params: { months }, responseType: 'blob' }),
   attribution: () => http.get('/order/orders/attribution'),
   condCreate: (body) => http.post('/order/orders/conditional', body),
   condList: () => http.get('/order/orders/conditional'),

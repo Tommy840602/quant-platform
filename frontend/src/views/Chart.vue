@@ -80,7 +80,8 @@ import { createChart as lwCreate } from 'lightweight-charts'
 import { observeWidth } from '@/utils/resize'
 const unobs = []
 // 每張圖跟著容器寬度走（手機轉向、側欄收合）
-function createChart(el, opts) { const c = lwCreate(el, opts); unobs.push(observeWidth(el, w => c.applyOptions({ width: w }))); return c }
+// 每個窗格一建立就套目前主題（以前副圖是之後才建立、沒套到 → 深色模式白底）
+function createChart(el, opts) { const c = lwCreate(el, { ...chartOpts(), ...opts, timeScale: { ...chartOpts().timeScale, ...(opts?.timeScale || {}) } }); unobs.push(observeWidth(el, w => c.applyOptions({ width: w }))); return c }
 import { storeToRefs } from 'pinia'
 import { marketApi, orderApi, strategyApi } from '@/api'
 import { useRoute } from 'vue-router'

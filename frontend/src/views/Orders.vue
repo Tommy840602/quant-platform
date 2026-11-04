@@ -1,4 +1,5 @@
 <template>
+  <div>
   <el-card>
     <template #header>
       <div style="display:flex;justify-content:space-between;align-items:center">
@@ -44,6 +45,8 @@
       </el-table-column>
     </el-table>
   </el-card>
+  <MonthlyPnlCard style="margin-top:16px" />
+  </div>
 </template>
 
 <script setup>
@@ -54,6 +57,7 @@ const locale = useLocaleStore()
 import { reactive, ref, computed, onMounted } from 'vue'
 import { SYMBOLS } from '@/config/symbols'
 import { orderApi } from '@/api'
+import MonthlyPnlCard from '@/components/MonthlyPnlCard.vue'
 
 const statuses = ['CREATED', 'RISK_APPROVED', 'SUBMITTED', 'PARTIALLY_FILLED', 'FILLED', 'CANCELED', 'REJECTED']
 const filter = reactive({ symbol: '', status: '' })
