@@ -10,6 +10,10 @@
               <el-option v-for="i in ['1m','5m','15m','1h','4h','1d']" :key="i" :label="i" :value="i" />
             </el-select>
             <el-input-number v-model="btBars" :min="50" :max="1000" :step="100" size="small" style="width:120px;margin-right:8px" :title="t('backtest.s2')" />
+            <el-select v-model="btMarket" size="small" style="width:120px;margin-right:8px">
+              <el-option :label="t('backtest.mkSpot')" value="SPOT" />
+              <el-option :label="t('backtest.mkFut')" value="USDT_M" />
+            </el-select>
             <el-select v-model="btType" filterable size="small" style="width:130px;margin-right:8px">
               <el-option v-for="t in STRATEGY_TYPES" :key="t.value" :label="t.label" :value="t.value" />
             </el-select>
@@ -35,6 +39,7 @@
         </span>
         <template v-if="lastRisk && lastRisk.applied">
           <span>{{ t('parity.trips', { n: lastRisk.roundTrips, w: lastRisk.winRate ?? '—' }) }}</span>
+          <span v-if="result?.shorts">{{ t('backtest.lsLine', { l: lastRisk.longTrips ?? 0, lp: lastRisk.longPnl ?? 0, s: lastRisk.shortTrips ?? 0, sp: lastRisk.shortPnl ?? 0 }) }}</span>
           <span v-if="Object.keys(lastRisk.exits || {}).length">{{ t('parity.exits') }}：<template v-for="(n, k) in lastRisk.exits" :key="k">{{ k }} {{ n }}　</template></span>
           <span v-if="Object.keys(lastRisk.blocked || {}).length" style="color:#e6a23c">{{ t('parity.blocked') }}：<template v-for="(n, k) in lastRisk.blocked" :key="k">{{ k }} {{ n }}　</template></span>
           <span v-if="lastRisk.pausedReason" style="color:#f56c6c">{{ t('parity.paused', { why: lastRisk.pausedReason }) }}</span>
@@ -97,7 +102,7 @@
 <script setup>
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { observeWidth } from '@/utils/resize'
 let unobsChart = () => {}
 import * as echarts from 'echarts'
@@ -136,6 +141,9 @@ let chartInst = null
 
 // ── 與實盤一致：同一套風控、同樣的下單比例、實測成本 ──
 const applyRisk = ref(true), riskFrom = ref(''), bots = ref([])
+const btMarket = ref('SPOT')
+// 從某個合約機器人帶風控設定 → 市場跟著切成合約
+watch(riskFrom, id => { const b = bots.value.find(x => x.id === id); const m = b?.params?.market || b?.market; if (m) btMarket.value = String(m).toUpperCase() === 'USDT_M' ? 'USDT_M' : 'SPOT' })
 const liveNotional = ref(0), liveEquity = ref(0)
 const notionalPct = computed(() => liveNotional.value > 0 && liveEquity.value > 0 ? liveNotional.value / liveEquity.value * 100 : 0)
 const lastCosts = ref(null), lastRisk = ref(null)
@@ -198,7 +206,7 @@ async function runJava() {
   loading.value = true
   try {
     // 後端直接用 market-data 的真實 OHLCV（TimescaleDB），不再由前端抓收盤價送過去
-    const resp = await backtestApi.run({ symbol: btSymbol.value, interval: btInterval.value, bars: btBars.value, fast: 3, slow: 8, type: btType.value, ...parityBody() })
+    const resp = await backtestApi.run({ symbol: btSymbol.value, interval: btInterval.value, bars: btBars.value, fast: 3, slow: 8, type: btType.value, market: btMarket.value, ...parityBody() })
     lastCosts.value = resp.data?.costs || null; lastRisk.value = resp.data?.risk || null
     if (resp.code && resp.code !== 0) throw new Error(resp.message)
     result.value = resp.data
