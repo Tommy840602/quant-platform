@@ -66,3 +66,8 @@ binance:
   api-key: ${BINANCE_API_KEY:}
   api-secret: ${BINANCE_API_SECRET:}
   futures-rest-url: ${BINANCE_FUTURES_REST:https://testnet.binancefuture.com}
+  futures-api-key: ${BINANCE_FUTURES_API_KEY:}
+  futures-api-secret: ${BINANCE_FUTURES_API_SECRET:}
+  mainnet-futures-rest-url: ${BINANCE_MAINNET_FUTURES_REST:https://fapi.binance.com}
+  mainnet-futures-api-key: ${BINANCE_MAINNET_FUTURES_API_KEY:}
+  mainnet-futures-api-secret: ${BINANCE_MAINNET_FUTURES_API_SECRET:}

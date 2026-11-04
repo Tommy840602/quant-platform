@@ -49,6 +49,8 @@
           <span class="hint">{{ t('risk.s36') }}{{ pct(lim.maxDailyLossPct) }}</span>
         </el-descriptions-item>
         <el-descriptions-item :label="t('risk.s11')">{{ pct(st.positionPct) }} <span class="hint">{{ t('risk.s37') }} {{ pct(lim.maxPositionPct) }}</span></el-descriptions-item>
+        <el-descriptions-item :label="t('risk.futLev')">{{ st.futuresLeverage == null ? '—' : st.futuresLeverage.toFixed(2) + '×' }}
+          <span class="hint">{{ st.futuresGross ?? 0 }} USDT · {{ t('risk.s37') }} {{ lim.maxFuturesLeverage ? lim.maxFuturesLeverage + '×' : '∞' }}</span></el-descriptions-item>
         <el-descriptions-item :label="t('risk.s12')">{{ st.tradingDay }}</el-descriptions-item>
         <el-descriptions-item :label="t('risk.s13')">{{ st.killSwitch ? t('risk.s68') : t('risk.s69') }}</el-descriptions-item>
       </el-descriptions>
@@ -56,6 +58,10 @@
         <el-form-item :label="t('risk.s14')">
           <el-input-number v-model="limForm.maxPositionPct" :min="0" :max="100" :step="5" />
           <span class="hint">{{ t('risk.s38') }}</span>
+        </el-form-item>
+        <el-form-item :label="t('risk.futLevLimit')">
+          <el-input-number v-model="limForm.maxFuturesLeverage" :min="0" :max="20" :step="0.5" :precision="1" />
+          <span class="hint">{{ t('risk.futLevHint') }}</span>
         </el-form-item>
         <el-form-item :label="t('risk.s15')">
           <el-input-number v-model="limForm.maxDailyLossPct" :min="0" :max="100" :step="0.5" />
@@ -153,7 +159,7 @@ async function extendArm() {
   catch (e) { ElMessage.error(t('risk.s56') + (e?.message || '')) }
 }
 const st = reactive({}); const lim = reactive({}); const savingLim = ref(false)
-const limForm = reactive({ maxPositionPct: 50, maxDailyLossPct: 3, maxDailyOrders: 50, maxDailyNotional: 0, maxPriceDeviationPct: 5, failClosed: true })
+const limForm = reactive({ maxFuturesLeverage: 1, maxPositionPct: 50, maxDailyLossPct: 3, maxDailyOrders: 50, maxDailyNotional: 0, maxPriceDeviationPct: 5, failClosed: true })
 const pct = v => v == null ? '—' : (v * 100).toFixed(1) + '%'
 const dailyNotionalOn = ref(true)
 const lastDailyNotional = ref(1000)
@@ -170,6 +176,7 @@ async function loadRisk() {
     if (lim.maxDailyNotional > 0) lastDailyNotional.value = lim.maxDailyNotional
     limForm.maxPriceDeviationPct = +(lim.maxPriceDeviationPct * 100).toFixed(1)
     limForm.failClosed = !!lim.failClosed
+    limForm.maxFuturesLeverage = lim.maxFuturesLeverage ?? 1
   } catch (e) { ElMessage.error(t('risk.s57') + (e.response?.data?.message || e.message)) }
 }
 async function saveLimits() {
@@ -177,7 +184,8 @@ async function saveLimits() {
   try {
     await riskApi.setLimits({ maxPositionPct: limForm.maxPositionPct / 100, maxDailyLossPct: limForm.maxDailyLossPct / 100,
       maxDailyOrders: limForm.maxDailyOrders, maxDailyNotional: dailyNotionalOn.value ? limForm.maxDailyNotional : 0,
-      maxPriceDeviationPct: limForm.maxPriceDeviationPct / 100, failClosed: limForm.failClosed })
+      maxPriceDeviationPct: limForm.maxPriceDeviationPct / 100, failClosed: limForm.failClosed,
+      maxFuturesLeverage: limForm.maxFuturesLeverage })
     ElMessage.success(t('risk.s58')); loadRisk()
   } catch (e) { ElMessage.error(t('risk.s54') + (e.response?.data?.message || e.message)) }
   finally { savingLim.value = false }

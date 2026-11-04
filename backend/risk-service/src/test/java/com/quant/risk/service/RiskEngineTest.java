@@ -129,6 +129,29 @@ class RiskEngineTest {
     }
 
     @Test
+    void futuresExposureCapCountsExistingPositions() {
+        when(limits.maxFuturesLeverage()).thenReturn(1.0);
+        // 總權益 10000（含合約），已有合約空單名目 8000
+        when(account.balance()).thenReturn(ApiResponse.ok(Map.of("totalUsdt", 10000.0, "balances", List.of(),
+                "futures", Map.of("grossNotional", 8000.0))));
+        Map<String, Object> open = intent("SELL", 30, null); open.put("market", "USDT_M");   // 3000 → 11000 / 10000 = 1.1×
+        RiskEngine.RiskDecision d = engine.evaluate(open);
+        assertFalse(d.approved()); assertTrue(d.reason().contains("合約總曝險"), d.reason());
+        Map<String, Object> small = intent("SELL", 15, null); small.put("market", "USDT_M"); // 1500 → 0.95×
+        assertTrue(engine.evaluate(small).approved());
+        Map<String, Object> cover = intent("BUY", 80, null); cover.put("market", "USDT_M"); cover.put("reduceOnly", true);
+        assertTrue(engine.evaluate(cover).approved(), "平倉不看曝險");
+        assertTrue(engine.evaluate(buy(10)).approved(), "現貨不受合約曝險限制");
+    }
+
+    @Test
+    void partialEquityIsTreatedAsUnavailable() {
+        when(account.balance()).thenReturn(ApiResponse.ok(Map.of("totalUsdt", 5000.0, "balances", List.of(), "partial", true)));
+        RiskEngine.RiskDecision d = engine.evaluate(buy(1));
+        assertFalse(d.approved(), "合約查不到 → 權益不完整，不能拿去算日虧損"); assertTrue(d.reason().contains("fail-closed"));
+    }
+
+    @Test
     void killSwitchFirst() {
         when(kill.isOn()).thenReturn(true); when(kill.reason()).thenReturn("dd");
         assertFalse(engine.evaluate(buy(1)).approved());

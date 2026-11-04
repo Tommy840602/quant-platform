@@ -25,6 +25,7 @@ public class RiskLimits {
     @Value("${risk.max-daily-orders:50}") private int maxDailyOrders;              // 每日下單次數
     @Value("${risk.max-daily-notional-usdt:0}") private double maxDailyNotional;   // 每日名目總額（0=不限）
     @Value("${risk.max-price-deviation-pct:0.05}") private double maxPriceDeviationPct;   // 限價偏離現價 > 5% 視為胖手指
+    @Value("${risk.max-futures-leverage:1.0}") private double maxFuturesLeverage;  // 合約總名目 ≤ 權益 × 1 倍（0=不限）
     @Value("${risk.fail-closed:true}") private boolean failClosed;                 // 帳戶資料拿不到 → BUY 一律拒
     @Value("${risk.mainnet-default-daily-notional-usdt:1000}") private double mainnetDefaultDailyNotional;
     @Value("${binance.env:testnet}") private String env;
@@ -52,13 +53,14 @@ public class RiskLimits {
     }
     public double maxPriceDeviationPct() { return d("maxPriceDeviationPct", maxPriceDeviationPct); }
     public boolean failClosed()          { return b("failClosed", failClosed); }
+    public double maxFuturesLeverage()   { return d("maxFuturesLeverage", maxFuturesLeverage); }
 
     public Map<String, Object> snapshot() {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("maxOrderQty", maxOrderQty()); m.put("maxPositionPct", maxPositionPct());
         m.put("maxDailyLossPct", maxDailyLossPct()); m.put("maxDailyOrders", maxDailyOrders());
         m.put("maxDailyNotional", maxDailyNotional()); m.put("maxPriceDeviationPct", maxPriceDeviationPct());
-        m.put("failClosed", failClosed());
+        m.put("failClosed", failClosed()); m.put("maxFuturesLeverage", maxFuturesLeverage());
         return m;
     }
 
@@ -71,6 +73,7 @@ public class RiskLimits {
             switch (k) {
                 case "maxPositionPct", "maxDailyLossPct", "maxPriceDeviationPct" -> val = String.valueOf(clamp01(num(v)));
                 case "maxOrderQty", "maxDailyNotional" -> val = String.valueOf(Math.max(0, num(v)));
+                case "maxFuturesLeverage" -> val = String.valueOf(Math.max(0, Math.min(20, num(v))));
                 case "maxDailyOrders" -> val = String.valueOf(Math.max(0, (int) num(v)));
                 case "failClosed" -> val = String.valueOf(Boolean.parseBoolean(String.valueOf(v)));
                 default -> { continue; }

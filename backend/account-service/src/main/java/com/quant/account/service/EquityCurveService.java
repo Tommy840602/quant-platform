@@ -36,6 +36,8 @@ public class EquityCurveService {
     private final BinanceAccountService binanceAccount;
     private final OrderStatsClient orderStats;
     private final CashLedger cash;
+    private final WalletService wallet;
+    private volatile boolean partial = false;   // 合約帳戶查不到 → 這次權益不完整，不拿來判回撤
 
     @Value("${risk.max-drawdown:0.1}")   // 10% 回撤熔斷
     private double maxDrawdown;
@@ -56,10 +58,10 @@ public class EquityCurveService {
     public EquityCurveService(PositionRepository positions, EquityRepository equity,
                               StringRedisTemplate redis, RiskClient riskClient,
                               NotifyClient notifyClient, BinanceAccountService binanceAccount,
-                              OrderStatsClient orderStats, CashLedger cash) {
+                              OrderStatsClient orderStats, CashLedger cash, WalletService wallet) {
         this.positions = positions; this.equity = equity; this.redis = redis; this.riskClient = riskClient;
         this.notifyClient = notifyClient; this.binanceAccount = binanceAccount; this.orderStats = orderStats;
-        this.cash = cash;
+        this.cash = cash; this.wallet = wallet;
     }
 
     @jakarta.annotation.PostConstruct
@@ -76,15 +78,17 @@ public class EquityCurveService {
     }
 
     /**
-     * 權益 = 真實帳戶總值（若已接金鑰且允許）；否則 = 現金帳 + Σ 部位市值。
+     * 權益 = 真實帳戶總值（現貨 + 合約保證金餘額，若已接金鑰且允許）；否則 = 現金帳 + Σ 部位市值。
      * 絕不是「起始資金 + 部位市值」：那會把每筆買入的名目額當成獲利。
      */
     double computeEquity() {
+        partial = false;
         if (preferRealEquity) {
             try {
-                Map<String, Object> bal = binanceAccount.balance();
+                Map<String, Object> bal = wallet.balance();
                 if (Boolean.TRUE.equals(bal.get("real")) && bal.get("totalUsdt") instanceof Number n) {
-                    equitySource = "真實帳戶";
+                    partial = Boolean.TRUE.equals(bal.get("partial"));
+                    equitySource = bal.get("futures") != null ? "真實帳戶（現貨+合約）" : partial ? "真實帳戶（合約查詢失敗，僅現貨）" : "真實帳戶";
                     return n.doubleValue();
                 }
             } catch (Exception ignore) {}
@@ -109,6 +113,8 @@ public class EquityCurveService {
         try {
             retryPendingTrip();
             double eq = computeEquity();
+            // 合約查不到時權益少一截：不寫曲線、不判回撤（否則會被當成大跌而誤觸熔斷）
+            if (partial) { log.warn("合約帳戶查不到，本次權益只含現貨，跳過快照與回撤判斷"); return; }
             EquityPoint pt = new EquityPoint();
             pt.setEquity(Math.round(eq * 100.0) / 100.0);
             equity.save(pt);
@@ -152,7 +158,7 @@ public class EquityCurveService {
                 "source", equitySource,
                 "drawdown", Math.round(lastDrawdown * 10000.0) / 10000.0,
                 "threshold", -maxDrawdown, "tripped", tripped,
-                "pendingTrip", isPendingTrip());
+                "pendingTrip", isPendingTrip(), "partial", partial);
     }
 
     /** 手動解除熔斷並以目前權益重置峰值（見架構文件 §10.3）。 */

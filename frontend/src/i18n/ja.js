@@ -66,6 +66,21 @@ export default {
     "trades": "約定"
   },
   "account": {
+    "futSpot": "現物",
+    "futShort": "先物",
+    "futPartial": "先物口座を取得できません：総資産は現物のみ、ドローダウン判定を一時停止",
+    "futTitle": "USDT-M 先物ウォレット",
+    "futStale": "遅延",
+    "futWallet": "ウォレット残高",
+    "futUpnl": "含み損益",
+    "futMargin": "証拠金残高（総資産に算入）",
+    "futAvail": "利用可能",
+    "futNone": "先物ポジションなし",
+    "futSide": "方向",
+    "futLong": "ロング",
+    "futShortSide": "ショート",
+    "futNotional": "想定元本 (USDT)",
+    "futLev": "レバレッジ",
     "s1": "状態",
     "s2": "USDT 利用可能",
     "s3": "USDT ロック中",
@@ -285,6 +300,9 @@ export default {
     "reason": "理由（拒否 / 不明）"
   },
   "risk": {
+    "futLev": "先物総エクスポージャー",
+    "futLevLimit": "先物エクスポージャー上限（倍）",
+    "futLevHint": "先物ポジション想定元本合計 + 今回 ≤ 総資産 × 倍率；1 = レバレッジなし、0 = 無制限",
     "s1": "発注リスク管理（即時反映、再起動不要）",
     "s2": "1注文の名目金額 (USDT)",
     "s3": "1注文の名目上限 (USDT)",

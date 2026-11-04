@@ -66,6 +66,21 @@ export default {
     "trades": "Fills"
   },
   "account": {
+    "futSpot": "Spot",
+    "futShort": "Futures",
+    "futPartial": "Futures account unavailable: total covers spot only, drawdown check paused",
+    "futTitle": "USDT-M futures wallet",
+    "futStale": "Stale",
+    "futWallet": "Wallet balance",
+    "futUpnl": "Unrealized PnL",
+    "futMargin": "Margin balance (in total)",
+    "futAvail": "Available",
+    "futNone": "No futures positions",
+    "futSide": "Side",
+    "futLong": "Long",
+    "futShortSide": "Short",
+    "futNotional": "Notional (USDT)",
+    "futLev": "Leverage",
     "s1": "Status",
     "s2": "USDT available",
     "s3": "USDT locked",
@@ -285,6 +300,9 @@ export default {
     "reason": "Reason (rejected / unknown)"
   },
   "risk": {
+    "futLev": "Futures exposure",
+    "futLevLimit": "Max futures exposure (×)",
+    "futLevHint": "Sum of futures notional + this order ≤ equity × this; 1 = no leverage, 0 = unlimited",
     "s1": "Order risk controls (live, no restart)",
     "s2": "Notional per order (USDT)",
     "s3": "Max notional per order (USDT)",
