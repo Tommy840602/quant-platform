@@ -12,6 +12,8 @@ import java.util.Optional;
 public interface OrderRepository extends JpaRepository<OrderEntity, Long> {
     Optional<OrderEntity> findByClientOrderId(String clientOrderId);
     java.util.List<OrderEntity> findByStatusOrderByIdAsc(String status);
+    /** 月報用：這個 env 所有有成交的單（含部分成交後撤單）。 */
+    java.util.List<OrderEntity> findByEnvAndFilledQtyGreaterThanOrderByIdAsc(String env, Double minQty);
     List<OrderEntity> findTop50ByStatusOrderByUpdatedAtAsc(String status);
     List<OrderEntity> findByStrategyIdIsNotNullOrderByIdAsc();
     List<OrderEntity> findByEnvAndAccountAndStrategyIdIsNotNullOrderByIdAsc(String env, String account);

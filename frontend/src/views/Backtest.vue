@@ -105,7 +105,7 @@ const { t } = useI18n()
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { observeWidth } from '@/utils/resize'
 let unobsChart = () => {}
-import * as echarts from 'echarts'
+import echarts from '@/utils/echarts'
 import { ElMessage } from 'element-plus'
 import { researchApi, backtestApi, marketApi, strategyApi, accountApi } from '@/api'
 import { STRATEGY_TYPES } from '@/config/strategies'

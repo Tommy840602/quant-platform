@@ -124,7 +124,7 @@ import { onMounted, onUnmounted, ref, computed, watch, nextTick } from 'vue'
 import { observeWidth } from '@/utils/resize'
 let unobsPie = () => {}
 import { storeToRefs } from 'pinia'
-import * as echarts from 'echarts'
+import echarts from '@/utils/echarts'
 import { ElMessage } from 'element-plus'
 import { useAccountStore } from '@/store/account'
 import { accountApi } from '@/api'
@@ -157,9 +157,9 @@ function drawPie() {
   if (restVal > 0) top.push({ name: t('account.s31'), value: Math.round(restVal * 100) / 100 })
   pie.setOption({
     tooltip: { trigger: 'item', formatter: '{b}: {c} USDT ({d}%)' },
-    legend: { type: 'scroll', orient: 'vertical', right: 4, top: 8, textStyle: { fontSize: 11 } },
+    legend: { type: 'scroll', orient: 'vertical', right: 4, top: 8, textStyle: { fontSize: 11, color: getComputedStyle(document.documentElement).getPropertyValue('--el-text-color-regular').trim() || '#606266' } },
     series: [{ type: 'pie', radius: ['40%', '70%'], center: ['38%', '50%'],
-      itemStyle: { borderRadius: 4, borderWidth: 1 },
+      itemStyle: { borderRadius: 4, borderWidth: 1, borderColor: getComputedStyle(document.documentElement).getPropertyValue('--el-bg-color').trim() || '#fff' },
       label: { show: false }, data: top }]
   })
 }

@@ -37,6 +37,23 @@ public class OrderController {
     @GetMapping("/kpi")
     public ApiResponse<Map<String, Object>> kpi() { return orderService.kpi(); }
 
+    /** 每月損益：GET /api/order/orders/monthly?months=12（明細 + 每月合計） */
+    @GetMapping("/monthly")
+    public ApiResponse<Map<String, Object>> monthly(@RequestParam(defaultValue = "12") int months) {
+        var rows = orderService.monthly(Math.min(months, 60));
+        return ApiResponse.ok(Map.of("rows", rows.stream().map(com.quant.order.service.MonthlyPnl.Row::toMap).toList(),
+                "totals", com.quant.order.service.MonthlyPnl.totals(rows),
+                "feeNote", "手續費為估計：現貨 0.1%、合約 0.05% × 成交額"));
+    }
+
+    /** 每月損益 CSV：GET /api/order/orders/monthly.csv?months=12 */
+    @GetMapping(value = "/monthly.csv", produces = "text/csv;charset=UTF-8")
+    public org.springframework.http.ResponseEntity<String> monthlyCsv(@RequestParam(defaultValue = "12") int months) {
+        return org.springframework.http.ResponseEntity.ok()
+                .header("Content-Disposition", "attachment; filename=\"pnl-monthly.csv\"")
+                .body(com.quant.order.service.MonthlyPnl.csv(orderService.monthly(Math.min(months, 60))));
+    }
+
     /** 當日成交筆數 + 已實現盈虧：GET /api/order/orders/daily-stats */
     @GetMapping("/daily-stats")
     public ApiResponse<Map<String, Object>> dailyStats() { return orderService.dailyStats(); }

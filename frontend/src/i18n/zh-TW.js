@@ -454,6 +454,26 @@ export default {
     "diagLastBar": "最後一根：",
     "allSymbols": "全部標的（20 對）"
   },
+  "monthly": {
+    "title": "每月損益（已實現）",
+    "lastN": "近 {n} 個月",
+    "refresh": "重新整理",
+    "csv": "匯出 CSV",
+    "empty": "目前環境還沒有平倉紀錄",
+    "bot": "機器人",
+    "market": "市場",
+    "fut": "合約",
+    "spot": "現貨",
+    "trips": "來回",
+    "winRate": "勝率",
+    "realized": "已實現",
+    "fees": "手續費（估）",
+    "net": "淨損益",
+    "month": "月份",
+    "fills": "成交",
+    "turnover": "成交額",
+    "note": "依平倉月份記帳（FIFO），只含目前環境（測試網 / 正式網）的成交。手續費為估計：現貨 0.1%、合約 0.05%；報稅請以幣安對帳單為準。點月份可展開各機器人明細。"
+  },
   "recon": {
     "btn": "對帳",
     "title": "模擬 / 實盤對帳",
