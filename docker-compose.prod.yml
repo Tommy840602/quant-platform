@@ -328,6 +328,34 @@ services:
       api-gateway: { condition: service_started }
       research:    { condition: service_started }
 
+  # ---------- 資料庫每日備份（./backups，保留 7 天；還原：./infra/backup/restore.sh） ----------
+  db-backup:
+    image: timescale/timescaledb:latest-pg16   # 與資料庫同版本，pg_dump/pg_restore 才相容
+    container_name: qp-db-backup
+    restart: unless-stopped
+    <<: *logging
+    entrypoint: ["/bin/sh", "/backup.sh"]
+    environment:
+      PGHOST: timescaledb
+      PGUSER: quant
+      PGPASSWORD: quant
+      PGDATABASE: quant
+      TZ: CST-8            # 台北時間（POSIX 寫法，映像檔不用裝 tzdata）
+      BACKUP_HOUR: ${BACKUP_HOUR:-3}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-7}
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+    volumes:
+      - ./infra/backup/backup.sh:/backup.sh:ro
+      - ./backups:/backups
+    healthcheck:   # 26 小時內要有一份新備份
+      test: ["CMD-SHELL", "find /backups -maxdepth 1 -name 'quant-*.dump' -mmin -1560 | grep -q ."]
+      interval: 10m
+      timeout: 10s
+      retries: 1
+      start_period: 10m
+    depends_on:
+      timescaledb: { condition: service_healthy }
+
   # ---------- 遠端存取：Cloudflare Tunnel（預設不啟動） ----------
   # 由容器主動往外連 Cloudflare，不用開任何對外埠、不用改路由器；只轉發到前端（Grafana/Nacos/DB 都不經過）。
   # 正式版（固定網址 + Cloudflare Access 信箱驗證）：

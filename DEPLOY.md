@@ -80,6 +80,17 @@ docker compose -f docker-compose.prod.yml --profile monitoring stop prometheus g
 ```
 > CX43（16GB）建議平時關監控，把記憶體留給交易邏輯；要排查再臨時開。
 
+## 資料庫備份與還原
+`db-backup` 容器每天台北時間 03:00 把 TimescaleDB 備份到專案的 `./backups/`（`quant-日期-時間.dump`），保留 7 天；失敗會發 Slack。
+```bash
+docker compose -f docker-compose.prod.yml exec db-backup /backup.sh once   # 立刻備份一次
+ls -lh backups/                                                            # 看有哪些備份
+./infra/backup/restore.sh backups/quant-20261104-0300.dump                 # 還原（會要求輸入 RESTORE 確認）
+```
+- 可在 `.env` 改 `BACKUP_HOUR`（0–23）、`BACKUP_KEEP_DAYS`。
+- 備份和資料庫在同一顆硬碟：建議把 `~/quant-platform/backups` 納入 Time Machine，或定期複製到雲端硬碟。
+- 還原會先停掉應用服務、重建資料庫、還原完再全部啟動；Redis（熔斷狀態、現金帳）不在備份內。
+
 ## 在外面連回來（Cloudflare Tunnel）
 家裡的 Mac 不用開任何對外埠、不用改路由器：`cloudflared` 容器主動連到 Cloudflare，只轉發**前端**（Grafana / Nacos / DB 都不會被連到）。
 上公網前已補的保護：登入失敗鎖定（同帳號 15 分鐘錯 5 次、同 IP 錯 20 次 → 鎖 15 分鐘）、`/research` 也要登入、安全標頭。
