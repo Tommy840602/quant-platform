@@ -10,6 +10,7 @@ import CoinIcon from './components/CoinIcon.vue'
 import PriceChange from './components/PriceChange.vue'
 import SymbolSelect from './components/SymbolSelect.vue'
 import './styles/theme.css'
+import './styles/responsive.css'
 import { i18n } from './i18n'
 
 const app = createApp(App)

@@ -88,7 +88,9 @@
 <script setup>
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
-import { onMounted, ref, computed, watch, nextTick } from 'vue'
+import { onMounted, onUnmounted, ref, computed, watch, nextTick } from 'vue'
+import { observeWidth } from '@/utils/resize'
+let unobsPie = () => {}
 import { storeToRefs } from 'pinia'
 import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
@@ -117,7 +119,7 @@ function fmt(v) { return v == null ? '—' : Number(v).toLocaleString(undefined,
 
 function drawPie() {
   if (!pieEl.value) return
-  if (!pie) pie = echarts.init(pieEl.value)
+  if (!pie) { pie = echarts.init(pieEl.value); unobsPie = observeWidth(pieEl.value, () => pie?.resize()) }
   const top = assets.value.slice(0, 12).map(a => ({ name: a.asset, value: a.valueUsdt }))
   const restVal = assets.value.slice(12).reduce((s, a) => s + a.valueUsdt, 0)
   if (restVal > 0) top.push({ name: t('account.s31'), value: Math.round(restVal * 100) / 100 })
@@ -132,6 +134,7 @@ function drawPie() {
 
 
 watch(assets, async () => { await nextTick(); drawPie() })
+onUnmounted(() => { unobsPie(); pie?.dispose(); pie = null })
 onMounted(() => { store.refresh().catch(() => {}); locale.loadRates(); tradeStore.load() })
 </script>
 

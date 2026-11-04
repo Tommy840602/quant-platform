@@ -97,7 +97,9 @@
 <script setup>
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { observeWidth } from '@/utils/resize'
+let unobsChart = () => {}
 import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
 import { researchApi, backtestApi, marketApi, strategyApi, accountApi } from '@/api'
@@ -237,7 +239,8 @@ function draw() {
     ]
   })
 }
-onMounted(() => { chartInst = echarts.init(chart.value); loadParity() })
+onMounted(() => { chartInst = echarts.init(chart.value); unobsChart = observeWidth(chart.value, () => chartInst?.resize()); loadParity() })
+onUnmounted(() => { unobsChart(); chartInst?.dispose(); chartInst = null })
 </script>
 
 <style scoped>
