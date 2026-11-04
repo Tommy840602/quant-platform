@@ -160,9 +160,10 @@ public class StrategyContextImpl implements StrategyContext {
                 OrderIntent lim = new OrderIntent(scaled.clientOrderId(), strategyId, scaled.symbol(), scaled.side(),
                         com.quant.common.enums.OrderType.LIMIT, limit, qty, scaled.reduceOnly(), scaled.market(), scaled.account());
                 if (px > 0) try { x.onLiveSend(strategyId, scaled, px); } catch (Exception ignore) {}
-                if (send(lim, qty, "限價優先 @" + fmt(limit) + " · ")) {
+                final double intended = qty;
+                if (send(lim, intended, "限價優先 @" + fmt(limit) + " · ")) {
                     long wait = Math.max(2, (long) x.param(strategyId, "makerWaitSec"));
-                    MAKER.schedule(() -> makerFallback(lim, qty, wait), wait, java.util.concurrent.TimeUnit.SECONDS);
+                    MAKER.schedule(() -> makerFallback(lim, intended, wait), wait, java.util.concurrent.TimeUnit.SECONDS);
                 }
                 return;
             }
