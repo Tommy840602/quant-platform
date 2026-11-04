@@ -11,6 +11,9 @@ public interface OrderClient {
     @PostMapping("/orders")
     ApiResponse<String> submit(@RequestBody OrderIntent intent);
 
+    @PostMapping("/orders/leverage")
+    ApiResponse<String> leverage(@RequestParam("symbol") String symbol, @RequestParam("leverage") int leverage);
+
     @DeleteMapping("/orders/{clientOrderId}")
     ApiResponse<String> cancel(@PathVariable("clientOrderId") String clientOrderId, @RequestParam("symbol") String symbol,
                                @RequestParam("market") String market);

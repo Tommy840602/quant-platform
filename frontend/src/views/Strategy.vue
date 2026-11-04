@@ -26,6 +26,7 @@
           <template #default="{ row }">
             {{ row.name }}
             <el-tag size="small" effect="plain" type="info" style="margin-left:4px">{{ row.diag?.interval || row.params?.interval || '1m' }}</el-tag>
+            <el-tag v-if="row.market === 'USDT_M'" size="small" type="danger" effect="plain" style="margin-left:4px">{{ t('futures.tag') }}</el-tag>
             <el-tag v-if="row.family && row.family !== 'any'" size="small" :type="row.family === 'trend' ? 'success' : 'primary'" effect="plain" style="margin-left:4px">{{ t('regime.fam.' + row.family) }}</el-tag>
           </template>
         </el-table-column>
@@ -83,7 +84,7 @@
               </div>
               <div v-if="row.risk">{{ t('botRisk.line', { open: row.risk.openSlots, max: row.risk.params.maxPositions, loss: row.risk.consecLosses, pnl: num(row.risk.sessionPnl) }) }}</div>
               <div v-for="x in row.risk?.exits || []" :key="x.symbol" style="color:var(--el-text-color-regular)">
-                {{ x.symbol }} {{ +x.qty.toPrecision(4) }} @{{ +x.entry.toPrecision(6) }} → {{ t('botRisk.stop') }} {{ x.stop ? +x.stop.toPrecision(6) : '—' }}<template v-if="x.trail"> · {{ t('botRisk.trail') }} {{ +x.trail.toPrecision(6) }}</template><template v-if="x.takeProfit"> · {{ t('botRisk.tp') }} {{ +x.takeProfit.toPrecision(6) }}</template>
+                <span v-if="x.side === 'SHORT'" style="color:#ef5350">{{ t('futures.short') }} </span>{{ x.symbol }} {{ +Math.abs(x.qty).toPrecision(4) }} @{{ +x.entry.toPrecision(6) }} → {{ t('botRisk.stop') }} {{ x.stop ? +x.stop.toPrecision(6) : '—' }}<template v-if="x.trail"> · {{ t('botRisk.trail') }} {{ +x.trail.toPrecision(6) }}</template><template v-if="x.takeProfit"> · {{ t('botRisk.tp') }} {{ +x.takeProfit.toPrecision(6) }}</template>
               </div>
               <div :title="row.diag.lastSignalAt ? locale.fmtTime(row.diag.lastSignalAt) : ''">
                 {{ t('strategy.diagSignals', { n: row.diag.signals }) }}<template v-if="row.diag.lastSignal"> · {{ row.diag.lastSignal }} → {{ row.diag.lastOutcome }}</template>
@@ -160,6 +161,12 @@
         <el-form-item :label="t('strategy.s2')">
           <symbol-select v-model="bot.symbol" allow-all :all-label="t('strategy.allSymbols')" style="width:190px" />
         </el-form-item>
+        <el-form-item :label="t('futures.market')">
+          <el-select v-model="bot.market" style="width:170px">
+            <el-option value="SPOT" :label="t('futures.spot')" />
+            <el-option value="USDT_M" :label="t('futures.usdtm')" />
+          </el-select>
+        </el-form-item>
         <el-form-item :label="t('interval.label')">
           <el-select v-model="bot.interval" style="width:90px"><el-option v-for="i in ['1m', '5m', '15m', '1h']" :key="i" :label="i" :value="i" /></el-select>
         </el-form-item>
@@ -167,13 +174,14 @@
         <el-form-item><el-button type="primary" @click="createBot">{{ t('strategy.s22') }}</el-button></el-form-item>
       </el-form>
       <div class="hint">{{ t('strategy.s23') }} {{ t('pipeline.newBot') }}</div>
+      <el-alert v-if="bot.market === 'USDT_M'" type="warning" :closable="false" show-icon style="margin-top:8px" :title="t('futures.note')" />
     </el-card>
 
     <el-dialog v-model="edit.show" :title="t('strategy.s52') + edit.id" width="560px">
       <el-divider content-position="left">{{ t('botRisk.section') }}</el-divider>
       <el-form label-width="170px">
         <el-form-item v-for="k in RISK_KEYS" :key="k" :label="t('botRisk.k.' + k)">
- <el-switch v-if="k === 'regimeFilter' || k === 'blockHighVol' || k === 'execMaker'" :model-value="edit.params[k] > 0" @update:model-value="v => edit.params[k] = v ? 1 : 0" style="width:150px" />
+ <el-switch v-if="k === 'regimeFilter' || k === 'blockHighVol' || k === 'execMaker' || k === 'allowShort'" :model-value="edit.params[k] > 0" @update:model-value="v => edit.params[k] = v ? 1 : 0" style="width:150px" />
  <el-input-number v-else v-model="edit.params[k]" :min="0" :step="k.endsWith('Atr') || k === 'riskPerTradePct' ? 0.5 : 1" :precision="k.endsWith('Atr') || k === 'takeProfitPct' || k === 'riskPerTradePct' ? 1 : 0" style="width:150px" />
           <span class="hint" style="margin-left:8px">{{ t('botRisk.h.' + k) }}</span>
         </el-form-item>
@@ -242,7 +250,7 @@ const locale = useLocaleStore()
 import { SYMBOLS } from '@/config/symbols'
 
 const list = ref([]); const loading = ref(false)
-const bot = reactive({ id: '', type: 'rsi', symbol: 'BTCUSDT', qty: 0.001, interval: '15m' })
+const bot = reactive({ id: '', type: 'rsi', symbol: 'BTCUSDT', qty: 0.001, interval: '15m', market: 'SPOT' })
 
 async function load(silent = false) {
   if (!silent) loading.value = true
@@ -324,7 +332,7 @@ const DEFAULT_KEYS = { ma: ['fast','slow'], ema: ['fast','slow'], wma: ['fast','
   boll: ['period','mult'], bollbreak: ['period','mult'], keltner: ['period','mult'], atr: ['period','mult'], volbreak: ['period','mult'],
   rsi: ['window','oversold','overbought'], grid: ['gridPct'], dualthrust: ['period','k'], momentum: ['period','threshold'], roc: ['period','threshold'],
   zscore: ['period','threshold'], vwap: ['period','dev'], sar: ['step','max'], supertrend: ['period','mult'] }
-const RISK_KEYS = ['execMaker', 'makerWaitSec', 'riskPerTradePct', 'sizeCapPct', 'stopAtr', 'trailAtr', 'takeProfitPct', 'maxPositions', 'maxConsecLosses', 'maxLossUsdt', 'cooldownBars', 'regimeFilter', 'blockHighVol']
+const RISK_KEYS = ['allowShort', 'leverage', 'execMaker', 'makerWaitSec', 'riskPerTradePct', 'sizeCapPct', 'stopAtr', 'trailAtr', 'takeProfitPct', 'maxPositions', 'maxConsecLosses', 'maxLossUsdt', 'cooldownBars', 'regimeFilter', 'blockHighVol']
 // ── 決策日誌 ──
 const dlog = reactive({ show: false, id: '', symbol: '', acted: false, rows: [], loading: false })
 function openLog(row) { dlog.id = row.id; dlog.symbol = row.symbol && row.symbol !== 'ALL' ? row.symbol : ''; dlog.show = true; loadLog() }
@@ -384,7 +392,7 @@ async function saveEdit() {
 }
 async function createBot() {
   if (!bot.id) return ElMessage.warning(t('strategy.s38'))
-  const resp = await strategyApi.create({ id: bot.id, type: bot.type, symbol: bot.symbol === 'ALL' ? null : bot.symbol, params: { qty: bot.qty, interval: bot.interval } })
+  const resp = await strategyApi.create({ id: bot.id, type: bot.type, symbol: bot.symbol === 'ALL' ? null : bot.symbol, params: { qty: bot.qty, interval: bot.interval, market: bot.market } })
   ElMessage.success(resp.data || t('strategy.s39')); bot.id = ''; load()
 }
 async function testSlack() {

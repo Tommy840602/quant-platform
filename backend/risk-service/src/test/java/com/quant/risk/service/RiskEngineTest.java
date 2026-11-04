@@ -101,6 +101,17 @@ class RiskEngineTest {
     }
 
     @Test
+    void dailyLossLockAlsoBlocksFuturesShortsButNotCovers() {
+        assertTrue(engine.evaluate(buy(1)).approved());            // 記日初權益 10000
+        balance(9600, 2000);                                      // −4%
+        Map<String, Object> shortOpen = intent("SELL", 1, null); shortOpen.put("market", "USDT_M");
+        RiskEngine.RiskDecision d = engine.evaluate(shortOpen);
+        assertFalse(d.approved(), "合約做空也是開倉"); assertTrue(d.reason().contains("今日虧損"));
+        Map<String, Object> cover = intent("BUY", 1, null); cover.put("market", "USDT_M"); cover.put("reduceOnly", true);
+        assertTrue(engine.evaluate(cover).approved(), "回補空單是減倉，不擋");
+    }
+
+    @Test
     void limitPriceFarFromMarketIsFatFinger() {
         RiskEngine.RiskDecision d = engine.evaluate(intent("BUY", 1, 80.0));   // 20% 偏離
         assertFalse(d.approved()); assertTrue(d.reason().contains("胖手指"));

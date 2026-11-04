@@ -543,7 +543,9 @@ export default {
       "riskPerTradePct": "每笔风险 % 权益",
       "sizeCapPct": "单笔上限 % 权益",
       "execMaker": "限价优先（maker）",
-      "makerWaitSec": "限价等待秒数"
+      "makerWaitSec": "限价等待秒数",
+      "allowShort": "允许做空",
+      "leverage": "合约杠杆"
     },
     "h": {
       "stopAtr": "进场价 − N×ATR；0=关",
@@ -558,7 +560,9 @@ export default {
       "riskPerTradePct": "止损时最多亏权益 N%，依 ATR 反推数量；0=用每单名义",
       "sizeCapPct": "单笔名义最多占权益 N%",
       "execMaker": "策略信号先挂买一／卖一价，省价差与滑点；止损止盈一律市价",
-      "makerWaitSec": "挂这么久没成交完就撤单，剩下的改市价"
+      "makerWaitSec": "挂这么久没成交完就撤单，剩下的改市价",
+      "allowShort": "合约机器人才有效；关掉 = 合约只做多",
+      "leverage": "1 = 仓位大小等于名义，几乎不会强平"
     }
   },
   "regime": {
@@ -666,5 +670,13 @@ export default {
   "interval": {
     "label": "K 线周期",
     "warmed": "已用历史 K 线预热 {n} 个标的"
+  },
+  "futures": {
+    "market": "市场",
+    "spot": "现货（只做多）",
+    "usdtm": "U 本位合约（可做空）",
+    "tag": "合约",
+    "short": "空",
+    "note": "合约机器人：下单走币安 U 本位合约钱包（要先把 USDT 从现货转到合约钱包），第一次下单前自动设杠杆 1x。做空由「反向价格分身」出信号，止损在进场价上方。回测目前只模拟做多。"
   }
 }

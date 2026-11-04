@@ -580,12 +580,14 @@ public class OrderService {
             double filled = o.getFilledQty() == null ? 0 : o.getFilledQty();
             double px = o.getAvgPrice() == null ? 0 : o.getAvgPrice();
             if (filled > 0) {
-                if ("SELL".equals(o.getSide())) {
-                    double q = Math.min(Math.max(a[0], 0), filled);
-                    if (a[0] > 1e-12) a[2] -= a[2] / a[0] * q;   // 賣出按平均成本沖銷
-                    a[0] -= filled;
-                    if (a[0] <= 1e-12) a[2] = 0;
-                } else { a[0] += filled; a[2] += filled * px; }
+                // 有號部位的平均成本（多單 + / 空單 −）：同向加碼加權平均；反向先沖銷，翻倉的剩餘以本次價格為新成本
+                double signed = "SELL".equals(o.getSide()) ? -filled : filled;
+                double pos = a[0], avg = Math.abs(pos) > 1e-12 ? a[2] / Math.abs(pos) : 0;
+                double next = pos + signed;
+                if (Math.abs(pos) <= 1e-12 || Math.signum(pos) == Math.signum(signed)) avg = (avg * Math.abs(pos) + px * filled) / (Math.abs(pos) + filled);
+                else if (Math.abs(signed) > Math.abs(pos) + 1e-12) avg = px;
+                a[0] = next;
+                a[2] = Math.abs(next) > 1e-12 ? avg * Math.abs(next) : 0;
             }
             boolean open = st == OrderStatus.CREATED || st == OrderStatus.RISK_APPROVED || st == OrderStatus.SUBMITTED
                     || st == OrderStatus.PARTIALLY_FILLED || st == OrderStatus.UNKNOWN;
@@ -595,7 +597,7 @@ public class OrderService {
         agg.forEach((k, a) -> {
             String[] p = k.split("\\|", 2);
             rows.add(Map.of("strategyId", p[0], "symbol", p[1], "qty", a[0], "openOrders", (int) a[1],
-                    "avgCost", a[0] > 1e-12 ? a[2] / a[0] : 0.0));
+                    "avgCost", Math.abs(a[0]) > 1e-12 ? a[2] / Math.abs(a[0]) : 0.0));
         });
         return ApiResponse.ok(rows);
     }

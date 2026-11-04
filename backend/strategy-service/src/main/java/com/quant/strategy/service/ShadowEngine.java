@@ -59,7 +59,7 @@ public class ShadowEngine implements StrategyContextImpl.Execution {
         if (state != null) try {
             for (PositionStateRepository.Row r : state.loadAll()) {
                 Map<String, Map<String, Pos>> target = "PAPER".equals(r.kind()) ? paper : "SHADOW".equals(r.kind()) ? shadow : null;
-                if (target == null || r.qty() <= 1e-12) continue;
+                if (target == null || Math.abs(r.qty()) <= 1e-12) continue;
                 Pos p = new Pos(); p.qty = r.qty(); p.entry = r.entry(); p.peak = r.peak();
                 target.computeIfAbsent(r.botId(), k -> new ConcurrentHashMap<>()).put(r.symbol(), p); n++;
             }
@@ -78,7 +78,7 @@ public class ShadowEngine implements StrategyContextImpl.Execution {
     private void save(String id, String sym, String kind, Pos p) {
         if (state == null) return;
         try {
-            if (p == null || p.qty <= 1e-12) state.delete(id, sym, kind);
+            if (p == null || Math.abs(p.qty) <= 1e-12) state.delete(id, sym, kind);
             else state.upsert(id, sym, kind, p.qty, p.entry, p.peak);
         } catch (Exception e) { log.warn("{} 部位寫入失敗 {} {}: {}", kind, id, sym, e.getMessage()); }
     }
@@ -107,15 +107,12 @@ public class ShadowEngine implements StrategyContextImpl.Execution {
     public void paperFill(String id, OrderIntent i, double px) {
         if (px <= 0) return;
         Map<String, Pos> m = paper.computeIfAbsent(id, k -> new ConcurrentHashMap<>());
-        if (i.side() == OrderSide.BUY) { open(m, i.symbol(), i.quantity(), px); save(id, i.symbol(), "PAPER", m.get(i.symbol())); }
-        else {
-            StrategyPositionBook.Close c = close(id, m, i.symbol(), px, true);
-            save(id, i.symbol(), "PAPER", null);
-            if (c == null) return;
-            if (repo != null) try { repo.insert(c, "PAPER"); } catch (Exception e) { log.warn("模擬盤紀錄寫入失敗: {}", e.getMessage()); }
-            BotRiskManager r = risk;
-            if (r != null) r.onClose(c);
-        }
+        StrategyPositionBook.Close c = apply(id, m, i.symbol(), i.side(), i.quantity(), px, true);
+        save(id, i.symbol(), "PAPER", m.get(i.symbol()));
+        if (c == null) return;
+        if (repo != null) try { repo.insert(c, "PAPER"); } catch (Exception e) { log.warn("模擬盤紀錄寫入失敗: {}", e.getMessage()); }
+        BotRiskManager r = risk;
+        if (r != null) r.onClose(c);
     }
 
     @Override public double paperPosition(String id, String sym) { Pos p = paper.getOrDefault(id, Map.of()).get(sym); return p == null ? 0 : p.qty; }
@@ -125,9 +122,7 @@ public class ShadowEngine implements StrategyContextImpl.Execution {
     @Override
     public void onLiveSend(String id, OrderIntent i, double refPx) {
         refs.put(i.clientOrderId(), new Object[]{id, i.symbol(), i.side(), refPx, System.currentTimeMillis()});
-        Map<String, Pos> m = shadow.computeIfAbsent(id, k -> new ConcurrentHashMap<>());
-        if (i.side() == OrderSide.BUY) { open(m, i.symbol(), i.quantity(), refPx); save(id, i.symbol(), "SHADOW", m.get(i.symbol())); }
-        else shadowClose(id, i.symbol(), refPx);
+        shadowFill(id, i.symbol(), i.side(), i.quantity(), refPx);
     }
 
     @Override public void onLiveReject(String id, OrderIntent i, String reason) { rejects.merge(id, 1, Integer::sum); }
@@ -168,9 +163,12 @@ public class ShadowEngine implements StrategyContextImpl.Execution {
         BotRiskManager r = risk;
         if (p == null || r == null) return;
         double before = p.peak;
-        p.peak = Math.max(p.peak, Math.max(k.high(), k.close()));
-        if (p.peak > before * 1.0005) save(id, k.symbol(), "SHADOW", p);
-        if (r.exitReason(id, k.symbol(), k.close(), p.entry, p.peak) != null) shadowClose(id, k.symbol(), k.close());
+        boolean shortPos = p.qty < 0;
+        p.peak = shortPos ? Math.min(p.peak, Math.min(k.low() > 0 ? k.low() : k.close(), k.close())) : Math.max(p.peak, Math.max(k.high(), k.close()));
+        if (before > 0 && Math.abs(p.peak / before - 1) >= 0.0005) save(id, k.symbol(), "SHADOW", p);
+        String why = shortPos ? com.quant.common.risk.RiskRules.exitReasonShort(k.close(), p.entry, p.peak, r.stats(id, k.symbol()).atr(), riskParams(id))
+                              : r.exitReason(id, k.symbol(), k.close(), p.entry, p.peak);
+        if (why != null) shadowFill(id, k.symbol(), shortPos ? OrderSide.BUY : OrderSide.SELL, Math.abs(p.qty), k.close());
     }
 
     void onFill(String cid, String id, String sym, OrderSide side, double qty, double px) {
@@ -249,25 +247,43 @@ public class ShadowEngine implements StrategyContextImpl.Execution {
     }
 
     // ── helpers ──
-    private static void open(Map<String, Pos> m, String sym, double q, double px) {
-        Pos p = m.computeIfAbsent(sym, k -> new Pos());
-        p.entry = (p.entry * p.qty + px * q) / (p.qty + q);
-        p.qty += q; p.peak = Math.max(p.peak, px);
+    /**
+     * 把一筆成交套到有號部位（多 + / 空 −）：同向開倉或加碼取加權平均；反向就是平倉，回傳來回紀錄；
+     * 反向數量大於部位（翻倉）時，剩下的以本次價格開新倉。
+     */
+    static StrategyPositionBook.Close apply(String id, Map<String, Pos> m, String sym, OrderSide side, double q, double px, boolean fees) {
+        if (q <= 1e-12 || px <= 0) return null;
+        Pos p = m.get(sym);
+        double cur = p == null ? 0 : p.qty, signed = side == OrderSide.BUY ? q : -q;
+        if (Math.abs(cur) <= 1e-12 || Math.signum(cur) == Math.signum(signed)) {
+            if (p == null) { p = new Pos(); m.put(sym, p); }
+            p.entry = (p.entry * Math.abs(p.qty) + px * q) / (Math.abs(p.qty) + q);
+            p.qty += signed;
+            p.peak = Math.abs(cur) <= 1e-12 ? px : p.qty > 0 ? Math.max(p.peak, px) : Math.min(p.peak, px);
+            return null;
+        }
+        double c = Math.min(Math.abs(cur), q);
+        double pnl = (px - p.entry) * c * Math.signum(cur) - (fees ? (px + p.entry) * c * FEE_RATE : 0);
+        StrategyPositionBook.Close close = new StrategyPositionBook.Close(id, sym, c, p.entry, px, pnl);
+        double rem = q - c;
+        if (rem > 1e-12) { p.qty = Math.signum(signed) * rem; p.entry = px; p.peak = px; }
+        else { p.qty = cur + signed; if (Math.abs(p.qty) <= 1e-12) m.remove(sym); }
+        return close;
     }
 
-    private StrategyPositionBook.Close close(String id, Map<String, Pos> m, String sym, double px, boolean fees) {
-        Pos p = m.remove(sym);
-        if (p == null || p.qty <= 1e-12) return null;
-        double pnl = (px - p.entry) * p.qty - (fees ? (px + p.entry) * p.qty * FEE_RATE : 0);
-        return new StrategyPositionBook.Close(id, sym, p.qty, p.entry, px, pnl);
-    }
-
-    private void shadowClose(String id, String sym, double px) {
-        StrategyPositionBook.Close c = close(id, shadow.computeIfAbsent(id, k -> new ConcurrentHashMap<>()), sym, px, false);
-        save(id, sym, "SHADOW", null);
+    private void shadowFill(String id, String sym, OrderSide side, double q, double px) {
+        Map<String, Pos> m = shadow.computeIfAbsent(id, k -> new ConcurrentHashMap<>());
+        StrategyPositionBook.Close c = apply(id, m, sym, side, q, px, false);
+        save(id, sym, "SHADOW", m.get(sym));
         if (c == null) return;
         shadowRealized.merge(id, c.pnl(), Double::sum);
         if (repo != null) try { repo.insert(c, "SHADOW"); } catch (Exception e) { log.debug("影子紀錄寫入失敗: {}", e.getMessage()); }
+    }
+
+    private Map<String, Object> riskParams(String id) {
+        Map<String, Object> m = new HashMap<>();
+        for (String k : com.quant.common.risk.RiskRules.DEFAULTS.keySet()) m.put(k, param(id, k));
+        return m;
     }
 
     private static Map<String, Double> snap(Map<String, Pos> m) {
