@@ -27,6 +27,8 @@ public final class RiskRules {
         m.put("blockHighVol", 1.0);     // 1 = 異常高波動時不進場
         m.put("riskPerTradePct", 0.0);  // 每筆最多虧權益 N%（以停損距離反推數量）；0 = 用每單名目
         m.put("sizeCapPct", 25.0);      // 單筆名目上限 = 權益 N%
+        m.put("execMaker", 0.0);        // 1 = 限價優先：策略訊號先掛買一 / 賣一價，等 makerWaitSec 秒沒成交再撤單改市價（風控出場一律市價）
+        m.put("makerWaitSec", 10.0);
         DEFAULTS = Collections.unmodifiableMap(m);
     }
     public static boolean isRiskKey(String k) { return DEFAULTS.containsKey(k); }

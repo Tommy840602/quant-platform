@@ -541,7 +541,9 @@ export default {
       "regimeFilter": "盤勢過濾",
       "blockHighVol": "異常波動不進場",
       "riskPerTradePct": "每筆風險 % 權益",
-      "sizeCapPct": "單筆上限 % 權益"
+      "sizeCapPct": "單筆上限 % 權益",
+      "execMaker": "限價優先（maker）",
+      "makerWaitSec": "限價等待秒數"
     },
     "h": {
       "stopAtr": "進場價 − N×ATR；0=關",
@@ -554,7 +556,9 @@ export default {
       "regimeFilter": "趨勢型只在趨勢/中性盤進場，均值回歸型只在盤整/中性盤",
       "blockHighVol": "近 14 根波動 ≥ 2.5× 平常時暫停進場",
       "riskPerTradePct": "停損時最多虧權益 N%，依 ATR 反推數量；0=用每單名目",
-      "sizeCapPct": "單筆名目最多佔權益 N%"
+      "sizeCapPct": "單筆名目最多佔權益 N%",
+      "execMaker": "策略訊號先掛買一／賣一價，省價差與滑價；停損停利一律市價",
+      "makerWaitSec": "掛這麼久沒成交完就撤單，剩下的改市價"
     }
   },
   "regime": {

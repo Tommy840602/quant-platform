@@ -31,6 +31,11 @@ public class StrategyPositionBook {
     private final Map<String, Set<String>> pending = new ConcurrentHashMap<>();
     /** clientOrderId -> (strategyId, symbol) for orders this instance submitted */
     private final Map<String, String[]> inflight = new ConcurrentHashMap<>();
+    /** clientOrderId -> 已成交量（限價優先：撤單後補市價只補剩下的） */
+    private final Map<String, Double> filledByCid = new ConcurrentHashMap<>();
+    public boolean isInflight(String clientOrderId) { return inflight.containsKey(clientOrderId); }
+    public double filled(String clientOrderId) { return filledByCid.getOrDefault(clientOrderId, 0.0); }
+    public void forgetFilled(String clientOrderId) { filledByCid.remove(clientOrderId); }
     private volatile boolean reconciled = false;
     /** strategyId -> symbol -> 平均成本（出場風控算停損/停利、來回損益用） */
     private final Map<String, Map<String, Double>> avgCost = new ConcurrentHashMap<>();
@@ -93,6 +98,7 @@ public class StrategyPositionBook {
         OrderStatus st = e.status();
         boolean fill = st == OrderStatus.FILLED || st == OrderStatus.PARTIALLY_FILLED;
         if (fill && e.filledQty() > 0 && e.side() != null) {
+            filledByCid.merge(e.clientOrderId(), e.filledQty(), Double::sum);
             double signed = e.side() == OrderSide.SELL ? -e.filledQty() : e.filledQty();
             double before = position(sid, sym), px = e.avgPrice();
             Map<String, Double> costs = avgCost.computeIfAbsent(sid, k -> new ConcurrentHashMap<>());
@@ -116,8 +122,10 @@ public class StrategyPositionBook {
                 || st == OrderStatus.REJECTED || st == OrderStatus.EXPIRED;
         if (terminal) {
             inflight.remove(e.clientOrderId());
+            // 同一 (策略, 標的) 還有其他在途單（例如限價撤單後補的市價單）就維持 pending
+            boolean other = inflight.values().stream().anyMatch(v -> v[0].equals(sid) && v[1].equals(sym));
             Set<String> p = pending.get(sid);
-            if (p != null) p.remove(sym);
+            if (p != null && !other) p.remove(sym);
             if (st != OrderStatus.FILLED) log.info("[{}] {} 訂單 {} → {}，部位不變", sid, sym, e.clientOrderId(), st);
         }
         return true;
