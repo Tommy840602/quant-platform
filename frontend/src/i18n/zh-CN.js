@@ -117,6 +117,9 @@ export default {
     "s34": "估值("
   },
   "backtest": {
+    "mkSpot": "现货（只做多）",
+    "mkFut": "合约（多空）",
+    "lsLine": "多单 {l} 笔 {lp} USDT · 空单 {s} 笔 {sp} USDT",
     "s1": "K 线周期",
     "s2": "根数",
     "s3": "机器人 ID",

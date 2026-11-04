@@ -117,6 +117,9 @@ export default {
     "s34": "評価額("
   },
   "backtest": {
+    "mkSpot": "現物（ロングのみ）",
+    "mkFut": "先物（ロング/ショート）",
+    "lsLine": "ロング {l} 回 {lp} USDT · ショート {s} 回 {sp} USDT",
     "s1": "足種",
     "s2": "本数",
     "s3": "ボット ID",

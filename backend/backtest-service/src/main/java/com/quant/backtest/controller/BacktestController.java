@@ -35,7 +35,9 @@ public class BacktestController {
         } catch (BarSource.NoDataException e) {
             return ApiResponse.error(400, e.getMessage());
         }
-        var cost = costs.resolve(symbol, req.fee, req.slippage, req.costModel);
+        boolean futures = "USDT_M".equalsIgnoreCase(req.market);
+        // 合約 taker 0.05%（現貨 0.1%）；有指定 fee 就照用
+        var cost = costs.resolve(symbol, req.fee > 0 ? req.fee : futures ? FUTURES_TAKER_FEE : 0, req.slippage, req.costModel);
         var engine = new BacktestEngine(req.initialCash == 0 ? 10000 : req.initialCash, cost.fee(), cost.slippage());
         var params = new HashMap<String, Object>(req.params == null ? Map.of() : req.params);
         params.put("fast", req.fast == 0 ? params.getOrDefault("fast", 3) : req.fast);
@@ -45,10 +47,13 @@ public class BacktestController {
         String type = req.type == null ? "ma" : req.type;
         var spec = Boolean.FALSE.equals(req.applyRisk) ? null
                 : new BacktestEngine.RiskSpec(type, req.risk, req.notionalPct, req.liveEquity);
-        var result = engine.run(data.bars(), strategy, spec);
+        boolean allowShort = futures && com.quant.common.risk.RiskRules.param(req.risk == null ? Map.of() : req.risk, "allowShort") > 0;
+        var twin = allowShort ? StrategyFactory.build(req.type, "backtest-short", params) : null;   // 空單分身：同參數、吃倒數價格
+        var result = engine.run(data.bars(), strategy, twin, spec);
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("symbol", symbol); out.put("interval", interval);
+        out.put("market", futures ? "USDT_M" : "SPOT"); out.put("shorts", allowShort);
         out.put("dataSource", data.dataSource());
         out.put("bars", data.bars().size());
         out.put("from", result.fromMs()); out.put("to", result.toMs());
@@ -70,7 +75,11 @@ public class BacktestController {
         return bars.latest(symbol, interval, req.bars <= 0 ? 300 : Math.min(req.bars, 1000));
     }
 
+    static final double FUTURES_TAKER_FEE = 0.0005;
+
     public static class Req {
+        /** SPOT（預設，只做多）| USDT_M（U 本位合約 1 倍，risk.allowShort=1 時也做空） */
+        public String market;
         public String symbol;
         public String interval;
         public int bars;

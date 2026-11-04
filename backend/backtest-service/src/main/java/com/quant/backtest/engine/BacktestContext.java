@@ -23,8 +23,10 @@ public class BacktestContext implements StrategyContext {
     private final java.util.List<Trade> tradeLog = new java.util.ArrayList<>();
     private long barTime = 0;
 
-    /** 逐筆成交紀錄（一致性比對用）。 */
-    public record Trade(long time, String symbol, OrderSide side, double qty, double price) {}
+    /** 逐筆成交紀錄（一致性比對用）。action：開多 / 平多 / 開空 / 平空。 */
+    public record Trade(long time, String symbol, OrderSide side, double qty, double price, String action) {
+        public Trade(long time, String symbol, OrderSide side, double qty, double price) { this(time, symbol, side, qty, price, null); }
+    }
 
     public BacktestContext(double initialCash, double fee, double slippage) {
         this(initialCash, fee, slippage, 0.95);
@@ -47,8 +49,9 @@ public class BacktestContext implements StrategyContext {
         String sym = intent.symbol();
         if (px <= 0) return null;
         boolean buy = intent.side() == OrderSide.BUY;
-        double fillPx = px * (1 + (buy ? slippage : -slippage));
         double pos = positions.getOrDefault(sym, 0.0);
+        if (buy && pos < -1e-12) return cover(sym, px);   // 手上是空單：BUY = 回補
+        double fillPx = px * (1 + (buy ? slippage : -slippage));
 
         double qty;
         if (buy) {
@@ -60,15 +63,47 @@ public class BacktestContext implements StrategyContext {
             positions.merge(sym, qty, Double::sum);
             entryPx.put(sym, fillPx);
         } else {
-            if (pos <= 0) return null;                  // 無部位可賣
+            if (pos <= 0) return null;                  // 無部位可賣（現貨不會因 SELL 變空單；開空走 openShort）
             qty = pos;                                  // 清倉
             double notional = qty * fillPx;
             cash += notional - notional * fee;
             positions.put(sym, 0.0);
             entryPx.remove(sym);
         }
+        return record(sym, intent.side(), qty, fillPx, buy ? "開多" : "平多");
+    }
+
+    /**
+     * 開空（U 本位合約、1 倍）：空單名目不超過權益；賣出所得計入現金、部位記負數，
+     * 權益 = 現金 + 部位 × 價（負部位 → 價格漲權益減），與實盤合約損益一致。
+     */
+    public Trade openShort(String sym, double px, double qtyOverride) {
+        if (px <= 0 || Math.abs(positions.getOrDefault(sym, 0.0)) > 1e-12) return null;
+        double fillPx = px * (1 - slippage);
+        double cap = equity() / (1 + fee);
+        double notional = qtyOverride > 0 ? Math.min(qtyOverride * fillPx, cap) : cap * posFraction;
+        if (notional <= 0) return null;
+        double qty = notional / fillPx;
+        cash += notional - notional * fee;
+        positions.put(sym, -qty);
+        entryPx.put(sym, fillPx);
+        return record(sym, OrderSide.SELL, qty, fillPx, "開空");
+    }
+
+    /** 回補整筆空單。 */
+    public Trade cover(String sym, double px) {
+        double pos = positions.getOrDefault(sym, 0.0);
+        if (px <= 0 || pos >= -1e-12) return null;
+        double fillPx = px * (1 + slippage), qty = -pos, notional = qty * fillPx;
+        cash -= notional + notional * fee;
+        positions.put(sym, 0.0);
+        entryPx.remove(sym);
+        return record(sym, OrderSide.BUY, qty, fillPx, "平空");
+    }
+
+    private Trade record(String sym, OrderSide side, double qty, double fillPx, String action) {
         trades++; filledQty += qty; filledNotional += qty * fillPx;
-        Trade t = new Trade(barTime, sym, intent.side(), qty, fillPx);
+        Trade t = new Trade(barTime, sym, side, qty, fillPx, action);
         tradeLog.add(t);
         return t;
     }
