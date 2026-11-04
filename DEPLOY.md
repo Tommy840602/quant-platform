@@ -80,6 +80,31 @@ docker compose -f docker-compose.prod.yml --profile monitoring stop prometheus g
 ```
 > CX43（16GB）建議平時關監控，把記憶體留給交易邏輯；要排查再臨時開。
 
+## 在外面連回來（Cloudflare Tunnel）
+家裡的 Mac 不用開任何對外埠、不用改路由器：`cloudflared` 容器主動連到 Cloudflare，只轉發**前端**（Grafana / Nacos / DB 都不會被連到）。
+上公網前已補的保護：登入失敗鎖定（同帳號 15 分鐘錯 5 次、同 IP 錯 20 次 → 鎖 15 分鐘）、`/research` 也要登入、安全標頭。
+
+### A. 臨時網址（今天馬上用，免帳號）
+```bash
+docker compose -f docker-compose.prod.yml --profile quick-tunnel up -d cloudflared-quick
+docker compose -f docker-compose.prod.yml logs cloudflared-quick | grep -o 'https://[a-z0-9-]*\.trycloudflare\.com'
+```
+- 打開印出來的網址，用平台帳號登入即可。網址隨機、**容器重啟就換**，用完建議關掉：
+  `docker compose -f docker-compose.prod.yml stop cloudflared-quick`
+- 只有平台自己的登入擋著 → 請確認 `ADMIN_PASSWORD` 夠長（16 字以上）、`JWT_ENABLED=true`。
+
+### B. 固定網址 + 信箱驗證（推薦長期用）
+1. Cloudflare 後台 → Zero Trust → Networks → Tunnels → Create tunnel（Cloudflared）→ 複製 token。
+2. 該 tunnel 的 Public Hostname：`trade.你的網域` → Service `http://frontend:80`。
+3. Zero Trust → Access → Applications → Self-hosted，網域同上；Policy：Allow，Include → Emails → 只填你自己的信箱（一次性驗證碼登入）。
+4. `.env` 填 `CLOUDFLARE_TUNNEL_TOKEN=...`，然後：
+   ```bash
+   docker compose -f docker-compose.prod.yml --profile tunnel up -d cloudflared
+   ```
+這樣陌生人連登入頁都看不到（先過 Cloudflare 信箱驗證，再過平台登入）。
+
+> 公司網路若擋 `stream.binance.com`，只會影響網頁上的即時報價跳動；下單、機器人都在家裡的 Mac 跑，不受影響。
+
 ## 常用指令
 ```bash
 docker compose -f docker-compose.prod.yml ps           # 狀態

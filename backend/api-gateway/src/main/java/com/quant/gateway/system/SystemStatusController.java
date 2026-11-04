@@ -51,6 +51,13 @@ public class SystemStatusController {
         this.web = lbWebClientBuilder.build(); this.jwt = jwt;
     }
 
+    /** 給 nginx auth_request 用的輕量驗證：JWT 有效回 204，否則 401（/research 等不經 gateway 路由的端點靠它擋）。 */
+    @GetMapping("/api/system/auth-check")
+    public Mono<org.springframework.http.ResponseEntity<Void>> authCheck(ServerHttpRequest req) {
+        return Mono.just(jwt.isAuthorized(req) ? org.springframework.http.ResponseEntity.noContent().build()
+                : org.springframework.http.ResponseEntity.status(HttpStatus.UNAUTHORIZED).build());
+    }
+
     @GetMapping("/api/system/status")
     public Mono<Map<String, Object>> status(ServerHttpRequest req) {
         if (!jwt.isAuthorized(req)) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
