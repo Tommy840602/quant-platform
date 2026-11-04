@@ -29,6 +29,8 @@ public final class RiskRules {
         m.put("sizeCapPct", 25.0);      // 單筆名目上限 = 權益 N%
         m.put("execMaker", 0.0);        // 1 = 限價優先：策略訊號先掛買一 / 賣一價，等 makerWaitSec 秒沒成交再撤單改市價（風控出場一律市價）
         m.put("makerWaitSec", 10.0);
+        m.put("allowShort", 1.0);       // 合約機器人：1 = 也做空（反向價格分身出訊號）
+        m.put("leverage", 1.0);         // 合約槓桿（第一次下單前設定；1 = 部位大小就是名目，幾乎不會被強平）
         DEFAULTS = Collections.unmodifiableMap(m);
     }
     public static boolean isRiskKey(String k) { return DEFAULTS.containsKey(k); }
@@ -94,6 +96,32 @@ public final class RiskRules {
         if (trail > 0 && px <= trail) return "移動停利";
         double tp = takeProfitPrice(entry, p);
         if (tp > 0 && px >= tp) return "停利";
+        return null;
+    }
+
+    // ── 空單出場（鏡像）：停損在進場價上方、移動停利以進場後最低價為基準、停利在下方 ──
+    public static double shortStopPrice(double entry, double atr, Map<String, Object> p) {
+        double k = param(p, "stopAtr");
+        if (k <= 0 || entry <= 0) return 0;
+        return atr > 0 ? entry + k * atr : entry * (1 + FALLBACK_STOP_PCT / 100);
+    }
+    public static double shortTrailPrice(double entry, double low, double atr, Map<String, Object> p) {
+        double k = param(p, "trailAtr");
+        if (k <= 0 || atr <= 0 || low <= 0 || low >= entry) return 0;
+        double t = low + k * atr;
+        return t < entry ? t : 0;
+    }
+    public static double shortTakeProfitPrice(double entry, Map<String, Object> p) {
+        double tp = param(p, "takeProfitPct");
+        return tp > 0 && entry > 0 ? entry * (1 - tp / 100) : 0;
+    }
+    public static String exitReasonShort(double px, double entry, double low, double atr, Map<String, Object> p) {
+        double stop = shortStopPrice(entry, atr, p);
+        if (stop > 0 && px >= stop) return "停損";
+        double trail = shortTrailPrice(entry, low, atr, p);
+        if (trail > 0 && px >= trail) return "移動停利";
+        double tp = shortTakeProfitPrice(entry, p);
+        if (tp > 0 && px <= tp) return "停利";
         return null;
     }
 

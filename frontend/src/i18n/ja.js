@@ -543,7 +543,9 @@ export default {
       "riskPerTradePct": "1回のリスク % 資産",
       "sizeCapPct": "1注文上限 % 資産",
       "execMaker": "指値優先（maker）",
-      "makerWaitSec": "指値待機秒"
+      "makerWaitSec": "指値待機秒",
+      "allowShort": "売りを許可",
+      "leverage": "先物レバレッジ"
     },
     "h": {
       "stopAtr": "建値 − N×ATR；0=オフ",
@@ -558,7 +560,9 @@ export default {
       "riskPerTradePct": "損切り時の損失を資産 N% 以内に、ATR から数量算出；0=1注文名目",
       "sizeCapPct": "1注文の名目を資産 N% までに",
       "execMaker": "シグナルは最良気配に指値でスプレッドと滑りを節約。損切り・利確は常に成行",
-      "makerWaitSec": "この秒数で約定しなければ取消して残りを成行"
+      "makerWaitSec": "この秒数で約定しなければ取消して残りを成行",
+      "allowShort": "先物ボットのみ；オフ＝先物でも買いのみ",
+      "leverage": "1 = 建玉＝名目、清算はほぼなし"
     }
   },
   "regime": {
@@ -666,5 +670,13 @@ export default {
   "interval": {
     "label": "足種",
     "warmed": "過去足でウォームアップ済み（{n} 銘柄）"
+  },
+  "futures": {
+    "market": "市場",
+    "spot": "現物（買いのみ）",
+    "usdtm": "USDT-M 先物（売りも可）",
+    "tag": "先物",
+    "short": "売",
+    "note": "先物ボットは Binance USDT-M ウォレットで取引します（先に現物から USDT を振替）。初回注文前にレバレッジ 1x を自動設定。売りは逆価格の分身がシグナルを出し、損切りは建値の上。バックテストは現在買いのみ。"
   }
 }

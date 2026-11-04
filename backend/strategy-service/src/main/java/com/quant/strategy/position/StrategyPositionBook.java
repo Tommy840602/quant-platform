@@ -72,7 +72,7 @@ public class StrategyPositionBook {
     /** 有部位或有未結單的標的數（同時持倉上限用） */
     public int openSlots(String strategyId) {
         Set<String> s = new java.util.HashSet<>(pending.getOrDefault(strategyId, Set.of()));
-        positions.getOrDefault(strategyId, Map.of()).forEach((k, v) -> { if (v > 1e-12) s.add(k); });
+        positions.getOrDefault(strategyId, Map.of()).forEach((k, v) -> { if (Math.abs(v) > 1e-12) s.add(k); });
         return s.size();
     }
     /** 補登入場成本（例如舊版 OMS 對帳沒帶成本時，以現價代替） */
@@ -103,17 +103,23 @@ public class StrategyPositionBook {
             double before = position(sid, sym), px = e.avgPrice();
             Map<String, Double> costs = avgCost.computeIfAbsent(sid, k -> new ConcurrentHashMap<>());
             double avg = costs.getOrDefault(sym, 0.0);
-            if (signed > 0 && px > 0) {
-                double q = Math.max(0, before);
-                costs.put(sym, (avg * q + px * signed) / (q + signed));
-            } else if (signed < 0 && before > 1e-12 && avg > 0 && px > 0) {
-                double q = Math.min(before, -signed);
-                double pnl = (px - avg) * q - (px + avg) * q * FEE_RATE;
-                CloseListener l = closeListener;
-                if (l != null) try { l.onClose(new Close(sid, sym, q, avg, px, pnl)); } catch (Exception ex) { log.warn("平倉回報處理失敗: {}", ex.getMessage()); }
+            if (px > 0) {
+                if (Math.abs(before) <= 1e-12 || Math.signum(before) == Math.signum(signed)) {
+                    // 開倉 / 同向加碼：加權平均成本（多單、空單皆同）
+                    costs.put(sym, (avg * Math.abs(before) + px * Math.abs(signed)) / (Math.abs(before) + Math.abs(signed)));
+                } else {
+                    // 反向成交 = 平倉（多單賣出 / 空單回補）：回報來回損益；翻倉的剩餘以本次價格為新成本
+                    double q = Math.min(Math.abs(before), Math.abs(signed));
+                    if (avg > 0) {
+                        double pnl = (px - avg) * q * Math.signum(before) - (px + avg) * q * FEE_RATE;
+                        CloseListener l = closeListener;
+                        if (l != null) try { l.onClose(new Close(sid, sym, q, avg, px, pnl)); } catch (Exception ex) { log.warn("平倉回報處理失敗: {}", ex.getMessage()); }
+                    }
+                    if (Math.abs(signed) > Math.abs(before) + 1e-12) costs.put(sym, px);
+                }
             }
             positions.computeIfAbsent(sid, k -> new ConcurrentHashMap<>()).merge(sym, signed, Double::sum);
-            if (position(sid, sym) <= 1e-12) costs.remove(sym);
+            if (Math.abs(position(sid, sym)) <= 1e-12) costs.remove(sym);
             FillListener fl = fillListener;
             if (fl != null && px > 0) try { fl.onFill(e.clientOrderId(), sid, sym, e.side(), e.filledQty(), px); } catch (Exception ex) { log.debug("fill hook: {}", ex.getMessage()); }
             log.info("[{}] 部位 {} {}{} → {}", sid, sym, signed >= 0 ? "+" : "", signed, position(sid, sym));
@@ -142,9 +148,9 @@ public class StrategyPositionBook {
             int open = ((Number) r.getOrDefault("openOrders", 0)).intValue();
             if (Math.abs(qty) > 1e-12) pos.computeIfAbsent(sid, k -> new ConcurrentHashMap<>()).put(sym, qty);
             Object ac = r.get("avgCost");
-            if (qty > 1e-12 && ac instanceof Number n && n.doubleValue() > 0)
+            if (Math.abs(qty) > 1e-12 && ac instanceof Number n && n.doubleValue() > 0)
                 cost.computeIfAbsent(sid, k -> new ConcurrentHashMap<>()).put(sym, n.doubleValue());
-            else if (qty > 1e-12) { double old = avgCost(sid, sym); if (old > 0) cost.computeIfAbsent(sid, k -> new ConcurrentHashMap<>()).put(sym, old); }
+            else if (Math.abs(qty) > 1e-12) { double old = avgCost(sid, sym); if (old > 0) cost.computeIfAbsent(sid, k -> new ConcurrentHashMap<>()).put(sym, old); }
             if (open > 0) pend.computeIfAbsent(sid, k -> ConcurrentHashMap.newKeySet()).add(sym);
         }
         positions.clear(); positions.putAll(pos);

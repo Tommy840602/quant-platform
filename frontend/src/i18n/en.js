@@ -543,7 +543,9 @@ export default {
       "riskPerTradePct": "Risk per trade % equity",
       "sizeCapPct": "Max order % equity",
       "execMaker": "Maker first (limit)",
-      "makerWaitSec": "Limit wait (s)"
+      "makerWaitSec": "Limit wait (s)",
+      "allowShort": "Allow shorts",
+      "leverage": "Futures leverage"
     },
     "h": {
       "stopAtr": "entry − N×ATR; 0=off",
@@ -558,7 +560,9 @@ export default {
       "riskPerTradePct": "lose at most N% of equity at the stop; qty from ATR; 0 = per-order notional",
       "sizeCapPct": "cap each order at N% of equity",
       "execMaker": "strategy signals rest at best bid/ask to save spread & slippage; stops always market",
-      "makerWaitSec": "cancel after this long and market the remainder"
+      "makerWaitSec": "cancel after this long and market the remainder",
+      "allowShort": "futures bots only; off = futures long only",
+      "leverage": "1 = position size equals notional, liquidation very unlikely"
     }
   },
   "regime": {
@@ -666,5 +670,13 @@ export default {
   "interval": {
     "label": "Interval",
     "warmed": "warmed up from history ({n} symbols)"
+  },
+  "futures": {
+    "market": "Market",
+    "spot": "Spot (long only)",
+    "usdtm": "USDT-M futures (long & short)",
+    "tag": "Futures",
+    "short": "SHORT",
+    "note": "Futures bots trade the Binance USDT-M wallet (transfer USDT from spot first); leverage is set to 1x before the first order. Shorts come from an inverse-price twin; stops sit above entry. Backtests currently simulate longs only."
   }
 }

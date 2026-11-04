@@ -164,7 +164,7 @@ public class StrategyRunner {
         String from = stageOf(id);
         if (from.equals(to)) return "stage unchanged: " + to;
         StrategyContextImpl c = contexts.get(id);
-        if ("PAPER".equals(to) && c != null) for (var e : c.snapshot().entrySet()) if (e.getValue() > 1e-12) c.exit(e.getKey(), "降級模擬盤");
+        if ("PAPER".equals(to) && c != null) for (var e : c.snapshot().entrySet()) if (Math.abs(e.getValue()) > 1e-12) c.exit(e.getKey(), "降級模擬盤");
         if ("PAPER".equals(from) && shadow != null) shadow.clearPaper(id);
         stage.put(id, to); stageSince.put(id, System.currentTimeMillis());
         if (repo != null) try { repo.setStage(id, to); } catch (Exception e) { log.warn("持久化失敗: {}", e.getMessage()); }
@@ -442,7 +442,7 @@ public class StrategyRunner {
 
     private void put(String id, Supplier<Strategy> factory, String name, String symbol) {
         factories.put(id, factory);
-        instances.put(id, new ConcurrentHashMap<>());
+        instances.put(id, new ConcurrentHashMap<>()); twins.remove(id);
         contexts.putIfAbsent(id, new StrategyContextImpl(id, orderClient, prices, () -> orderNotional, book));
         if (risk != null) contexts.get(id).setBuyRouter(risk);
         if (shadow != null) contexts.get(id).setExecution(shadow);
@@ -493,12 +493,60 @@ public class StrategyRunner {
             st[0]++; if (k.closed()) st[1]++; st[2] = System.currentTimeMillis();
             try {
                 Strategy inst = instanceFor(id, sym);
-                Long warmedTo = warmed(id, sym, iv, inst, k.openTime());
+                Long warmedTo = warmed(id, sym, iv, inst, k.openTime(), false);
                 if (warmedTo != null && k.openTime() <= warmedTo) continue;   // 歷史已經餵過這根
                 inst.onBar(k, contexts.get(id));
             }
             catch (Exception e) { log.warn("策略 {} [{}] 執行錯誤: {}", id, sym, e.getMessage()); }
+            if (shorts(id)) try {
+                Kline inv = invert(k);
+                if (inv == null) continue;
+                Strategy tw = twinFor(id, sym);
+                Long warmedTo = warmed(id, sym, iv, tw, k.openTime(), true);
+                if (warmedTo != null && k.openTime() <= warmedTo) continue;
+                tw.onBar(inv, shortView(id));
+            } catch (Exception e) { log.warn("策略 {} [{}] 空單分身執行錯誤: {}", id, sym, e.getMessage()); }
         }
+    }
+
+    /** 機器人市場：SPOT（只做多）| USDT_M（U 本位合約，可做空）。 */
+    public String marketOf(String id) {
+        Object v = paramsOf.getOrDefault(id, Map.of()).get("market");
+        return v != null && "USDT_M".equalsIgnoreCase(String.valueOf(v)) ? "USDT_M" : "SPOT";
+    }
+    private void applyMarket(String id) { StrategyContextImpl c = contexts.get(id); if (c != null) c.setMarket(marketOf(id)); }
+    private boolean shorts(String id) { return "USDT_M".equals(marketOf(id)) && (risk == null || risk.p(id, "allowShort") > 0); }
+
+    // ── 做空：反向價格分身 ──
+    // 合約機器人每個標的多跑一份策略，餵「價格倒數」的 K 線（1/p，高低互換）。分身在倒數世界「買進」= 真實世界價格在跌 → 開空；
+    // 分身「賣出」→ 回補。不用改任何一支策略，30+ 種策略都能做空；停損 / 停利由風控以空單規則（鏡像）處理。
+    private final Map<String, Map<String, Strategy>> twins = new ConcurrentHashMap<>();
+    private Strategy twinFor(String id, String symbol) {
+        return twins.computeIfAbsent(id, k -> new ConcurrentHashMap<>()).computeIfAbsent(symbol, k -> factories.get(id).get());
+    }
+    static Kline invert(Kline k) {
+        if (k.open() <= 0 || k.high() <= 0 || k.low() <= 0 || k.close() <= 0) return null;
+        return new Kline(k.symbol(), k.interval(), k.openTime(), 1 / k.open(), 1 / k.low(), 1 / k.high(), 1 / k.close(),
+                k.volume(), k.closeTime(), k.closed());
+    }
+    /** 分身看到的世界：部位 = 空單大小，價格 = 倒數；它的 BUY / SELL 翻成真實的開空 / 回補。 */
+    private StrategyContext shortView(String id) {
+        StrategyContextImpl real = contexts.get(id);
+        return new StrategyContext() {
+            @Override public void submit(OrderIntent i) {
+                if (real == null) return;
+                double net = real.position(i.symbol());
+                if (i.side() == OrderSide.BUY) {   // 開空（若手上是多單，反向訊號先平多）
+                    real.submit(new OrderIntent(i.clientOrderId(), id, i.symbol(), OrderSide.SELL, OrderType.MARKET, null,
+                            i.quantity(), false, "USDT_M", i.accountOrDefault()));
+                } else if (net < -1e-12) {          // 回補空單
+                    real.submit(new OrderIntent(i.clientOrderId(), id, i.symbol(), OrderSide.BUY, OrderType.MARKET, null,
+                            Math.abs(net), true, "USDT_M", i.accountOrDefault()));
+                }
+            }
+            @Override public double position(String symbol) { return real == null ? 0 : Math.max(0, -real.position(symbol)); }
+            @Override public double price(String symbol) { double p = prices.getOrDefault(symbol, 0.0); return p > 0 ? 1 / p : 0; }
+        };
     }
 
     /** 機器人的 K 線週期（params.interval，預設 1m）。 */
@@ -527,7 +575,7 @@ public class StrategyRunner {
     }
 
     /** 第一次遇到這個實例：用歷史 K 線餵一遍（下單全部吞掉）。回傳餵到的最後一根 openTime；沒暖機回 null。 */
-    private Long warmed(String id, String sym, String iv, Strategy inst, long beforeOpenTime) {
+    private Long warmed(String id, String sym, String iv, Strategy inst, long beforeOpenTime, boolean invert) {
         Long t = warmedAt.get(inst);
         if (t != null) return t;
         long last = -1;
@@ -540,9 +588,11 @@ public class StrategyRunner {
             };
             for (Kline b : history(sym, iv)) {
                 if (!b.closed() || b.openTime() >= beforeOpenTime) continue;
-                inst.onBar(b, muted); last = b.openTime();
+                Kline bar = invert ? invert(b) : b;
+                if (bar == null) continue;
+                inst.onBar(bar, muted); last = b.openTime();
             }
-            if (last > 0) warmedCount.merge(id, 1, Integer::sum);
+            if (last > 0 && !invert) warmedCount.merge(id, 1, Integer::sum);
         } catch (Exception e) { log.debug("[{}] {} {} 歷史暖機失敗（改用即時 K 線慢慢暖）: {}", id, sym, iv, e.getMessage()); }
         warmedAt.put(inst, last);
         return last;
@@ -588,6 +638,7 @@ public class StrategyRunner {
             diag.put("bars", bs[0]); diag.put("closedBars", bs[1]); diag.put("lastBarAt", bs[2]);
             diag.put("symbols", symbolFilter.containsKey(id) ? 1 : prices.size());
             diag.put("interval", intervalOf(id));
+            m.put("market", marketOf(id));
             diag.put("warmed", warmedCount.getOrDefault(id, 0));
             diag.put("signals", c.signals()); diag.put("lastSignalAt", c.lastSignalAt());
             diag.put("lastSignal", c.lastSignal()); diag.put("lastOutcome", c.lastOutcome());
@@ -641,7 +692,7 @@ public class StrategyRunner {
     }
 
     public String stop(String id) {
-        running.remove(id); startedAt.remove(id); barStats.remove(id); if (risk != null) risk.forget(id); instances.put(id, new ConcurrentHashMap<>()); log.info("機器人下線: {}", id);
+        running.remove(id); startedAt.remove(id); barStats.remove(id); if (risk != null) risk.forget(id); instances.put(id, new ConcurrentHashMap<>()); twins.remove(id); log.info("機器人下線: {}", id);
         if (repo != null) try { repo.setRunning(id, false); } catch (Exception e) { log.warn("持久化失敗: {}", e.getMessage()); }
         notify(":pause_button: 機器人下線 [" + names.getOrDefault(id, id) + "] (" + id + ")");
         return "stopped: " + id;
@@ -682,7 +733,7 @@ public class StrategyRunner {
 
     private void applyMaParams(String id, int fast, int slow, double qty) {
         factories.put(id, () -> new MovingAverageStrategy(id, fast, slow, qty));
-        instances.put(id, new ConcurrentHashMap<>());   // 丟掉舊實例，各 symbol 重新暖機
+        instances.put(id, new ConcurrentHashMap<>()); twins.remove(id);   // 丟掉舊實例，各 symbol 重新暖機
         paramsOf.put(id, new java.util.LinkedHashMap<>(Map.of("fast", fast, "slow", slow, "qty", qty)));
     }
 
@@ -764,6 +815,7 @@ public class StrategyRunner {
         put(id, s, name + (symbol != null ? " · " + symbol.toUpperCase() : ""), symbol);
         types.put(id, type.toLowerCase());
         paramsOf.put(id, p == null ? new java.util.LinkedHashMap<>() : new java.util.LinkedHashMap<>(p));
+        applyMarket(id);
         if (persist) {
             persist(id);
             // 新機器人從模擬盤開始，過關才用真錢（p.stage 可指定，例如 LIVE 跳過）
@@ -785,7 +837,7 @@ public class StrategyRunner {
         if (patch != null) patch.forEach((k, v) -> { if (v != null) merged.put(k, v); });
         if (patch != null && !patch.isEmpty() && patch.keySet().stream().allMatch(BotRiskManager::isRiskKey)) {
             // 只改風控參數：不重建策略、不重新暖機
-            paramsOf.put(id, merged);
+            paramsOf.put(id, merged); applyMarket(id);
             if (repo != null) try { repo.setParams(id, merged); } catch (Exception e) { log.warn("持久化失敗: {}", e.getMessage()); }
             log.info("機器人 {} 風控參數更新 {}", id, patch);
             return "updated: " + id + " " + merged;
@@ -793,8 +845,8 @@ public class StrategyRunner {
         Built b = build(id, type, merged);
         if (b == null) return "未知類型: " + type;
         factories.put(id, b.factory());
-        instances.put(id, new ConcurrentHashMap<>());
-        paramsOf.put(id, merged);
+        instances.put(id, new ConcurrentHashMap<>()); twins.remove(id);
+        paramsOf.put(id, merged); applyMarket(id);
         if (repo != null) try { repo.setParams(id, merged); } catch (Exception e) { log.warn("持久化失敗: {}", e.getMessage()); }
         log.info("機器人 {} 參數更新 {}", id, merged);
         return "updated: " + id + " " + merged;
@@ -807,7 +859,7 @@ public class StrategyRunner {
         if (!factories.containsKey(id)) return "no such strategy: " + id;
         if (builtins.contains(id)) return "內建策略不可刪除: " + id;
         if (running.contains(id)) stop(id, flatten);
-        factories.remove(id); instances.remove(id); contexts.remove(id); names.remove(id);
+        factories.remove(id); instances.remove(id); twins.remove(id); contexts.remove(id); names.remove(id);
         symbolFilter.remove(id); types.remove(id); paramsOf.remove(id); startedAt.remove(id); stage.remove(id); stageSince.remove(id);
         if (shadow != null) shadow.clearPaper(id);
         if (posState != null) try { posState.deleteBot(id); } catch (Exception e) { log.debug("清除部位狀態失敗: {}", e.getMessage()); }
@@ -819,8 +871,8 @@ public class StrategyRunner {
     /** 下線並（可選）平倉：對策略帳上每個有多頭部位的標的送市價 SELL。 */
     public String stop(String id, boolean flatten) {
         StrategyContextImpl pc = contexts.get(id);
-        if (flatten && pc != null && pc.isPaper()) {
-            for (var e : pc.snapshot().entrySet()) if (e.getValue() > 1e-12) pc.exit(e.getKey(), "下線平倉");
+        if (flatten && pc != null && (pc.isPaper() || pc.futures())) {   // 模擬盤 / 合約（含空單）都走 context 平倉
+            for (var e : pc.snapshot().entrySet()) if (Math.abs(e.getValue()) > 1e-12) pc.exit(e.getKey(), "下線平倉");
             return stop(id) + ", paper flattened";
         }
         String r = stop(id);

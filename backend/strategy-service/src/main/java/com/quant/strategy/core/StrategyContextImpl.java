@@ -79,16 +79,24 @@ public class StrategyContextImpl implements StrategyContext {
     private volatile Execution exec;
     public void setExecution(Execution e) { this.exec = e; }
     public String strategyId() { return strategyId; }
+    /** SPOT（只做多）| USDT_M（U 本位合約，可做空） */
+    private volatile String market = "SPOT";
+    public void setMarket(String m) { this.market = "USDT_M".equalsIgnoreCase(m) ? "USDT_M" : "SPOT"; }
+    public String market() { return market; }
+    public boolean futures() { return "USDT_M".equals(market); }
+    /** 合約：每個標的第一次下單前設定槓桿（程序生命週期內一次） */
+    private static final java.util.Set<String> LEVERAGE_SET = java.util.concurrent.ConcurrentHashMap.newKeySet();
     public boolean isPaper() { Execution x = exec; return x != null && x.paper(strategyId); }
 
     /** 風控出場：市價賣出該標的全部部位（停損 / 移動停利 / 停利）。 */
     public void exit(String symbol, String reason) {
         double q = position(symbol);
-        if (q <= 1e-12 || isPending(symbol)) return;
-        log.warn("[{}] {} 觸發{}，市價賣出 {}", strategyId, symbol, reason, q);
-        lastSignal = "SELL " + symbol + "（" + reason + "）"; lastSignalAt = System.currentTimeMillis(); signals.incrementAndGet();
+        if (Math.abs(q) <= 1e-12 || isPending(symbol)) return;
+        OrderSide side = q > 0 ? OrderSide.SELL : OrderSide.BUY;   // 多單賣出 / 空單回補
+        log.warn("[{}] {} 觸發{}，市價{} {}", strategyId, symbol, reason, q > 0 ? "賣出" : "回補", Math.abs(q));
+        lastSignal = side + " " + symbol + "（" + reason + "）"; lastSignalAt = System.currentTimeMillis(); signals.incrementAndGet();
         execute(new OrderIntent(java.util.UUID.randomUUID().toString(), strategyId, symbol,
-                OrderSide.SELL, com.quant.common.enums.OrderType.MARKET, null, q, false, "SPOT", "main"), reason + "出場");
+                side, com.quant.common.enums.OrderType.MARKET, null, Math.abs(q), futures(), market, "main"), reason + "出場");
     }
 
     public StrategyContextImpl(String strategyId, OrderClient orderClient,
@@ -117,8 +125,13 @@ public class StrategyContextImpl implements StrategyContext {
             log.info("[{}] {} 仍有未結單，略過本次 {} 訊號", strategyId, intent.symbol(), intent.side());
             decide(intent.symbol(), intent.side(), "仍有未結單，略過"); return;
         }
+        double pos = position(intent.symbol());
+        if (!futures() && intent.side() == OrderSide.SELL && pos <= 1e-12) {
+            decide(intent.symbol(), intent.side(), "現貨沒有部位可賣，略過"); return;
+        }
+        // 開倉（空手時的 BUY，或合約空手時的 SELL）先過路由：暫停 / 冷卻 / 盤勢 / 同時持倉上限 + 排名；平倉直接送
         BuyRouter r = buyRouter;
-        if (intent.side() == OrderSide.BUY && r != null && r.route(this, intent)) return;
+        if (Math.abs(pos) <= 1e-12 && r != null && r.route(this, intent)) return;
         execute(intent);
     }
 
@@ -131,9 +144,10 @@ public class StrategyContextImpl implements StrategyContext {
         double qty;
         double held = position(intent.symbol());
         Execution x = exec;
-        double sized = x == null || intent.side() == OrderSide.SELL || px <= 0 ? 0 : x.sizeQty(strategyId, intent.symbol(), px);
-        if (intent.side() == OrderSide.SELL && held > 1e-12) {
-            qty = held;                           // 出場：全部賣掉
+        boolean closing = (intent.side() == OrderSide.SELL && held > 1e-12) || (intent.side() == OrderSide.BUY && held < -1e-12);
+        double sized = x == null || closing || px <= 0 ? 0 : x.sizeQty(strategyId, intent.symbol(), px);
+        if (closing) {
+            qty = Math.abs(held);                 // 平倉：多單全部賣掉 / 空單全部回補（反向訊號只平倉、不直接翻倉）
         } else if (sized > 0) {
             qty = sized * allocation;             // 風險預算下單量（波動率目標）
             if (qty * px < MIN_ORDER_USDT) qty = MIN_ORDER_USDT / px;
@@ -144,7 +158,7 @@ public class StrategyContextImpl implements StrategyContext {
         }
         if (qty <= 0) { decide(intent.symbol(), intent.side(), "數量為 0（現價 " + px + "）"); return; }
         OrderIntent scaled = new OrderIntent(intent.clientOrderId(), strategyId, intent.symbol(),
-                intent.side(), intent.type(), intent.price(), qty, intent.reduceOnly(), intent.market(), intent.account());
+                intent.side(), intent.type(), intent.price(), qty, futures() && closing, market, intent.account());
         String tag = why == null ? "" : why + " · ";
 
         if (x != null && x.paper(strategyId)) {
@@ -184,7 +198,9 @@ public class StrategyContextImpl implements StrategyContext {
         MAKER.schedule(() -> {
             double filled = book.filled(cid); book.forgetFilled(cid);
             double px = price(sym);
-            double rem = lim.side() == OrderSide.SELL ? position(sym) : intended - filled;
+            double held = position(sym);
+            boolean closing = (lim.side() == OrderSide.SELL && held > 1e-12) || (lim.side() == OrderSide.BUY && held < -1e-12);
+            double rem = closing ? Math.abs(held) : intended - filled;
             if (rem <= 0 || px <= 0 || rem * px < MIN_ORDER_USDT) {
                 decide(sym, lim.side(), String.format("限價成交 %s / %s，剩餘不足最低名目，不補市價", fmt(filled), fmt(intended)));
                 return;
@@ -199,6 +215,18 @@ public class StrategyContextImpl implements StrategyContext {
     private boolean send(OrderIntent scaled, double qty, String tag) {
         Execution x = exec;
         double notional = orderNotional.getAsDouble();
+        if (futures() && LEVERAGE_SET.add(scaled.symbol())) {
+            int lev = x == null ? 1 : Math.max(1, (int) Math.round(x.param(strategyId, "leverage")));
+            String err = null;
+            try { var r = orderClient.leverage(scaled.symbol(), lev); if (r == null || r.code() != 0) err = r == null ? "null" : r.message(); }
+            catch (Exception e) { err = e.getMessage(); }
+            if (err != null) {
+                LEVERAGE_SET.remove(scaled.symbol());
+                log.warn("[{}] {} 設定合約槓桿 {}x 失敗（不下單）: {}", strategyId, scaled.symbol(), lev, err);
+                decide(scaled.symbol(), scaled.side(), tag + "合約槓桿設定失敗，未下單：" + err); return false;
+            }
+            log.info("[{}] {} 合約槓桿設為 {}x", strategyId, scaled.symbol(), lev);
+        }
         try {
             var resp = orderClient.submit(scaled);
             if (resp == null || resp.code() != 0) {
@@ -251,7 +279,7 @@ public class StrategyContextImpl implements StrategyContext {
     /** 有部位或未結單的標的數。 */
     public int openSlots() {
         if (!isPaper()) return book.openSlots(strategyId);
-        int n = 0; for (double q : snapshot().values()) if (q > 1e-12) n++;
+        int n = 0; for (double q : snapshot().values()) if (Math.abs(q) > 1e-12) n++;
         return n;
     }
     @Override public double price(String symbol) { return sharedPrices.getOrDefault(symbol, 0.0); }

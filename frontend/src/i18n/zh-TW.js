@@ -543,7 +543,9 @@ export default {
       "riskPerTradePct": "每筆風險 % 權益",
       "sizeCapPct": "單筆上限 % 權益",
       "execMaker": "限價優先（maker）",
-      "makerWaitSec": "限價等待秒數"
+      "makerWaitSec": "限價等待秒數",
+      "allowShort": "允許做空",
+      "leverage": "合約槓桿"
     },
     "h": {
       "stopAtr": "進場價 − N×ATR；0=關",
@@ -558,7 +560,9 @@ export default {
       "riskPerTradePct": "停損時最多虧權益 N%，依 ATR 反推數量；0=用每單名目",
       "sizeCapPct": "單筆名目最多佔權益 N%",
       "execMaker": "策略訊號先掛買一／賣一價，省價差與滑價；停損停利一律市價",
-      "makerWaitSec": "掛這麼久沒成交完就撤單，剩下的改市價"
+      "makerWaitSec": "掛這麼久沒成交完就撤單，剩下的改市價",
+      "allowShort": "合約機器人才有效；關掉 = 合約只做多",
+      "leverage": "1 = 部位大小等於名目，幾乎不會強平"
     }
   },
   "regime": {
@@ -666,5 +670,13 @@ export default {
   "interval": {
     "label": "K 線週期",
     "warmed": "已用歷史 K 線暖機 {n} 個標的"
+  },
+  "futures": {
+    "market": "市場",
+    "spot": "現貨（只做多）",
+    "usdtm": "U 本位合約（可做空）",
+    "tag": "合約",
+    "short": "空",
+    "note": "合約機器人：下單走幣安 U 本位合約錢包（要先把 USDT 從現貨轉到合約錢包），第一次下單前自動設槓桿 1x。做空由「反向價格分身」出訊號，停損在進場價上方。回測目前只模擬做多。"
   }
 }

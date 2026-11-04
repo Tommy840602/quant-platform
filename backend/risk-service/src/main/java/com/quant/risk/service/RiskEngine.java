@@ -87,9 +87,12 @@ public class RiskEngine {
         if (maxNotional > 0 && notional > 0 && notionalToday + notional > maxNotional)
             return reject(String.format("今日名目總額 %.0f + 本單 %.0f 超過上限 %.0f USDT", notionalToday, notional, maxNotional));
 
-        // 6/7 需要權益（只有 BUY 才查，SELL 減倉不擋）
-        double maxLoss = limits.maxDailyLossPct(), maxPos = limits.maxPositionPct();
-        if (buy && (maxLoss > 0 || maxPos > 0)) {
+        // 6/7 需要權益：只擋「開倉」。現貨 BUY、合約非 reduceOnly 的單（做多或做空）都算開倉；減倉 / 平倉不擋
+        boolean futures = "USDT_M".equalsIgnoreCase(String.valueOf(intent.getOrDefault("market", "SPOT")));
+        boolean reduce = Boolean.TRUE.equals(intent.get("reduceOnly"));
+        boolean opening = !reduce && (buy || futures);
+        double maxLoss = limits.maxDailyLossPct(), maxPos = futures ? 0 : limits.maxPositionPct();   // 集中度看的是現貨持幣，合約不適用
+        if (opening && (maxLoss > 0 || maxPos > 0)) {
             Equity eq = equity();
             if (eq == null) {
                 if (limits.failClosed()) return reject("取不到帳戶權益（account-service），依 fail-closed 拒絕買入");
@@ -101,7 +104,7 @@ public class RiskEngine {
                     if (dayStart > 0) {
                         double dd = 1 - eq.total / dayStart;
                         if (dd >= maxLoss)
-                            return reject(String.format("今日虧損 %.1f%% 已達上限 %.1f%%（日初權益 %.0f → %.0f），停止買入；賣出減倉不受限",
+                            return reject(String.format("今日虧損 %.1f%% 已達上限 %.1f%%（日初權益 %.0f → %.0f），停止開倉；減倉 / 平倉不受限",
                                     dd * 100, maxLoss * 100, dayStart, eq.total));
                     }
                 }

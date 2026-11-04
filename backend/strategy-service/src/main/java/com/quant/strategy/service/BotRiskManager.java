@@ -180,21 +180,25 @@ public class BotRiskManager implements StrategyContextImpl.BuyRouter {
         if (!paper && !book.isReconciled()) return;
         String sym = k.symbol();
         double q = ctx.position(sym);
-        if (q <= 1e-12) { Map<String, Double> pk = peak.get(id); if (pk != null && pk.remove(sym) != null) dropPeak(id, sym); return; }
+        if (Math.abs(q) <= 1e-12) { Map<String, Double> pk = peak.get(id); if (pk != null && pk.remove(sym) != null) dropPeak(id, sym); return; }
         if (ctx.pending(sym)) return;
         double px = k.close();
         double entry = ctx.entry(sym);
         if (entry <= 0) { if (!paper) book.seedCost(id, sym, px); entry = px; }
-        double hi = peak.computeIfAbsent(id, x -> new ConcurrentHashMap<>()).merge(sym, Math.max(k.high(), px), Math::max);
+        boolean shortPos = q < 0;
+        // 多單記進場後最高價、空單記最低價（移動停利基準）
+        double hi = shortPos
+                ? peak.computeIfAbsent(id, x -> new ConcurrentHashMap<>()).merge(sym, Math.min(k.low() > 0 ? k.low() : px, px), Math::min)
+                : peak.computeIfAbsent(id, x -> new ConcurrentHashMap<>()).merge(sym, Math.max(k.high(), px), Math::max);
         persistPeak(id, sym, hi);
-        String why = exitReason(id, sym, px, entry, hi);
+        String why = shortPos ? RiskRules.exitReasonShort(px, entry, hi, atr(id, sym), pm(id)) : exitReason(id, sym, px, entry, hi);
         if (why == null) return;
         ctx.exit(sym, why);
         peak.get(id).remove(sym); dropPeak(id, sym);
         cooldownUntil.computeIfAbsent(id, x -> new ConcurrentHashMap<>())
                 .put(sym, closedCount(id, sym) + (long) p(id, "cooldownBars"));
-        send(String.format(":octagonal_sign: [%s]%s %s %s出場 @ %s（進場 %s，%+.2f%%）", names.apply(id), paper ? "（模擬）" : "",
-                sym, why, fmt(px), fmt(entry), (px / entry - 1) * 100));
+        send(String.format(":octagonal_sign: [%s]%s %s %s%s出場 @ %s（進場 %s，%+.2f%%）", names.apply(id), paper ? "（模擬）" : "",
+                sym, shortPos ? "空單" : "", why, fmt(px), fmt(entry), (px / entry - 1) * 100 * (shortPos ? -1 : 1)));
     }
 
     /** 回傳觸發的出場原因，未觸發回 null。 */
@@ -206,7 +210,7 @@ public class BotRiskManager implements StrategyContextImpl.BuyRouter {
     private void persistPeak(String id, String sym, double hi) {
         StateStore s = store; if (s == null) return;
         String key = id + "|" + sym; Double last = savedPeak.get(key);
-        if (last != null && hi <= last * 1.0005) return;
+        if (last != null && Math.abs(hi / last - 1) < 0.0005) return;   // 多單最高價 / 空單最低價變動 < 0.05% 不寫
         savedPeak.put(key, hi);
         try { s.savePeak(id, sym, hi); } catch (Exception e) { log.debug("peak 寫入失敗: {}", e.getMessage()); }
     }
@@ -232,14 +236,23 @@ public class BotRiskManager implements StrategyContextImpl.BuyRouter {
         StrategyContextImpl c = ctxOf.get(id);
         Map<String, Double> snap = c != null ? c.snapshot() : book.snapshot(id);
         snap.forEach((sym, q) -> {
-            if (q <= 1e-12) return;
+            if (Math.abs(q) <= 1e-12) return;
             double entry = c != null ? c.entry(sym) : book.avgCost(id, sym), a = atr(id, sym), px = prices.getOrDefault(sym, 0.0);
             double hi = peak.getOrDefault(id, Map.of()).getOrDefault(sym, Math.max(entry, px));
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("symbol", sym); m.put("qty", q); m.put("entry", entry); m.put("last", px);
-            m.put("stop", RiskRules.stopPrice(entry, a, pm(id)));
-            m.put("trail", RiskRules.trailPrice(entry, hi, a, pm(id)));
-            m.put("takeProfit", RiskRules.takeProfitPrice(entry, pm(id)));
+            if (q < 0) {
+                double lo = peak.getOrDefault(id, Map.of()).getOrDefault(sym, Math.min(entry, px > 0 ? px : entry));
+                m.put("side", "SHORT");
+                m.put("stop", RiskRules.shortStopPrice(entry, a, pm(id)));
+                m.put("trail", RiskRules.shortTrailPrice(entry, lo, a, pm(id)));
+                m.put("takeProfit", RiskRules.shortTakeProfitPrice(entry, pm(id)));
+            } else {
+                m.put("side", "LONG");
+                m.put("stop", RiskRules.stopPrice(entry, a, pm(id)));
+                m.put("trail", RiskRules.trailPrice(entry, hi, a, pm(id)));
+                m.put("takeProfit", RiskRules.takeProfitPrice(entry, pm(id)));
+            }
             out.add(m);
         });
         return out;
@@ -272,13 +285,14 @@ public class BotRiskManager implements StrategyContextImpl.BuyRouter {
         Map<String, OrderIntent> uniq = new LinkedHashMap<>();
         synchronized (l) { for (OrderIntent i : l) uniq.putIfAbsent(i.symbol(), i); }
         List<OrderIntent> ranked = new ArrayList<>(uniq.values());
-        ranked.sort(Comparator.comparingDouble((OrderIntent i) -> stats(id, i.symbol()).score()).reversed());
+        // 做多挑漲最強的、做空挑跌最強的
+        ranked.sort(Comparator.comparingDouble((OrderIntent i) -> (i.side() == com.quant.common.enums.OrderSide.SELL ? -1 : 1) * stats(id, i.symbol()).score()).reversed());
         int cap = Math.max(1, (int) p(id, "maxPositions"));
         int slots = cap - ctx.openSlots();
         int taken = 0, rank = 0;
         for (OrderIntent i : ranked) {
             rank++;
-            if (taken < slots && !ctx.pending(i.symbol()) && ctx.position(i.symbol()) <= 1e-12) {
+            if (taken < slots && !ctx.pending(i.symbol()) && Math.abs(ctx.position(i.symbol())) <= 1e-12) {
                 ctx.execute(i); taken++;
             } else {
                 ctx.decide(i.symbol(), i.side(), String.format("排名第 %d（分數 %.2f），同時持倉上限 %d 已滿", rank, stats(id, i.symbol()).score(), cap));
@@ -330,7 +344,7 @@ public class BotRiskManager implements StrategyContextImpl.BuyRouter {
         for (Map.Entry<String, Double> e : snap.entrySet()) {
             double q = e.getValue(), px = prices.getOrDefault(e.getKey(), 0.0);
             double entry = c != null ? c.entry(e.getKey()) : book.avgCost(id, e.getKey());
-            if (q > 1e-12 && entry > 0 && px > 0) u += (px - entry) * q;
+            if (Math.abs(q) > 1e-12 && entry > 0 && px > 0) u += (px - entry) * q;   // 空單 q < 0：價格跌就是賺
         }
         return realized.getOrDefault(id, 0.0) + u;
     }
