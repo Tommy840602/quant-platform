@@ -20,7 +20,12 @@
       </el-alert>
       <el-table :data="list" v-loading="loading">
         <el-table-column prop="id" label="ID" width="140" />
-        <el-table-column prop="name" :label="t('strategy.s1')" />
+        <el-table-column prop="name" :label="t('strategy.s1')">
+          <template #default="{ row }">
+            {{ row.name }}
+            <el-tag v-if="row.family && row.family !== 'any'" size="small" :type="row.family === 'trend' ? 'success' : 'primary'" effect="plain" style="margin-left:4px">{{ t('regime.fam.' + row.family) }}</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column :label="t('strategy.s2')" width="100">
         <template #default="{ row }">
           <span style="display:inline-flex;align-items:center;gap:6px"><coin-icon v-if="row.symbol && row.symbol !== 'ALL'" :symbol="row.symbol" :size="16" />{{ row.symbol }}</span>
@@ -85,6 +90,47 @@
       </el-table>
     </el-card>
 
+    <el-card style="margin-top:16px">
+      <template #header>
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <span>{{ t('regime.title') }}</span>
+          <span class="hint">{{ t('regime.legend') }}</span>
+        </div>
+      </template>
+      <div style="display:flex;gap:24px;flex-wrap:wrap">
+        <div style="flex:1;min-width:320px">
+          <div style="margin-bottom:8px">
+            <el-tag type="success" style="margin-right:6px">{{ t('regime.TREND') }} {{ regimeCount.TREND }}</el-tag>
+            <el-tag type="primary" style="margin-right:6px">{{ t('regime.RANGE') }} {{ regimeCount.RANGE }}</el-tag>
+            <el-tag type="info" style="margin-right:6px">{{ t('regime.MIXED') }} {{ regimeCount.MIXED }}</el-tag>
+            <el-tag v-if="regimeCount.HIGHVOL" type="danger" style="margin-right:6px">{{ t('regime.highVol') }} {{ regimeCount.HIGHVOL }}</el-tag>
+            <el-tag v-if="regimeCount.UNKNOWN" type="info" effect="plain">{{ t('regime.UNKNOWN') }} {{ regimeCount.UNKNOWN }}</el-tag>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px">
+            <el-tooltip v-for="(r, sym) in regimes" :key="sym" :content="'ADX ' + (r.adx ?? '—') + ' · ' + t('regime.vol') + ' ' + r.volRatio + '×'" placement="top">
+              <el-tag size="small" :type="r.highVol ? 'danger' : r.regime === 'TREND' ? 'success' : r.regime === 'RANGE' ? 'primary' : 'info'" :effect="r.regime === 'UNKNOWN' ? 'plain' : 'light'">{{ sym.replace('USDT', '') }}</el-tag>
+            </el-tooltip>
+          </div>
+        </div>
+        <div style="flex:1;min-width:360px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap">
+            <b>{{ t('bandit.title') }}</b>
+            <el-switch v-model="bandit.enabled" @change="toggleBandit" />
+            <el-button size="small" :disabled="!bandit.enabled" @click="rebalance">{{ t('bandit.rebalance') }}</el-button>
+            <span class="hint">{{ t('bandit.range', { lo: (+bandit.floor || 0).toFixed(2), hi: bandit.cap }) }}<template v-if="bandit.lastRunAt"> · {{ locale.fmtTime(bandit.lastRunAt, { year: undefined }) }}</template></span>
+          </div>
+          <el-table :data="bandit.bots || []" size="small" :empty-text="t('bandit.empty')">
+            <el-table-column prop="name" :label="t('bandit.bot')" min-width="130" />
+            <el-table-column prop="trades" :label="t('bandit.trades')" width="80" />
+            <el-table-column :label="t('bandit.mean')" width="110"><template #default="{ row }"><span :style="{ color: row.meanPct > 0 ? '#67c23a' : row.meanPct < 0 ? '#f56c6c' : '' }">{{ row.meanPct > 0 ? '+' : '' }}{{ row.meanPct }}%</span></template></el-table-column>
+            <el-table-column :label="t('bandit.pBest')" width="140"><template #default="{ row }"><el-progress :percentage="Math.round(row.pBest * 100)" :stroke-width="8" /></template></el-table-column>
+            <el-table-column :label="t('bandit.alloc')" width="90"><template #default="{ row }"><b>×{{ (+row.allocation).toFixed(2) }}</b></template></el-table-column>
+          </el-table>
+          <div class="hint" style="margin-top:6px;line-height:1.6">{{ t('bandit.hint') }}</div>
+        </div>
+      </div>
+    </el-card>
+
     <el-card :header="t('strategy.s8')" style="margin-top:16px">
       <el-form :inline="true">
         <el-form-item label="ID"><el-input v-model="bot.id" placeholder="my-bot" style="width:130px" /></el-form-item>
@@ -106,7 +152,8 @@
       <el-divider content-position="left">{{ t('botRisk.section') }}</el-divider>
       <el-form label-width="170px">
         <el-form-item v-for="k in RISK_KEYS" :key="k" :label="t('botRisk.k.' + k)">
-          <el-input-number v-model="edit.params[k]" :min="0" :step="k.endsWith('Atr') ? 0.5 : 1" :precision="k.endsWith('Atr') || k === 'takeProfitPct' ? 1 : 0" style="width:150px" />
+ <el-switch v-if="k === 'regimeFilter' || k === 'blockHighVol'" :model-value="edit.params[k] > 0" @update:model-value="v => edit.params[k] = v ? 1 : 0" style="width:150px" />
+          <el-input-number v-else v-model="edit.params[k]" :min="0" :step="k.endsWith('Atr') ? 0.5 : 1" :precision="k.endsWith('Atr') || k === 'takeProfitPct' ? 1 : 0" style="width:150px" />
           <span class="hint" style="margin-left:8px">{{ t('botRisk.h.' + k) }}</span>
         </el-form-item>
       </el-form>
@@ -232,7 +279,24 @@ const DEFAULT_KEYS = { ma: ['fast','slow'], ema: ['fast','slow'], wma: ['fast','
   boll: ['period','mult'], bollbreak: ['period','mult'], keltner: ['period','mult'], atr: ['period','mult'], volbreak: ['period','mult'],
   rsi: ['window','oversold','overbought'], grid: ['gridPct'], dualthrust: ['period','k'], momentum: ['period','threshold'], roc: ['period','threshold'],
   zscore: ['period','threshold'], vwap: ['period','dev'], sar: ['step','max'], supertrend: ['period','mult'] }
-const RISK_KEYS = ['stopAtr', 'trailAtr', 'takeProfitPct', 'maxPositions', 'maxConsecLosses', 'maxLossUsdt', 'cooldownBars']
+const RISK_KEYS = ['stopAtr', 'trailAtr', 'takeProfitPct', 'maxPositions', 'maxConsecLosses', 'maxLossUsdt', 'cooldownBars', 'regimeFilter', 'blockHighVol']
+// ── 盤勢 / 自動配資 ──
+const regimes = ref({})
+const bandit = ref({ enabled: false, bots: [] })
+const regimeCount = computed(() => {
+  const c = { TREND: 0, RANGE: 0, MIXED: 0, UNKNOWN: 0, HIGHVOL: 0 }
+  for (const r of Object.values(regimes.value)) { c[r.regime] = (c[r.regime] || 0) + 1; if (r.highVol) c.HIGHVOL++ }
+  return c
+})
+async function loadRegimeBandit() {
+  try { regimes.value = (await strategyApi.regimes()).data || {} } catch {}
+  try { bandit.value = (await strategyApi.bandit()).data || bandit.value } catch {}
+}
+async function toggleBandit(on) {
+  try { bandit.value = (await strategyApi.setBandit(on)).data; ElMessage.success(on ? t('bandit.on') : t('bandit.off')); load(true) }
+  catch (e) { bandit.value.enabled = !on; ElMessage.error(e?.message || '') }
+}
+async function rebalance() { bandit.value = (await strategyApi.rebalance()).data; ElMessage.success(bandit.value.last || 'OK'); load(true) }
 function openEdit(row) {
   const p = { ...(row.risk?.params || {}), ...(row.params || {}) }
   for (const k of (DEFAULT_KEYS[row.type] || ['period'])) if (!(k in p)) p[k] = null
@@ -264,7 +328,7 @@ async function testSlack() {
   catch { ElMessage.error(t('strategy.s42')) }
 }
 let timer
-onMounted(() => { load(); loadNotional(); timer = setInterval(() => { load(true); loadNotional() }, 15000) })   // 背景靜默更新，不閃 loading
+onMounted(() => { load(); loadNotional(); loadRegimeBandit(); timer = setInterval(() => { load(true); loadNotional(); loadRegimeBandit() }, 15000) })   // 背景靜默更新，不閃 loading
 onUnmounted(() => clearInterval(timer))
 </script>
 <style scoped>.hint{color:#999;font-size:12px;margin-top:8px}</style>

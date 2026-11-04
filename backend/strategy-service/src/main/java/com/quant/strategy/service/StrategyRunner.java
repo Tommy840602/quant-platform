@@ -55,9 +55,77 @@ public class StrategyRunner {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     public void setRiskManager(BotRiskManager r) {
         this.risk = r;
-        r.bind(id -> paramsOf.getOrDefault(id, Map.of()), id -> names.getOrDefault(id, id), null);
+        r.bind(id -> paramsOf.getOrDefault(id, Map.of()), id -> names.getOrDefault(id, id), id -> types.getOrDefault(id, "ma"), null);
         contexts.values().forEach(c -> c.setBuyRouter(r));
     }
+    // ── Thompson Sampling 自動配資 ──
+    private BanditAllocator bandit;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setBandit(BanditAllocator b) { this.bandit = b; }
+    private volatile boolean banditEnabled = false;
+    private volatile long banditRunAt = 0;
+    private volatile String banditLast = "";
+    static final double BANDIT_CAP = 2.5;
+
+    /** 配資下限：小於這個倍率時單筆名目會低於幣安最低 5 USDT（每單名目 > 0 時），且至少保留 0.25 繼續探索。 */
+    double banditFloor() {
+        double f = orderNotional > 0 ? Math.max(0.25, 5.5 / orderNotional) : 0.25;
+        return Math.min(f, BANDIT_CAP);
+    }
+
+    @Scheduled(initialDelay = 120_000, fixedDelay = 600_000)
+    public void banditTick() { if (banditEnabled) applyBandit("排程"); }
+
+    public synchronized Map<String, Object> applyBandit(String by) {
+        if (bandit == null) return banditStatus();
+        List<String> ids = new ArrayList<>(running); Collections.sort(ids);
+        if (ids.isEmpty()) return banditStatus();
+        Map<String, Double> alloc = bandit.allocations(ids, banditFloor(), BANDIT_CAP);
+        StringBuilder sb = new StringBuilder();
+        alloc.forEach((id, a) -> {
+            StrategyContextImpl c = contexts.get(id);
+            if (c == null) return;
+            double old = c.getAllocation();
+            c.setAllocation(a);
+            if (repo != null) try { repo.setAllocation(id, a); } catch (Exception e) { log.warn("持久化失敗: {}", e.getMessage()); }
+            if (Math.abs(old - a) >= 0.05) sb.append(String.format(" %s x%.2f→x%.2f", id, old, a));
+        });
+        banditRunAt = System.currentTimeMillis();
+        banditLast = sb.length() == 0 ? "配資不變" : sb.toString().trim();
+        log.info("Bandit 配資（{}）：{}", by, banditLast);
+        if (sb.length() > 0) notify(":slot_machine: 自動配資調整（" + by + "）：" + sb);
+        return banditStatus();
+    }
+
+    public Map<String, Object> banditStatus() {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("enabled", banditEnabled); m.put("lastRunAt", banditRunAt); m.put("last", banditLast);
+        m.put("floor", banditFloor()); m.put("cap", BANDIT_CAP);
+        List<Map<String, Object>> bots = new ArrayList<>();
+        if (bandit != null) {
+            List<String> ids = new ArrayList<>(running); Collections.sort(ids);
+            Map<String, Double> pb = bandit.pBest(ids);
+            for (String id : ids) {
+                Map<String, Object> r = new LinkedHashMap<>(bandit.stats(id));
+                r.put("id", id); r.put("name", names.getOrDefault(id, id));
+                r.put("pBest", Math.round(pb.getOrDefault(id, 0.0) * 1000) / 1000.0);
+                r.put("allocation", contexts.get(id) == null ? 1.0 : contexts.get(id).getAllocation());
+                bots.add(r);
+            }
+        }
+        m.put("bots", bots);
+        return m;
+    }
+
+    public Map<String, Object> setBanditEnabled(boolean on) {
+        banditEnabled = on;
+        if (repo != null) try { repo.setSetting("bandit_enabled", String.valueOf(on)); } catch (Exception e) { log.warn("持久化失敗: {}", e.getMessage()); }
+        notify(on ? ":slot_machine: 自動配資（Thompson Sampling）已開啟" : ":slot_machine: 自動配資已關閉（配資倍率維持目前值）");
+        return on ? applyBandit("開啟") : banditStatus();
+    }
+
+    public Map<String, Map<String, Object>> regimes() { return risk == null ? Map.of() : risk.regimes(); }
+
     private AccountClient accountClient;   // 可為 null（單元測試）
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     public void setAccountClient(AccountClient c) { this.accountClient = c; }
@@ -130,6 +198,7 @@ public class StrategyRunner {
         if (repo == null) return;
         try {
             repo.setting("order_notional").ifPresent(v -> orderNotional = Math.max(0, Double.parseDouble(v)));
+            repo.setting("bandit_enabled").ifPresent(v -> banditEnabled = Boolean.parseBoolean(v));
             int restored = 0, resumed = 0;
             for (BotRepository.BotRow b : repo.findAll()) {
                 if (!factories.containsKey(b.id())) {
@@ -236,6 +305,7 @@ public class StrategyRunner {
             m.put("allocation", contexts.get(id).getAllocation());
             m.put("symbol", symbolFilter.getOrDefault(id, "ALL"));
             m.put("type", types.getOrDefault(id, "ma"));
+            m.put("family", BotRiskManager.family(types.getOrDefault(id, "ma")));
             m.put("params", paramsOf.getOrDefault(id, Map.of()));
             m.put("builtin", builtins.contains(id));
             Long st = startedAt.get(id);

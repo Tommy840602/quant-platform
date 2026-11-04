@@ -35,7 +35,7 @@ public class StrategyPositionBook {
     /** strategyId -> symbol -> 平均成本（出場風控算停損/停利、來回損益用） */
     private final Map<String, Map<String, Double>> avgCost = new ConcurrentHashMap<>();
     /** 平倉（SELL 成交）時回報一筆來回損益：(strategyId, symbol, pnlUsdt) */
-    public interface CloseListener { void onClose(String strategyId, String symbol, double pnl); }
+    public interface CloseListener { void onClose(String strategyId, String symbol, double pnl, double entryNotional); }
     private volatile CloseListener closeListener;
     public void setCloseListener(CloseListener l) { this.closeListener = l; }
     private static final double FEE_RATE = 0.001;   // 單邊手續費估計，來回 ×2
@@ -95,7 +95,7 @@ public class StrategyPositionBook {
                 double q = Math.min(before, -signed);
                 double pnl = (px - avg) * q - (px + avg) * q * FEE_RATE;
                 CloseListener l = closeListener;
-                if (l != null) try { l.onClose(sid, sym, pnl); } catch (Exception ex) { log.warn("平倉回報處理失敗: {}", ex.getMessage()); }
+                if (l != null) try { l.onClose(sid, sym, pnl, avg * q); } catch (Exception ex) { log.warn("平倉回報處理失敗: {}", ex.getMessage()); }
             }
             positions.computeIfAbsent(sid, k -> new ConcurrentHashMap<>()).merge(sym, signed, Double::sum);
             if (position(sid, sym) <= 1e-12) costs.remove(sym);

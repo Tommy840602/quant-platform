@@ -537,7 +537,9 @@ export default {
       "maxPositions": "同时持仓上限",
       "maxConsecLosses": "连亏几笔暂停",
       "maxLossUsdt": "本次亏损上限 USDT",
-      "cooldownBars": "出场后冷却（根）"
+      "cooldownBars": "出场后冷却（根）",
+      "regimeFilter": "盘势过滤",
+      "blockHighVol": "异常波动不进场"
     },
     "h": {
       "stopAtr": "进场价 − N×ATR；0=关",
@@ -546,7 +548,37 @@ export default {
       "maxPositions": "多个信号只做排名前 N",
       "maxConsecLosses": "暂停进场，持仓止损照常；0=关",
       "maxLossUsdt": "已实现+未实现 ≤ −N 暂停；0=关",
-      "cooldownBars": "出场后同币 N 根 K 内不再买"
+      "cooldownBars": "出场后同币 N 根 K 内不再买",
+      "regimeFilter": "趋势型只在趋势/中性盘进场，均值回归型只在盘整/中性盘",
+      "blockHighVol": "近 14 根波动 ≥ 2.5× 平常时暂停进场"
     }
+  },
+  "regime": {
+    "title": "盘势（每个标的，1 分 K）",
+    "legend": "ADX ≥ 25 趋势 · ≤ 20 盘整 · 波动 ≥ 2.5× 异常",
+    "TREND": "趋势",
+    "RANGE": "盘整",
+    "MIXED": "中性",
+    "UNKNOWN": "数据不足",
+    "highVol": "异常波动",
+    "vol": "波动",
+    "fam": {
+      "trend": "趋势型",
+      "meanrev": "均值回归型"
+    }
+  },
+  "bandit": {
+    "title": "自动配资（Thompson Sampling）",
+    "rebalance": "立即重新配资",
+    "range": "倍率 ×{lo} ~ ×{hi}，每 10 分钟",
+    "empty": "没有运行中的机器人",
+    "bot": "机器人",
+    "trades": "来回",
+    "mean": "平均收益",
+    "pBest": "是最好的概率",
+    "alloc": "配资",
+    "hint": "依每笔来回交易的收益学习：越可能是最好的机器人分到越多资金（倍率 × 每单名义），表现差的降到下限继续观察。平均倍率 = 1，总敞口不变；下限保证单笔不低于 5 USDT。开启后会覆盖手动配资。",
+    "on": "已开启自动配资",
+    "off": "已关闭自动配资"
   }
 }

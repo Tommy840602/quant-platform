@@ -25,6 +25,22 @@ public class StrategyController {
     }
 
     /** 下線；flatten=true 同時對該策略持倉送市價賣單平倉 */
+    /** 每個標的的盤勢：GET /api/strategy/strategies/regimes */
+    @GetMapping("/regimes")
+    public ApiResponse<Map<String, Map<String, Object>>> regimes() { return ApiResponse.ok(runner.regimes()); }
+
+    /** 自動配資狀態：GET /api/strategy/strategies/bandit */
+    @GetMapping("/bandit")
+    public ApiResponse<Map<String, Object>> bandit() { return ApiResponse.ok(runner.banditStatus()); }
+
+    /** 開關自動配資：POST /api/strategy/strategies/bandit?enabled=true */
+    @PostMapping("/bandit")
+    public ApiResponse<Map<String, Object>> setBandit(@RequestParam boolean enabled) { return ApiResponse.ok(runner.setBanditEnabled(enabled)); }
+
+    /** 立即重新配資：POST /api/strategy/strategies/bandit/rebalance */
+    @PostMapping("/bandit/rebalance")
+    public ApiResponse<Map<String, Object>> rebalance() { return ApiResponse.ok(runner.applyBandit("手動")); }
+
     /** 熔斷後恢復進場：POST /api/strategy/strategies/{id}/resume */
     @PostMapping("/{id}/resume")
     public ApiResponse<String> resume(@PathVariable String id) { return ApiResponse.ok(runner.resume(id)); }
