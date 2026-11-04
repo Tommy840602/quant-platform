@@ -22,6 +22,8 @@ x-backend-deps: &backend-deps
     timescaledb: { condition: service_healthy }
 
 x-backend-env: &backend-env
+  # 容器健康檢查打 /actuator/health/liveness：只看 JVM 活著，不去問 Nacos / Kafka（Nacos 慢時整排誤判 unhealthy）
+  MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
   NACOS_ADDR: nacos:8848
   KAFKA_ADDR: kafka:9092
   REDIS_HOST: redis
@@ -139,8 +141,11 @@ services:
     environment:
       MODE: standalone
       NACOS_AUTH_ENABLE: "false"
-      JVM_XMS: 512m
-      JVM_XMX: 512m
+      # 以前 XMX=512m 但沒設 XMN（映像預設新生代 512m）→ 新生代吃掉整個 heap、老年代幾乎 0 → 一直 Full GC、CPU 200%，
+      # 後端註冊 / 查服務清單 gRPC 逾時 → gateway 找不到服務回 503。新生代要明顯小於 heap。
+      JVM_XMS: ${NACOS_HEAP:-768m}
+      JVM_XMX: ${NACOS_HEAP:-768m}
+      JVM_XMN: ${NACOS_YOUNG:-256m}
 
   # 監控預設不啟動（省記憶體）。要用時： docker compose --profile monitoring ... up -d
   prometheus:
@@ -180,7 +185,7 @@ services:
     environment: { <<: *backend-env, SERVICE: api-gateway, HEARTBEAT_URL: "${HEARTBEAT_URL:-}" }
     <<: [*logging, *backend-deps]
     healthcheck:
-      test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/actuator/health); [ \"$$code\" = 200 ] || [ \"$$code\" = 503 ]"]
+      test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/actuator/health/liveness); [ \"$$code\" = 200 ] || [ \"$$code\" = 503 ]"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -193,7 +198,7 @@ services:
     environment: { <<: *backend-env, SERVICE: market-data-service }
     <<: [*logging, *backend-deps]
     healthcheck:
-      test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8082/api/market/actuator/health); [ \"$$code\" = 200 ] || [ \"$$code\" = 503 ]"]
+      test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8082/api/market/actuator/health/liveness); [ \"$$code\" = 200 ] || [ \"$$code\" = 503 ]"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -206,7 +211,7 @@ services:
     environment: { <<: *backend-env, SERVICE: strategy-service }
     <<: [*logging, *backend-deps]
     healthcheck:
-      test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8083/api/strategy/actuator/health); [ \"$$code\" = 200 ] || [ \"$$code\" = 503 ]"]
+      test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8083/api/strategy/actuator/health/liveness); [ \"$$code\" = 200 ] || [ \"$$code\" = 503 ]"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -221,7 +226,7 @@ services:
       - ./secrets:/run/secrets:ro     # Ed25519 pem 放這裡（git 已忽略 *.pem）
     <<: [*logging, *backend-deps]
     healthcheck:
-      test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8084/api/order/actuator/health); [ \"$$code\" = 200 ] || [ \"$$code\" = 503 ]"]
+      test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8084/api/order/actuator/health/liveness); [ \"$$code\" = 200 ] || [ \"$$code\" = 503 ]"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -234,7 +239,7 @@ services:
     environment: { <<: *backend-env, SERVICE: risk-service }
     <<: [*logging, *backend-deps]
     healthcheck:
-      test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8085/api/risk/actuator/health); [ \"$$code\" = 200 ] || [ \"$$code\" = 503 ]"]
+      test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8085/api/risk/actuator/health/liveness); [ \"$$code\" = 200 ] || [ \"$$code\" = 503 ]"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -247,7 +252,7 @@ services:
     environment: { <<: *backend-env, SERVICE: account-service }
     <<: [*logging, *backend-deps]
     healthcheck:
-      test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8096/api/account/actuator/health); [ \"$$code\" = 200 ] || [ \"$$code\" = 503 ]"]
+      test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8096/api/account/actuator/health/liveness); [ \"$$code\" = 200 ] || [ \"$$code\" = 503 ]"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -260,7 +265,7 @@ services:
     environment: { <<: *backend-env, SERVICE: auth-service }
     <<: [*logging, *backend-deps]
     healthcheck:
-      test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/api/auth/actuator/health); [ \"$$code\" = 200 ] || [ \"$$code\" = 503 ]"]
+      test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/api/auth/actuator/health/liveness); [ \"$$code\" = 200 ] || [ \"$$code\" = 503 ]"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -273,7 +278,7 @@ services:
     environment: { <<: *backend-env, SERVICE: backtest-service }
     <<: [*logging, *backend-deps]
     healthcheck:
-      test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8087/api/backtest/actuator/health); [ \"$$code\" = 200 ] || [ \"$$code\" = 503 ]"]
+      test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8087/api/backtest/actuator/health/liveness); [ \"$$code\" = 200 ] || [ \"$$code\" = 503 ]"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -286,7 +291,7 @@ services:
     environment: { <<: *backend-env, SERVICE: notification-service }
     <<: [*logging, *backend-deps]
     healthcheck:
-      test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8098/api/notify/actuator/health); [ \"$$code\" = 200 ] || [ \"$$code\" = 503 ]"]
+      test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8098/api/notify/actuator/health/liveness); [ \"$$code\" = 200 ] || [ \"$$code\" = 503 ]"]
       interval: 15s
       timeout: 5s
       retries: 5

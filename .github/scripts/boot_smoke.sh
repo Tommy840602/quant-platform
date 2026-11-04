@@ -7,6 +7,7 @@ export DB_HOST=localhost DB_PORT=5432 REDIS_HOST=localhost KAFKA_ADDR=localhost:
 export JWT_SECRET="ci-smoke-$(head -c 48 /dev/urandom | base64 | tr -d '\n')" JWT_ENABLED=true
 export ADMIN_PASSWORD=ci-smoke-password-123 KLINE_HISTORY_ENABLED=false BINANCE_UDS_ENABLED=false
 export TRADING_DRY_RUN=true BINANCE_ENV=testnet
+export MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED=true   # 與 compose 相同：容器健康檢查打 /actuator/health/liveness
 COMMON="--spring.cloud.nacos.discovery.enabled=false --spring.cloud.nacos.discovery.register-enabled=false --spring.cloud.nacos.config.enabled=false --spring.cloud.nacos.config.import-check.enabled=false"
 fail=0
 for jar in backend/*/target/*-1.0.0-SNAPSHOT.jar; do
@@ -22,8 +23,15 @@ for jar in backend/*/target/*-1.0.0-SNAPSHOT.jar; do
     if ! kill -0 $pid 2>/dev/null; then break; fi
     sleep 1
   done
+  if [ $ok = 1 ]; then
+    # compose 的健康檢查打 liveness：確認這個端點真的在（回 200）
+    port=$(grep -oE "(Tomcat|Netty) started on port[s]?[^0-9]*[0-9]+" "$log" | grep -oE "[0-9]+$" | head -1)
+    ctx=$(grep -oE "context path '[^']*'" "$log" | head -1 | sed "s/context path '//; s/'$//")
+    code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${port}${ctx}/actuator/health/liveness")
+    if [ "$code" != 200 ]; then echo "::error::[$name] liveness http://127.0.0.1:${port}${ctx}/actuator/health/liveness → $code"; ok=0; fi
+  fi
   kill $pid 2>/dev/null; wait $pid 2>/dev/null
-  if [ $ok = 1 ]; then echo "✅ $name started"; else
+  if [ $ok = 1 ]; then echo "✅ $name started (liveness 200)"; else
     echo "❌ $name did not start"; fail=1
     grep -E "APPLICATION FAILED|Application run failed|Exception|Caused by|duplicate key|Description:|Action:" -A 3 "$log" | head -60 | sed "s/^/::error::[$name] /"
   fi
