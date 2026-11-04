@@ -541,7 +541,9 @@ export default {
       "regimeFilter": "Regime filter",
       "blockHighVol": "Skip vol spikes",
       "riskPerTradePct": "Risk per trade % equity",
-      "sizeCapPct": "Max order % equity"
+      "sizeCapPct": "Max order % equity",
+      "execMaker": "Maker first (limit)",
+      "makerWaitSec": "Limit wait (s)"
     },
     "h": {
       "stopAtr": "entry − N×ATR; 0=off",
@@ -554,7 +556,9 @@ export default {
       "regimeFilter": "trend bots enter only in trend/mixed, mean-reversion only in range/mixed",
       "blockHighVol": "pause entries when 14-bar vol ≥ 2.5× normal",
       "riskPerTradePct": "lose at most N% of equity at the stop; qty from ATR; 0 = per-order notional",
-      "sizeCapPct": "cap each order at N% of equity"
+      "sizeCapPct": "cap each order at N% of equity",
+      "execMaker": "strategy signals rest at best bid/ask to save spread & slippage; stops always market",
+      "makerWaitSec": "cancel after this long and market the remainder"
     }
   },
   "regime": {

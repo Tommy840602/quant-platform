@@ -173,7 +173,7 @@
       <el-divider content-position="left">{{ t('botRisk.section') }}</el-divider>
       <el-form label-width="170px">
         <el-form-item v-for="k in RISK_KEYS" :key="k" :label="t('botRisk.k.' + k)">
- <el-switch v-if="k === 'regimeFilter' || k === 'blockHighVol'" :model-value="edit.params[k] > 0" @update:model-value="v => edit.params[k] = v ? 1 : 0" style="width:150px" />
+ <el-switch v-if="k === 'regimeFilter' || k === 'blockHighVol' || k === 'execMaker'" :model-value="edit.params[k] > 0" @update:model-value="v => edit.params[k] = v ? 1 : 0" style="width:150px" />
  <el-input-number v-else v-model="edit.params[k]" :min="0" :step="k.endsWith('Atr') || k === 'riskPerTradePct' ? 0.5 : 1" :precision="k.endsWith('Atr') || k === 'takeProfitPct' || k === 'riskPerTradePct' ? 1 : 0" style="width:150px" />
           <span class="hint" style="margin-left:8px">{{ t('botRisk.h.' + k) }}</span>
         </el-form-item>
@@ -324,7 +324,7 @@ const DEFAULT_KEYS = { ma: ['fast','slow'], ema: ['fast','slow'], wma: ['fast','
   boll: ['period','mult'], bollbreak: ['period','mult'], keltner: ['period','mult'], atr: ['period','mult'], volbreak: ['period','mult'],
   rsi: ['window','oversold','overbought'], grid: ['gridPct'], dualthrust: ['period','k'], momentum: ['period','threshold'], roc: ['period','threshold'],
   zscore: ['period','threshold'], vwap: ['period','dev'], sar: ['step','max'], supertrend: ['period','mult'] }
-const RISK_KEYS = ['riskPerTradePct', 'sizeCapPct', 'stopAtr', 'trailAtr', 'takeProfitPct', 'maxPositions', 'maxConsecLosses', 'maxLossUsdt', 'cooldownBars', 'regimeFilter', 'blockHighVol']
+const RISK_KEYS = ['execMaker', 'makerWaitSec', 'riskPerTradePct', 'sizeCapPct', 'stopAtr', 'trailAtr', 'takeProfitPct', 'maxPositions', 'maxConsecLosses', 'maxLossUsdt', 'cooldownBars', 'regimeFilter', 'blockHighVol']
 // ── 決策日誌 ──
 const dlog = reactive({ show: false, id: '', symbol: '', acted: false, rows: [], loading: false })
 function openLog(row) { dlog.id = row.id; dlog.symbol = row.symbol && row.symbol !== 'ALL' ? row.symbol : ''; dlog.show = true; loadLog() }

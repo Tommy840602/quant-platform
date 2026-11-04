@@ -45,6 +45,10 @@ public class ShadowEngine implements StrategyContextImpl.Execution {
     private RoundTripRepository repo;
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     public void setRepo(RoundTripRepository r) { this.repo = r; }
+    private org.springframework.data.redis.core.StringRedisTemplate redis;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setRedis(org.springframework.data.redis.core.StringRedisTemplate r) { this.redis = r; }
+    private static final com.fasterxml.jackson.databind.ObjectMapper JSON = new com.fasterxml.jackson.databind.ObjectMapper();
     private PositionStateRepository state;
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     public void setState(PositionStateRepository s) { this.state = s; }
@@ -133,6 +137,22 @@ public class ShadowEngine implements StrategyContextImpl.Execution {
         if ("PILOT".equals(stageOf.apply(id))) return 5.5 / px;   // 試行階段：只下幣安最低名目
         BotRiskManager r = risk;
         return r == null ? 0 : r.sizeQty(id, sym, px);
+    }
+
+    @Override
+    public double param(String id, String key) { BotRiskManager r = risk; return r == null ? 0 : r.p(id, key); }
+
+    /** 買一 / 賣一：market-data 每秒寫進 Redis 的 depth10（10 秒過期，過期就不走限價優先）。 */
+    @Override
+    public double[] quote(String symbol) {
+        if (redis == null) return null;
+        try {
+            String js = redis.opsForValue().get("depth:" + symbol);
+            if (js == null) return null;
+            var n = JSON.readTree(js);
+            double bid = n.path("bids").path(0).path(0).asDouble(0), ask = n.path("asks").path(0).path(0).asDouble(0);
+            return bid > 0 && ask > 0 && ask >= bid ? new double[]{bid, ask} : null;
+        } catch (Exception e) { return null; }
     }
 
     @Override

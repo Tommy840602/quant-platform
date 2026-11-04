@@ -68,7 +68,14 @@ public class StrategyContextImpl implements StrategyContext {
         /** 依風險預算算下單量；≤ 0 = 不覆寫（用名目 / 固定量）。 */
         double sizeQty(String strategyId, String symbol, double px);
         default void onDecision(String strategyId, String symbol, OrderSide side, double px, String outcome) {}
+        /** 機器人參數（風控 / 執行方式），沒有回預設。 */
+        default double param(String strategyId, String key) { return 0; }
+        /** 最佳買一 / 賣一 {bid, ask}；拿不到回 null（就不走限價優先）。 */
+        default double[] quote(String symbol) { return null; }
     }
+    private static final java.util.concurrent.ScheduledExecutorService MAKER = java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r, "maker-fallback"); t.setDaemon(true); return t;
+    });
     private volatile Execution exec;
     public void setExecution(Execution e) { this.exec = e; }
     public String strategyId() { return strategyId; }
@@ -141,11 +148,56 @@ public class StrategyContextImpl implements StrategyContext {
         String tag = why == null ? "" : why + " · ";
 
         if (x != null && x.paper(strategyId)) {
-            x.paperFill(strategyId, scaled, px);
+            x.paperFill(strategyId, scaled, px);   // 模擬盤一律以現價成交（限價優先在模擬盤不假設會吃到買一價，保守）
             decide(scaled.symbol(), scaled.side(), tag + "模擬成交 " + fmt(qty) + " @" + fmt(px));
             return;
         }
+        // 限價優先：只用在策略訊號（why == null）；停損 / 停利等風控出場一律市價，不賭成交
+        if (why == null && x != null && x.param(strategyId, "execMaker") > 0) {
+            double[] q = x.quote(scaled.symbol());
+            double limit = q == null ? 0 : scaled.side() == OrderSide.BUY ? q[0] : q[1];
+            if (limit > 0 && qty * limit >= MIN_ORDER_USDT * 0.95) {
+                OrderIntent lim = new OrderIntent(scaled.clientOrderId(), strategyId, scaled.symbol(), scaled.side(),
+                        com.quant.common.enums.OrderType.LIMIT, limit, qty, scaled.reduceOnly(), scaled.market(), scaled.account());
+                if (px > 0) try { x.onLiveSend(strategyId, scaled, px); } catch (Exception ignore) {}
+                if (send(lim, qty, "限價優先 @" + fmt(limit) + " · ")) {
+                    long wait = Math.max(2, (long) x.param(strategyId, "makerWaitSec"));
+                    MAKER.schedule(() -> makerFallback(lim, qty, wait), wait, java.util.concurrent.TimeUnit.SECONDS);
+                }
+                return;
+            }
+        }
         if (x != null && px > 0) try { x.onLiveSend(strategyId, scaled, px); } catch (Exception ignore) {}
+        send(scaled, qty, tag);
+    }
+
+    /** 限價掛 N 秒還沒成交完：撤單，剩下的改市價補（賣出則把手上部位全部賣掉）。 */
+    void makerFallback(OrderIntent lim, double intended, long waitSec) {
+        String cid = lim.clientOrderId(), sym = lim.symbol();
+        if (!book.isInflight(cid)) { book.forgetFilled(cid); return; }   // 已經成交完（或已被撤）
+        boolean cancelled;
+        try { var r = orderClient.cancel(cid, sym, lim.market() == null ? "SPOT" : lim.market()); cancelled = r != null && r.code() == 0; }
+        catch (Exception e) { cancelled = false; log.warn("[{}] 撤限價單失敗 {}: {}", strategyId, cid, e.getMessage()); }
+        if (!cancelled) { decide(sym, lim.side(), "限價 " + waitSec + " 秒未成交，撤單失敗（可能剛成交），等成交回報"); return; }
+        // 等撤單 / 部分成交的回報進來再算剩多少
+        MAKER.schedule(() -> {
+            double filled = book.filled(cid); book.forgetFilled(cid);
+            double px = price(sym);
+            double rem = lim.side() == OrderSide.SELL ? position(sym) : intended - filled;
+            if (rem <= 0 || px <= 0 || rem * px < MIN_ORDER_USDT) {
+                decide(sym, lim.side(), String.format("限價成交 %s / %s，剩餘不足最低名目，不補市價", fmt(filled), fmt(intended)));
+                return;
+            }
+            OrderIntent mkt = new OrderIntent(java.util.UUID.randomUUID().toString(), strategyId, sym, lim.side(),
+                    com.quant.common.enums.OrderType.MARKET, null, rem, lim.reduceOnly(), lim.market(), lim.account());
+            send(mkt, rem, "限價 " + waitSec + " 秒成交 " + fmt(filled) + " → 剩餘改市價 · ");
+        }, 1500, java.util.concurrent.TimeUnit.MILLISECONDS);
+    }
+
+    /** 送 OMS；回 true = OMS 已接受。 */
+    private boolean send(OrderIntent scaled, double qty, String tag) {
+        Execution x = exec;
+        double notional = orderNotional.getAsDouble();
         try {
             var resp = orderClient.submit(scaled);
             if (resp == null || resp.code() != 0) {
@@ -156,23 +208,26 @@ public class StrategyContextImpl implements StrategyContext {
                     book.onSubmitted(scaled.clientOrderId(), strategyId, scaled.symbol());
                     log.warn("[{}] 下單狀態不明 {} {}：等待 OMS 對帳", strategyId, scaled.symbol(), scaled.clientOrderId());
                     decide(scaled.symbol(), scaled.side(), tag + "狀態不明，等待對帳");
+                    return false;
                 } else {
                     String m = resp == null ? "null" : resp.message();
                     log.warn("[{}] 下單被拒 {} {} qty={}: {}", strategyId, scaled.symbol(), scaled.side(), qty, m);
                     decide(scaled.symbol(), scaled.side(), tag + "被拒：" + m);
                     if (x != null) x.onLiveReject(strategyId, scaled, m);
                 }
-                return;
+                return false;
             }
             book.onSubmitted(scaled.clientOrderId(), strategyId, scaled.symbol());
             decide(scaled.symbol(), scaled.side(), tag + "已送單 " + fmt(qty));
-            log.info("[{}] 已送單 {} {} qty={} (名目{} 配置x{})，等待成交事件", strategyId, scaled.symbol(),
-                    scaled.side(), qty, notional > 0 ? notional : "-", allocation);
+            log.info("[{}] 已送單 {} {} {} qty={} (名目{} 配置x{})，等待成交事件", strategyId, scaled.symbol(),
+                    scaled.side(), scaled.type(), qty, notional > 0 ? notional : "-", allocation);
+            return true;
         } catch (Exception e) {
             book.onSubmitFailed(scaled.clientOrderId());
             log.warn("[{}] 下單呼叫失敗（OMS 不可達）: {}", strategyId, e.getMessage());
             decide(scaled.symbol(), scaled.side(), tag + "OMS 不可達：" + e.getMessage());
             if (x != null) x.onLiveReject(strategyId, scaled, "OMS 不可達");
+            return false;
         }
     }
 

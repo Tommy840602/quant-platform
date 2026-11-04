@@ -541,7 +541,9 @@ export default {
       "regimeFilter": "盘势过滤",
       "blockHighVol": "异常波动不进场",
       "riskPerTradePct": "每笔风险 % 权益",
-      "sizeCapPct": "单笔上限 % 权益"
+      "sizeCapPct": "单笔上限 % 权益",
+      "execMaker": "限价优先（maker）",
+      "makerWaitSec": "限价等待秒数"
     },
     "h": {
       "stopAtr": "进场价 − N×ATR；0=关",
@@ -554,7 +556,9 @@ export default {
       "regimeFilter": "趋势型只在趋势/中性盘进场，均值回归型只在盘整/中性盘",
       "blockHighVol": "近 14 根波动 ≥ 2.5× 平常时暂停进场",
       "riskPerTradePct": "止损时最多亏权益 N%，依 ATR 反推数量；0=用每单名义",
-      "sizeCapPct": "单笔名义最多占权益 N%"
+      "sizeCapPct": "单笔名义最多占权益 N%",
+      "execMaker": "策略信号先挂买一／卖一价，省价差与滑点；止损止盈一律市价",
+      "makerWaitSec": "挂这么久没成交完就撤单，剩下的改市价"
     }
   },
   "regime": {

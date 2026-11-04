@@ -541,7 +541,9 @@ export default {
       "regimeFilter": "相場フィルター",
       "blockHighVol": "異常ボラで新規停止",
       "riskPerTradePct": "1回のリスク % 資産",
-      "sizeCapPct": "1注文上限 % 資産"
+      "sizeCapPct": "1注文上限 % 資産",
+      "execMaker": "指値優先（maker）",
+      "makerWaitSec": "指値待機秒"
     },
     "h": {
       "stopAtr": "建値 − N×ATR；0=オフ",
@@ -554,7 +556,9 @@ export default {
       "regimeFilter": "トレンド型はトレンド/中立、逆張り型はレンジ/中立のみ",
       "blockHighVol": "直近 14 本のボラが平常の 2.5 倍以上で停止",
       "riskPerTradePct": "損切り時の損失を資産 N% 以内に、ATR から数量算出；0=1注文名目",
-      "sizeCapPct": "1注文の名目を資産 N% までに"
+      "sizeCapPct": "1注文の名目を資産 N% までに",
+      "execMaker": "シグナルは最良気配に指値でスプレッドと滑りを節約。損切り・利確は常に成行",
+      "makerWaitSec": "この秒数で約定しなければ取消して残りを成行"
     }
   },
   "regime": {
