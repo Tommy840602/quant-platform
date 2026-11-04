@@ -66,6 +66,9 @@ export default {
     "trades": "約定"
   },
   "account": {
+    "pmTitle": "ポートフォリオマージン口座",
+    "pmEquity": "PM 口座資産（総資産に算入）",
+    "pmMmrTip": "統合維持証拠金率：低いほど危険、1 に近づくと強制決済",
     "futSpot": "現物",
     "futShort": "先物",
     "futPartial": "先物口座を取得できません：総資産は現物のみ、ドローダウン判定を一時停止",
@@ -250,6 +253,11 @@ export default {
     "s55": "発注 code={code} · {msg}"
   },
   "login": {
+    "pmLabel": "先物口座タイプ",
+    "pmOff": "通常の先物口座",
+    "pmOn": "ポートフォリオマージン",
+    "pmHintOn": "ポートフォリオマージン：先物注文は papi.binance.com、資産は PM 口座の総資産を使用。約定は照合で反映（約 30 秒）。現物ボットは現物ウォレットを使用。",
+    "pmHintOff": "通常の USD-M 先物口座（fapi.binance.com）。Binance で PM を有効にしている場合は右を選択。",
     "futTitle": "先物（USDT-M）",
     "futEnable": "先物取引を有効にする（先物ボットが発注可、資産に先物ウォレットを含む）",
     "futKeyOk": "先物キー設定済み",

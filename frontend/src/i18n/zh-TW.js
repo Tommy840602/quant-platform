@@ -66,6 +66,9 @@ export default {
     "trades": "成交"
   },
   "account": {
+    "pmTitle": "統一帳戶（Portfolio Margin）",
+    "pmEquity": "統一帳戶權益（計入總資產）",
+    "pmMmrTip": "統一帳戶維持保證金率：越低越危險，接近 1 會被強制平倉",
     "futSpot": "現貨",
     "futShort": "合約",
     "futPartial": "合約帳戶查詢失敗：總資產只含現貨，回撤判斷暫停",
@@ -250,6 +253,11 @@ export default {
     "s55": "下單 code={code} · {msg}"
   },
   "login": {
+    "pmLabel": "合約帳戶類型",
+    "pmOff": "一般合約帳戶",
+    "pmOn": "統一帳戶",
+    "pmHintOn": "統一帳戶（Portfolio Margin）：合約單走 papi.binance.com，權益讀統一帳戶總權益；成交回報改用對帳（約 30 秒）。現貨機器人仍用現貨錢包。",
+    "pmHintOff": "一般 U 本位合約帳戶（fapi.binance.com）。在幣安開了統一帳戶的話請選右邊。",
     "futTitle": "合約（USDT-M）",
     "futEnable": "開啟合約交易（合約機器人可下單、權益計入合約錢包）",
     "futKeyOk": "合約金鑰已設定",

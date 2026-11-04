@@ -53,7 +53,14 @@ public class FuturesAccountService {
 
     /** 合約錢包快照。positions 只含非 0 持倉。 */
     public record Snapshot(double walletBalance, double unrealizedPnl, double marginBalance, double availableBalance,
-                           double grossNotional, List<Map<String, Object>> positions, long fetchedAt) {}
+                           double grossNotional, List<Map<String, Object>> positions, long fetchedAt,
+                           String uniMMR, String pmStatus, double pmCollateralEquity) {
+        public Snapshot(double walletBalance, double unrealizedPnl, double marginBalance, double availableBalance,
+                        double grossNotional, List<Map<String, Object>> positions, long fetchedAt) {
+            this(walletBalance, unrealizedPnl, marginBalance, availableBalance, grossNotional, positions, fetchedAt, null, null, 0);
+        }
+        public boolean pm() { return pmStatus != null; }
+    }
 
     /** 連線設定頁貼的金鑰（依 env 分開記，空 = 用 .env）。 */
     private final Map<String, String[]> uiKeys = new java.util.concurrent.ConcurrentHashMap<>();
@@ -93,7 +100,8 @@ public class FuturesAccountService {
     public synchronized Optional<Snapshot> snapshot() {
         if (!configured()) return Optional.empty();
         String env = spot.env();
-        if (!env.equals(lastEnv)) { last = null; lastEnv = env; }   // 換 env：舊網路的數字不能用
+        String envKey = env + (pm() ? "|pm" : "");
+        if (!envKey.equals(lastEnv)) { last = null; lastEnv = envKey; }   // 換 env / 換帳戶模式：舊數字不能用
         long t = now.getAsLong();
         if (last != null && t - last.fetchedAt() < CACHE_MS) return Optional.of(last);
         try {
@@ -117,6 +125,7 @@ public class FuturesAccountService {
 
     static Snapshot parse(String body, long t) throws Exception {
         JsonNode a = new ObjectMapper().readTree(body);
+        if (a.has("pmAccount")) return parsePm(a, t);
         if (!a.has("totalMarginBalance")) throw new IllegalStateException("回應缺 totalMarginBalance: " + body.substring(0, Math.min(200, body.length())));
         List<Map<String, Object>> pos = new ArrayList<>();
         double gross = 0;
@@ -140,31 +149,84 @@ public class FuturesAccountService {
                 a.path("totalMarginBalance").asDouble(), a.path("availableBalance").asDouble(), r2(gross), pos, t);
     }
 
+    /**
+     * 統一帳戶：/papi/v1/account 的 actualEquity（不打抵押折扣的帳戶權益，USD）當保證金餘額，
+     * 持倉取 /papi/v1/um/account（沒有 notional 欄位 → 名目 = 數量 × 進場價 + 未實現盈虧 = 數量 × 標記價）。
+     */
+    static Snapshot parsePm(JsonNode a, long t) {
+        JsonNode acc = a.path("pmAccount"), um = a.path("pmUm");
+        if (!acc.has("actualEquity")) throw new IllegalStateException("統一帳戶回應缺 actualEquity: " + acc.toString().substring(0, Math.min(200, acc.toString().length())));
+        List<Map<String, Object>> pos = new ArrayList<>();
+        double gross = 0, upnl = 0;
+        for (JsonNode p : um.path("positions")) {
+            double amt = p.path("positionAmt").asDouble();
+            if (amt == 0) continue;
+            double entry = p.path("entryPrice").asDouble(), u = p.path("unrealizedProfit").asDouble();
+            double notional = p.hasNonNull("notional") ? p.path("notional").asDouble() : amt * entry + u;
+            gross += Math.abs(notional); upnl += u;
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("symbol", p.path("symbol").asText());
+            m.put("side", amt > 0 ? "LONG" : "SHORT");
+            m.put("positionAmt", amt);
+            m.put("entryPrice", entry);
+            m.put("notional", r2(notional));
+            m.put("unrealizedPnl", r2(u));
+            m.put("leverage", p.path("leverage").asInt(1));
+            pos.add(m);
+        }
+        pos.sort((x, y) -> Double.compare(Math.abs((double) y.get("notional")), Math.abs((double) x.get("notional"))));
+        double equity = acc.path("actualEquity").asDouble();
+        double avail = acc.path("totalAvailableBalance").asDouble(0) > 0 ? acc.path("totalAvailableBalance").asDouble()
+                : acc.path("virtualMaxWithdrawAmount").asDouble(0);
+        return new Snapshot(equity - upnl, upnl, equity, avail, r2(gross), pos, t,
+                acc.path("uniMMR").asText(null), acc.path("accountStatus").asText(null), acc.path("accountEquity").asDouble(0));
+    }
+
     /** 給 /balance 用的摘要。 */
     public static Map<String, Object> toMap(Snapshot s, boolean stale) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("walletBalance", r2(s.walletBalance())); m.put("unrealizedPnl", r2(s.unrealizedPnl()));
         m.put("marginBalance", r2(s.marginBalance())); m.put("availableBalance", r2(s.availableBalance()));
         m.put("grossNotional", s.grossNotional()); m.put("positions", s.positions()); m.put("stale", stale);
+        if (s.pm()) {   // 統一帳戶：維持保證金率（uniMMR 越低越危險，≤ 1.05 左右接近強平）、帳戶狀態、打折後權益
+            m.put("pm", true); m.put("uniMMR", s.uniMMR()); m.put("accountStatus", s.pmStatus());
+            m.put("collateralEquity", r2(s.pmCollateralEquity()));
+        }
         return m;
     }
 
     /** 打幣安取原始 JSON（測試會覆寫）。 */
     String fetch() throws Exception {
-        String base = url();
-        HttpResponse<String> r = get(base);
+        if (pm()) {
+            String acc = call(papiUrl, "/papi/v1/account"), um = call(papiUrl, "/papi/v1/um/account");
+            return "{\"pmAccount\":" + acc + ",\"pmUm\":" + um + "}";
+        }
+        return call(url(), "/fapi/v2/account");
+    }
+
+    private String call(String base, String path) throws Exception {
+        HttpResponse<String> r = get(base, path);
         if (r.statusCode() != 200 && com.quant.common.binance.BinanceClock.isTimestampError(0, r.body())) {
             clock.trySync(base);
-            r = get(base);
+            r = get(base, path);
         }
         if (r.statusCode() != 200) throw new RuntimeException("HTTP " + r.statusCode() + ": " + r.body());
         return r.body();
     }
 
-    private HttpResponse<String> get(String base) throws Exception {
+    /** 統一帳戶模式（只有正式網）：Redis trading:futures-pm（連線設定頁）> BINANCE_FUTURES_PM。 */
+    @Value("${binance.mainnet-pm-rest-url:https://papi.binance.com}") String papiUrl;
+    @Value("${binance.futures-pm:false}") boolean pmDefault;
+    public boolean pm() {
+        if (!mainnet()) return false;
+        try { String v = redis == null ? null : redis.opsForValue().get("trading:futures-pm"); return v == null ? pmDefault : "1".equals(v); }
+        catch (Exception e) { return pmDefault; }
+    }
+
+    private HttpResponse<String> get(String base, String path) throws Exception {
         String q = "recvWindow=5000&timestamp=" + clock.now(base);
         HttpRequest req = HttpRequest.newBuilder()
-                .uri(URI.create(base + "/fapi/v2/account?" + q + "&signature=" + hmac(q, secret())))
+                .uri(URI.create(base + path + "?" + q + "&signature=" + hmac(q, secret())))
                 .header("X-MBX-APIKEY", key()).timeout(Duration.ofSeconds(10)).GET().build();
         return http.send(req, HttpResponse.BodyHandlers.ofString());
     }

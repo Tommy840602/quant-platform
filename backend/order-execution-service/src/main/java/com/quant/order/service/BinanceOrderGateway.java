@@ -99,7 +99,11 @@ public class BinanceOrderGateway {
     @Value("${binance.futures-rest-url:https://testnet.binancefuture.com}") private String futUrl;
     @Value("${binance.futures-api-key:}") private String futKey;
     @Value("${binance.futures-api-secret:}") private String futSecret;
-    private String envFutKey = "", envFutSecret = "";   // .env 的測試網合約金鑰（切回 testnet 用）
+    private String envFutKey = "", envFutSecret = "";
+    /** 統一帳戶（Portfolio Margin）：合約單改走 papi（只有正式網有）。開關存 Redis trading:futures-pm，預設看 BINANCE_FUTURES_PM。 */
+    @Value("${binance.mainnet-pm-rest-url:https://papi.binance.com}") private String papiUrl;
+    @Value("${binance.futures-pm:false}") private boolean pmDefault;
+    static final String FUT_PM_KEY = "trading:futures-pm";   // .env 的測試網合約金鑰（切回 testnet 用）
     @Value("${binance.recv-window:5000}") private long recvWindow;
     // 環境切換：testnet(預設,安全) / mainnet(真錢)
     @Value("${binance.env:testnet}") private String env;
@@ -172,7 +176,7 @@ public class BinanceOrderGateway {
     /** 對時：啟動時一次、之後每 5 分鐘；失敗只記 log，簽名退回本機時間（-1021 時會再即時對一次）。 */
     @org.springframework.scheduling.annotation.Scheduled(initialDelay = 300_000, fixedDelay = 300_000)
     public void syncClock() {
-        for (String base : new String[]{spotUrl, futUrl}) {
+        for (String base : new String[]{spotUrl, futUrl, futuresPm() ? papiUrl : null}) {
             if (base == null || base.isBlank()) continue;
             try {
                 long off = clock.sync(base);
@@ -190,7 +194,7 @@ public class BinanceOrderGateway {
 
     /** 執行期套用連線設定（登入頁推送）。keys 空字串代表不變更；dryRun 為 null 代表不變更。 */
     public synchronized Map<String, Object> applyConfig(String newEnv, Boolean newDryRun, String newKey, String newSecret) {
-        return applyConfig(newEnv, newDryRun, newKey, newSecret, null, null, null);
+        return applyConfig(newEnv, newDryRun, newKey, newSecret, null, null, null, null);
     }
 
     /**
@@ -199,6 +203,15 @@ public class BinanceOrderGateway {
      */
     public synchronized Map<String, Object> applyConfig(String newEnv, Boolean newDryRun, String newKey, String newSecret,
                                                         String newFutKey, String newFutSecret, Boolean futuresEnabled) {
+        return applyConfig(newEnv, newDryRun, newKey, newSecret, newFutKey, newFutSecret, futuresEnabled, null);
+    }
+
+    public synchronized Map<String, Object> applyConfig(String newEnv, Boolean newDryRun, String newKey, String newSecret,
+                                                        String newFutKey, String newFutSecret, Boolean futuresEnabled, Boolean futuresPm) {
+        if (futuresPm != null) {
+            try { redis.opsForValue().set(FUT_PM_KEY, futuresPm ? "1" : "0"); }
+            catch (Exception e) { log.warn("寫入統一帳戶開關失敗: {}", e.getMessage()); }
+        }
         if (newEnv != null && !newEnv.isBlank()) {
             String before = env;
             env = newEnv.trim().toLowerCase();
@@ -243,7 +256,8 @@ public class BinanceOrderGateway {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("env", env); m.put("dryRun", dryRun); m.put("spotUrl", spotUrl);
         m.put("keySet", !spotKey.isBlank() && !spotSecret.isBlank());
-        m.put("futuresEnabled", futuresEnabled()); m.put("futuresKeySet", futuresKeySet()); m.put("futuresUrl", futUrl);
+        m.put("futuresEnabled", futuresEnabled()); m.put("futuresKeySet", futuresKeySet());
+        m.put("futuresPm", futuresPm()); m.put("futuresUrl", futTradeBase());
         m.put("mainnet", "mainnet".equalsIgnoreCase(env));
         m.put("clockOffsetMs", clock.offset(spotUrl));
         m.put("clockSyncedAt", clock.syncedAt(spotUrl));
@@ -329,8 +343,17 @@ public class BinanceOrderGateway {
         public ExchangeRejectedException(int httpStatus, int code, String m) { super(m); this.httpStatus = httpStatus; this.code = code; }
     }
 
-    private String baseUrl(OrderIntent i) { return i.isFutures() ? futUrl : spotUrl; }
-    private String orderPath(OrderIntent i) { return i.isFutures() ? "/fapi/v1/order" : "/api/v3/order"; }
+    private String baseUrl(OrderIntent i) { return i.isFutures() ? futUrl : spotUrl; }   // 公開資料（exchangeInfo / ticker）一律 fapi
+
+    /** 統一帳戶模式：正式網 + 開關打開。 */
+    public boolean futuresPm() {
+        if (!isMainnet()) return false;
+        try { String v = redis.opsForValue().get(FUT_PM_KEY); return v == null ? pmDefault : "1".equals(v); }
+        catch (Exception e) { return pmDefault; }
+    }
+    /** 合約「交易」端點：統一帳戶走 papi /papi/v1/um/*，一般合約帳戶走 fapi。 */
+    private String futTradeBase() { return futuresPm() ? papiUrl : futUrl; }
+    private String futPath(String op) { return futuresPm() ? "/papi/v1/um/" + op : "/fapi/v1/" + op; }
     private String key(boolean futures) { return futures ? futKey : spotKey; }
     private String secret(boolean futures) { return futures ? futSecret : spotSecret; }
 
@@ -375,7 +398,9 @@ public class BinanceOrderGateway {
         // RESULT：回應帶 status / executedQty / avgPrice(合約) / cummulativeQuoteQty(現貨)。
         // 合約預設 ACK 只回 executedQty=0，市價單立刻成交也記不到 → 一律要求 RESULT。
         p.put("newOrderRespType", "RESULT");
-        return signed("POST", baseUrl(intent), orderPath(intent), p, intent.isFutures(), "下單");
+        return intent.isFutures()
+                ? signed("POST", futTradeBase(), futPath("order"), p, true, "下單")
+                : signed("POST", spotUrl, "/api/v3/order", p, false, "下單");
     }
 
     // ---------- 查單 ----------
@@ -384,8 +409,8 @@ public class BinanceOrderGateway {
         Map<String, String> p = new LinkedHashMap<>();
         p.put("symbol", symbol);
         p.put("origClientOrderId", clientOrderId);
-        String base = futures ? futUrl : spotUrl;
-        String path = futures ? "/fapi/v1/order" : "/api/v3/order";
+        String base = futures ? futTradeBase() : spotUrl;
+        String path = futures ? futPath("order") : "/api/v3/order";
         return signed("GET", base, path, p, futures, "查單");
     }
 
@@ -395,8 +420,8 @@ public class BinanceOrderGateway {
         Map<String, String> p = new LinkedHashMap<>();
         p.put("symbol", symbol);
         p.put("origClientOrderId", clientOrderId);
-        String base = futures ? futUrl : spotUrl;
-        String path = futures ? "/fapi/v1/order" : "/api/v3/order";
+        String base = futures ? futTradeBase() : spotUrl;
+        String path = futures ? futPath("order") : "/api/v3/order";
         return signed("DELETE", base, path, p, futures, "撤單");
     }
 
@@ -407,7 +432,7 @@ public class BinanceOrderGateway {
         Map<String, String> p = new LinkedHashMap<>();
         p.put("symbol", symbol);
         p.put("leverage", String.valueOf(leverage));
-        return signed("POST", futUrl, "/fapi/v1/leverage", p, true, "設定槓桿");
+        return signed("POST", futTradeBase(), futPath("leverage"), p, true, "設定槓桿");
     }
 
 

@@ -36,14 +36,18 @@
               :title="t('account.futPartial')" :description="balance.futuresError" />
     <el-card v-if="balance?.futures" style="margin-top:16px">
       <template #header>
-        <span>{{ t('account.futTitle') }}</span>
+        <span>{{ balance.futures.pm ? t('account.pmTitle') : t('account.futTitle') }}</span>
+        <template v-if="balance.futures.pm">
+          <el-tag :type="balance.futures.accountStatus === 'NORMAL' ? 'success' : 'danger'" size="small" style="margin-left:8px">{{ balance.futures.accountStatus }}</el-tag>
+          <el-tag :type="+balance.futures.uniMMR > 2 ? 'success' : (+balance.futures.uniMMR > 1.2 ? 'warning' : 'danger')" size="small" style="margin-left:6px" :title="t('account.pmMmrTip')">uniMMR {{ balance.futures.uniMMR ? (+balance.futures.uniMMR).toFixed(2) : '—' }}</el-tag>
+        </template>
         <el-tag v-if="balance.futures.stale" type="warning" size="small" style="margin-left:8px">{{ t('account.futStale') }}</el-tag>
       </template>
       <el-descriptions :column="4" border>
         <el-descriptions-item :label="t('account.futWallet')">{{ fmt(balance.futures.walletBalance) }}</el-descriptions-item>
         <el-descriptions-item :label="t('account.futUpnl')">
           <span :style="{ color: balance.futures.unrealizedPnl >= 0 ? '#26a69a' : '#ef5350' }">{{ fmt(balance.futures.unrealizedPnl) }}</span></el-descriptions-item>
-        <el-descriptions-item :label="t('account.futMargin')"><b>{{ fmt(balance.futures.marginBalance) }}</b></el-descriptions-item>
+        <el-descriptions-item :label="balance.futures.pm ? t('account.pmEquity') : t('account.futMargin')"><b>{{ fmt(balance.futures.marginBalance) }}</b></el-descriptions-item>
         <el-descriptions-item :label="t('account.futAvail')">{{ fmt(balance.futures.availableBalance) }}</el-descriptions-item>
       </el-descriptions>
       <el-table :data="balance.futures.positions" size="small" style="margin-top:12px" :empty-text="t('account.futNone')">

@@ -66,6 +66,9 @@ export default {
     "trades": "Fills"
   },
   "account": {
+    "pmTitle": "Portfolio Margin account",
+    "pmEquity": "PM equity (in total)",
+    "pmMmrTip": "Uni maintenance margin ratio: lower is riskier; near 1 means liquidation",
     "futSpot": "Spot",
     "futShort": "Futures",
     "futPartial": "Futures account unavailable: total covers spot only, drawdown check paused",
@@ -250,6 +253,11 @@ export default {
     "s55": "Order code={code} · {msg}"
   },
   "login": {
+    "pmLabel": "Futures account type",
+    "pmOff": "Standard futures",
+    "pmOn": "Portfolio Margin",
+    "pmHintOn": "Portfolio Margin: futures orders go to papi.binance.com and equity uses the PM account equity; fills are reconciled (~30 s). Spot bots still use the spot wallet.",
+    "pmHintOff": "Standard USD-M futures account (fapi.binance.com). Pick the right option if you enabled Portfolio Margin on Binance.",
     "futTitle": "Futures (USDT-M)",
     "futEnable": "Enable futures trading (futures bots can trade; equity includes futures wallet)",
     "futKeyOk": "Futures key set",

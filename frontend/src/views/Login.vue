@@ -26,6 +26,13 @@
             {{ status.ord.futuresKeySet ? t('login.futKeyOk') : t('login.futKeyNone') }}</el-tag>
         </el-form-item>
         <template v-if="cfg.futuresEnabled">
+          <el-form-item v-if="cfg.env === 'mainnet'" :label="t('login.pmLabel')">
+            <el-radio-group v-model="cfg.futuresPm">
+              <el-radio-button :value="false">{{ t('login.pmOff') }}</el-radio-button>
+              <el-radio-button :value="true">{{ t('login.pmOn') }}</el-radio-button>
+            </el-radio-group>
+            <div class="hint" style="margin-top:4px">{{ cfg.futuresPm ? t('login.pmHintOn') : t('login.pmHintOff') }}</div>
+          </el-form-item>
           <el-form-item :label="t('login.futKey')">
             <el-input v-model="cfg.futuresApiKey" :placeholder="t('login.futKeyPh')" clearable />
           </el-form-item>
@@ -80,7 +87,7 @@ const status = ref(null)
 const cfg = reactive({
   env: localStorage.getItem('qp-env') || 'testnet',
   apiKey: '', apiSecret: '',
-  futuresEnabled: true, futuresApiKey: '', futuresApiSecret: '',
+  futuresEnabled: true, futuresPm: false, futuresApiKey: '', futuresApiSecret: '',
   dryRun: (localStorage.getItem('qp-dryrun') ?? 'true') === 'true'
 })
 
@@ -91,6 +98,7 @@ async function loadStatus() {
     if (acc.data?.env) cfg.env = acc.data.env
     if (typeof ord.data?.dryRun === 'boolean') cfg.dryRun = ord.data.dryRun
     if (typeof ord.data?.futuresEnabled === 'boolean') cfg.futuresEnabled = ord.data.futuresEnabled
+    if (typeof ord.data?.futuresPm === 'boolean') cfg.futuresPm = ord.data.futuresPm
   } catch { status.value = null }
 }
 
@@ -111,7 +119,7 @@ async function apply() {
     const body = { env: cfg.env, apiKey: cfg.apiKey, apiSecret: cfg.apiSecret,
       futuresApiKey: cfg.futuresEnabled ? cfg.futuresApiKey : '', futuresApiSecret: cfg.futuresEnabled ? cfg.futuresApiSecret : '' }
     await accountApi.setConfig(body)
-    await tradeStore.save({ ...body, dryRun: cfg.dryRun, futuresEnabled: cfg.futuresEnabled })   // 寫進共用 store，右上角 / 帳戶頁立即同步
+    await tradeStore.save({ ...body, dryRun: cfg.dryRun, futuresEnabled: cfg.futuresEnabled, futuresPm: cfg.env === 'mainnet' && cfg.futuresPm })   // 寫進共用 store，右上角 / 帳戶頁立即同步
     localStorage.setItem('qp-env', cfg.env)
     localStorage.setItem('qp-dryrun', String(cfg.dryRun))
     ElMessage.success(t('login.s29'))

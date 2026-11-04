@@ -66,6 +66,9 @@ export default {
     "trades": "成交"
   },
   "account": {
+    "pmTitle": "统一账户（Portfolio Margin）",
+    "pmEquity": "统一账户权益（计入总资产）",
+    "pmMmrTip": "统一账户维持保证金率：越低越危险，接近 1 会被强制平仓",
     "futSpot": "现货",
     "futShort": "合约",
     "futPartial": "合约账户查询失败：总资产只含现货，回撤判断暂停",
@@ -250,6 +253,11 @@ export default {
     "s55": "下单 code={code} · {msg}"
   },
   "login": {
+    "pmLabel": "合约账户类型",
+    "pmOff": "普通合约账户",
+    "pmOn": "统一账户",
+    "pmHintOn": "统一账户（Portfolio Margin）：合约单走 papi.binance.com，权益读统一账户总权益；成交回报改用对账（约 30 秒）。现货机器人仍用现货钱包。",
+    "pmHintOff": "普通 U 本位合约账户（fapi.binance.com）。在币安开了统一账户的话请选右边。",
     "futTitle": "合约（USDT-M）",
     "futEnable": "开启合约交易（合约机器人可下单、权益计入合约钱包）",
     "futKeyOk": "合约密钥已设置",
