@@ -91,7 +91,7 @@ binance:
   user-data-stream-enabled: ${BINANCE_UDS_ENABLED:false}
   # ---- 合約 USDT-M ----
   futures-rest-url: ${BINANCE_FUTURES_REST:https://testnet.binancefuture.com}
-  futures-ws-url: ${BINANCE_FUTURES_WS:wss://stream.binancefuture.com}
+  futures-ws-url: ${BINANCE_FUTURES_WS:wss://fstream.binancefuture.com}
   mainnet-futures-ws-url: ${BINANCE_MAINNET_FUTURES_WS:wss://fstream.binance.com}
   futures-api-key: ${BINANCE_FUTURES_API_KEY:}
   futures-api-secret: ${BINANCE_FUTURES_API_SECRET:}
