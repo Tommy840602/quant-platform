@@ -45,6 +45,39 @@ public class ShadowEngine implements StrategyContextImpl.Execution {
     private RoundTripRepository repo;
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     public void setRepo(RoundTripRepository r) { this.repo = r; }
+    private PositionStateRepository state;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setState(PositionStateRepository s) { this.state = s; }
+
+    /** 重啟後還原模擬盤 / 影子部位、滑價樣本。 */
+    public int restore(Collection<String> botIds) {
+        int n = 0;
+        if (state != null) try {
+            for (PositionStateRepository.Row r : state.loadAll()) {
+                Map<String, Map<String, Pos>> target = "PAPER".equals(r.kind()) ? paper : "SHADOW".equals(r.kind()) ? shadow : null;
+                if (target == null || r.qty() <= 1e-12) continue;
+                Pos p = new Pos(); p.qty = r.qty(); p.entry = r.entry(); p.peak = r.peak();
+                target.computeIfAbsent(r.botId(), k -> new ConcurrentHashMap<>()).put(r.symbol(), p); n++;
+            }
+        } catch (Exception e) { log.warn("還原模擬盤 / 影子部位失敗: {}", e.getMessage()); }
+        if (repo != null) for (String id : botIds) try {
+            List<Double> l = repo.recentSlips(id, 50);
+            if (!l.isEmpty()) slips.put(id, new java.util.concurrent.ConcurrentLinkedDeque<>(l));
+        } catch (Exception e) { log.debug("滑價樣本讀取失敗: {}", e.getMessage()); }
+        return n;
+    }
+    /** 本次上線以來的影子已實現損益（重啟後由來回紀錄算回來）。 */
+    public void restoreSession(String id, double shadowRealizedSinceStart) {
+        if (shadowRealizedSinceStart != 0) shadowRealized.put(id, shadowRealizedSinceStart);
+    }
+
+    private void save(String id, String sym, String kind, Pos p) {
+        if (state == null) return;
+        try {
+            if (p == null || p.qty <= 1e-12) state.delete(id, sym, kind);
+            else state.upsert(id, sym, kind, p.qty, p.entry, p.peak);
+        } catch (Exception e) { log.warn("{} 部位寫入失敗 {} {}: {}", kind, id, sym, e.getMessage()); }
+    }
 
     private volatile BotRiskManager risk;
     private volatile Function<String, String> stageOf = id -> "LIVE";
@@ -70,9 +103,10 @@ public class ShadowEngine implements StrategyContextImpl.Execution {
     public void paperFill(String id, OrderIntent i, double px) {
         if (px <= 0) return;
         Map<String, Pos> m = paper.computeIfAbsent(id, k -> new ConcurrentHashMap<>());
-        if (i.side() == OrderSide.BUY) open(m, i.symbol(), i.quantity(), px);
+        if (i.side() == OrderSide.BUY) { open(m, i.symbol(), i.quantity(), px); save(id, i.symbol(), "PAPER", m.get(i.symbol())); }
         else {
             StrategyPositionBook.Close c = close(id, m, i.symbol(), px, true);
+            save(id, i.symbol(), "PAPER", null);
             if (c == null) return;
             if (repo != null) try { repo.insert(c, "PAPER"); } catch (Exception e) { log.warn("模擬盤紀錄寫入失敗: {}", e.getMessage()); }
             BotRiskManager r = risk;
@@ -88,7 +122,7 @@ public class ShadowEngine implements StrategyContextImpl.Execution {
     public void onLiveSend(String id, OrderIntent i, double refPx) {
         refs.put(i.clientOrderId(), new Object[]{id, i.symbol(), i.side(), refPx, System.currentTimeMillis()});
         Map<String, Pos> m = shadow.computeIfAbsent(id, k -> new ConcurrentHashMap<>());
-        if (i.side() == OrderSide.BUY) open(m, i.symbol(), i.quantity(), refPx);
+        if (i.side() == OrderSide.BUY) { open(m, i.symbol(), i.quantity(), refPx); save(id, i.symbol(), "SHADOW", m.get(i.symbol())); }
         else shadowClose(id, i.symbol(), refPx);
     }
 
@@ -113,7 +147,9 @@ public class ShadowEngine implements StrategyContextImpl.Execution {
         Pos p = shadow.getOrDefault(id, Map.of()).get(k.symbol());
         BotRiskManager r = risk;
         if (p == null || r == null) return;
+        double before = p.peak;
         p.peak = Math.max(p.peak, Math.max(k.high(), k.close()));
+        if (p.peak > before * 1.0005) save(id, k.symbol(), "SHADOW", p);
         if (r.exitReason(id, k.symbol(), k.close(), p.entry, p.peak) != null) shadowClose(id, k.symbol(), k.close());
     }
 
@@ -157,9 +193,15 @@ public class ShadowEngine implements StrategyContextImpl.Execution {
     }
 
     /** 上線：重新計算本次差距（影子部位清空，從零開始對照）。 */
-    public void reset(String id) { shadowRealized.remove(id); rejects.remove(id); shadow.remove(id); }
+    public void reset(String id) {
+        shadowRealized.remove(id); rejects.remove(id); shadow.remove(id);
+        if (state != null) try { state.deleteKind(id, "SHADOW"); } catch (Exception e) { log.debug("影子部位清除失敗: {}", e.getMessage()); }
+    }
     /** 離開模擬盤：丟掉模擬部位。 */
-    public void clearPaper(String id) { paper.remove(id); }
+    public void clearPaper(String id) {
+        paper.remove(id);
+        if (state != null) try { state.deleteKind(id, "PAPER"); } catch (Exception e) { log.debug("模擬部位清除失敗: {}", e.getMessage()); }
+    }
 
     /** 每 5 分鐘：滑價或差距異常 → 告警（每機器人每小時一次）。 */
     @Scheduled(initialDelay = 300_000, fixedDelay = 300_000)
@@ -202,6 +244,7 @@ public class ShadowEngine implements StrategyContextImpl.Execution {
 
     private void shadowClose(String id, String sym, double px) {
         StrategyPositionBook.Close c = close(id, shadow.computeIfAbsent(id, k -> new ConcurrentHashMap<>()), sym, px, false);
+        save(id, sym, "SHADOW", null);
         if (c == null) return;
         shadowRealized.merge(id, c.pnl(), Double::sum);
         if (repo != null) try { repo.insert(c, "SHADOW"); } catch (Exception e) { log.debug("影子紀錄寫入失敗: {}", e.getMessage()); }

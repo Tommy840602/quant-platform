@@ -51,6 +51,14 @@ public class BotRepository {
     public void setStage(String id, String stage) {
         jdbc.update("UPDATE strategy_bots SET stage = ?, stage_since = now(), updated_at = now() WHERE id = ?", stage, id);
     }
+    public void setPaused(String id, String reason) {
+        jdbc.update("UPDATE strategy_bots SET paused_reason = ?, updated_at = now() WHERE id = ?", reason, id);
+    }
+    public Map<String, String> pausedReasons() {
+        Map<String, String> m = new java.util.HashMap<>();
+        jdbc.query("SELECT id, paused_reason FROM strategy_bots WHERE paused_reason IS NOT NULL", rs -> { m.put(rs.getString(1), rs.getString(2)); });
+        return m;
+    }
     public void delete(String id) { jdbc.update("DELETE FROM strategy_bots WHERE id = ?", id); }
 
     public List<BotRow> findAll() {

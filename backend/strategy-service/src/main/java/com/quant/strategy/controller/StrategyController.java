@@ -61,6 +61,12 @@ public class StrategyController {
         return ApiResponse.ok(runner.decisions(botId, symbol, from, to, acted, limit));
     }
 
+    /** 各標的實測滑價（回測成本校正用）：GET /api/strategy/strategies/slippage?days=30 */
+    @GetMapping("/slippage")
+    public ApiResponse<Map<String, Map<String, Object>>> slippage(@RequestParam(defaultValue = "30") int days) {
+        return ApiResponse.ok(runner.slippageStats(Math.max(1, Math.min(days, 365))));
+    }
+
     /** 熔斷後恢復進場：POST /api/strategy/strategies/{id}/resume */
     @PostMapping("/{id}/resume")
     public ApiResponse<String> resume(@PathVariable String id) { return ApiResponse.ok(runner.resume(id)); }

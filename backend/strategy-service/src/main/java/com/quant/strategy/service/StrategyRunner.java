@@ -58,6 +58,7 @@ public class StrategyRunner {
         r.bind(id -> paramsOf.getOrDefault(id, Map.of()), id -> names.getOrDefault(id, id), id -> types.getOrDefault(id, "ma"), null);
         contexts.values().forEach(c -> c.setBuyRouter(r));
         r.setEquity(() -> equityCache);
+        wireStore();
         if (shadow != null) { shadow.bind(r, this::stageOf, id -> names.getOrDefault(id, id), notifyClient);
             r.setTradeHook(c -> { if (trips != null) try { trips.insert(c, "LIVE"); } catch (Exception ex) { log.warn("來回紀錄寫入失敗: {}", ex.getMessage()); } }); }
     }
@@ -94,6 +95,18 @@ public class StrategyRunner {
     }
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     public void setTrips(RoundTripRepository r) { this.trips = r; }
+    private PositionStateRepository posState;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setPosState(PositionStateRepository p) { this.posState = p; wireStore(); }
+    /** 讓風控把「移動停利最高價」「熔斷暫停」寫進 DB。 */
+    private void wireStore() {
+        if (risk == null) return;
+        risk.setStore(new BotRiskManager.StateStore() {
+            @Override public void savePeak(String id, String sym, double peak) { if (posState != null) posState.upsert(id, sym, "PEAK", 0, 0, peak); }
+            @Override public void deletePeak(String id, String sym) { if (posState != null) posState.delete(id, sym, "PEAK"); }
+            @Override public void savePaused(String id, String reason) { if (repo != null) repo.setPaused(id, reason); }
+        });
+    }
     private DecisionLog decisionLog;
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     public void setDecisionLog(DecisionLog d) { this.decisionLog = d; if (shadow != null) shadow.setDecisionSink(d); }
@@ -108,6 +121,35 @@ public class StrategyRunner {
         if (accountClient == null) return;
         try { Object t = accountClient.balance().data().get("totalUsdt"); if (t instanceof Number n) equityCache = n.doubleValue(); }
         catch (Exception e) { log.debug("取權益失敗: {}", e.getMessage()); }
+    }
+
+    /**
+     * 重啟後把「只在記憶體裡」的狀態接回來（後續 A1）：
+     * 模擬盤 / 影子部位、移動停利最高價、熔斷暫停、本次上線的已實現損益與連虧筆數、影子已實現損益、滑價樣本。
+     */
+    void restoreRuntimeState() {
+        int pos = shadow == null ? 0 : shadow.restore(factories.keySet());
+        Map<String, String> pausedMap = Map.of();
+        try { if (repo != null) pausedMap = repo.pausedReasons(); } catch (Exception e) { log.warn("讀取熔斷狀態失敗（V9 未套用？）: {}", e.getMessage()); }
+        Map<String, Map<String, Double>> peaks = new HashMap<>();
+        try { if (posState != null) for (var r : posState.loadAll()) if ("PEAK".equals(r.kind())) peaks.computeIfAbsent(r.botId(), k -> new HashMap<>()).put(r.symbol(), r.peak()); }
+        catch (Exception e) { log.warn("讀取最高價失敗: {}", e.getMessage()); }
+        int n = 0;
+        for (String id : running) {
+            long since = startedAt.getOrDefault(id, 0L);
+            String mode = "PAPER".equals(stageOf(id)) ? "PAPER" : "LIVE";
+            double realized = 0; int consec = 0; double shadowReal = 0;
+            if (trips != null) try {
+                realized = trips.stats(id, mode, since).total();
+                consec = trips.trailingLosses(id, mode, since);
+                shadowReal = trips.stats(id, "SHADOW", since).total();
+            } catch (Exception e) { log.debug("讀取來回紀錄失敗 {}: {}", id, e.getMessage()); }
+            if (risk != null) risk.restore(id, pausedMap.get(id), realized, consec, peaks.get(id));
+            if (shadow != null) shadow.restoreSession(id, shadowReal);
+            n++;
+        }
+        log.info("重啟還原：{} 個模擬 / 影子部位、{} 個運行中機器人的熔斷 / 損益 / 最高價、{} 個熔斷中", pos, n,
+                pausedMap.keySet().stream().filter(running::contains).count());
     }
 
     /** 設定階段。降到 PAPER 前先把真錢部位市價出清（否則切成模擬後沒人管）；離開 PAPER 丟掉模擬部位。 */
@@ -270,6 +312,14 @@ public class StrategyRunner {
         return on ? applyBandit("開啟") : banditStatus();
     }
 
+    /** 各標的實測滑價（回測成本校正用）。 */
+    public Map<String, Map<String, Object>> slippageStats(int days) {
+        Map<String, Map<String, Object>> out = new LinkedHashMap<>();
+        if (trips == null) return out;
+        trips.slippageBySymbol(days).forEach((sym, v) -> out.put(sym, Map.of("bps", Math.round(v[0] * 100) / 100.0, "n", (int) v[1])));
+        return out;
+    }
+
     public Map<String, Map<String, Object>> regimes() { return risk == null ? Map.of() : risk.regimes(); }
 
     private AccountClient accountClient;   // 可為 null（單元測試）
@@ -366,6 +416,7 @@ public class StrategyRunner {
             // 內建的若 DB 還沒有列，寫一筆讓之後的改動有地方存
             for (String id : builtins) if (repo.findAll().stream().noneMatch(r -> r.id().equals(id))) persist(id);
             log.info("機器人持久化：恢復 {} 個自建、{} 個恢復運行", restored, resumed);
+            restoreRuntimeState();
             if (bandit != null && trips != null) for (String id : factories.keySet()) {
                 try { for (double r : trips.recentReturns(id, List.of("LIVE", "PAPER"), BanditAllocator.WINDOW)) bandit.record(id, r); }
                 catch (Exception e) { log.debug("配資學習資料讀取失敗: {}", e.getMessage()); }
@@ -695,6 +746,7 @@ public class StrategyRunner {
         factories.remove(id); instances.remove(id); contexts.remove(id); names.remove(id);
         symbolFilter.remove(id); types.remove(id); paramsOf.remove(id); startedAt.remove(id); stage.remove(id); stageSince.remove(id);
         if (shadow != null) shadow.clearPaper(id);
+        if (posState != null) try { posState.deleteBot(id); } catch (Exception e) { log.debug("清除部位狀態失敗: {}", e.getMessage()); }
         if (repo != null) try { repo.delete(id); } catch (Exception e) { log.warn("刪除持久化失敗: {}", e.getMessage()); }
         notify(":wastebasket: 刪除機器人 (" + id + ")");
         return "deleted: " + id;

@@ -56,6 +56,28 @@ public class RoundTripRepository {
         return out;
     }
 
+    /** 從最新往回數，連續虧損幾筆（遇到獲利就停）。 */
+    public int trailingLosses(String bot, String mode, long sinceMs) {
+        List<Double> pnl = jdbc.query("SELECT pnl FROM strategy_round_trips WHERE bot_id = ? AND mode = ? AND closed_at >= ? ORDER BY closed_at DESC LIMIT 50",
+                (rs, i) -> rs.getDouble(1), bot, mode, new Timestamp(sinceMs));
+        int n = 0; for (double p : pnl) { if (p < 0) n++; else break; }
+        return n;
+    }
+
+    /** 最近 limit 筆滑價（由舊到新）。 */
+    public List<Double> recentSlips(String bot, int limit) {
+        List<Double> l = jdbc.query("SELECT bps FROM strategy_slippage WHERE bot_id = ? ORDER BY ts DESC LIMIT ?", (rs, i) -> rs.getDouble(1), bot, limit);
+        List<Double> out = new ArrayList<>(l); Collections.reverse(out); return out;
+    }
+
+    /** 各標的近 days 天的平均滑價與筆數（回測成本校正用）：symbol -> [avgBps, n] */
+    public Map<String, double[]> slippageBySymbol(int days) {
+        Map<String, double[]> m = new LinkedHashMap<>();
+        jdbc.query("SELECT symbol, avg(bps), count(*) FROM strategy_slippage WHERE ts >= now() - make_interval(days => ?) GROUP BY symbol ORDER BY symbol",
+                rs -> { m.put(rs.getString(1), new double[]{rs.getDouble(2), rs.getDouble(3)}); }, days);
+        return m;
+    }
+
     /** [平均 bps, 筆數] */
     public double[] slippage(String bot, long sinceMs) {
         return jdbc.queryForObject("SELECT coalesce(avg(bps), 0), count(*) FROM strategy_slippage WHERE bot_id = ? AND ts >= ?",

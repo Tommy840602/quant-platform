@@ -22,7 +22,8 @@ import java.util.Map;
 public class BacktestController {
 
     private final BarSource bars;
-    public BacktestController(BarSource bars) { this.bars = bars; }
+    private final com.quant.backtest.service.CostModel costs;
+    public BacktestController(BarSource bars, com.quant.backtest.service.CostModel costs) { this.bars = bars; this.costs = costs; }
 
     @PostMapping("/run")
     public ApiResponse<Map<String, Object>> run(@RequestBody Req req) {
@@ -34,16 +35,17 @@ public class BacktestController {
         } catch (BarSource.NoDataException e) {
             return ApiResponse.error(400, e.getMessage());
         }
-        var engine = new BacktestEngine(
-                req.initialCash == 0 ? 10000 : req.initialCash,
-                req.fee == 0 ? 0.0004 : req.fee,
-                req.slippage == 0 ? 0.0002 : req.slippage);
+        var cost = costs.resolve(symbol, req.fee, req.slippage, req.costModel);
+        var engine = new BacktestEngine(req.initialCash == 0 ? 10000 : req.initialCash, cost.fee(), cost.slippage());
         var params = new HashMap<String, Object>(req.params == null ? Map.of() : req.params);
         params.put("fast", req.fast == 0 ? params.getOrDefault("fast", 3) : req.fast);
         params.put("slow", req.slow == 0 ? params.getOrDefault("slow", 8) : req.slow);
         params.putIfAbsent("qty", 0.01);
         var strategy = StrategyFactory.build(req.type, "backtest", params);
-        var result = engine.run(data.bars(), strategy);
+        String type = req.type == null ? "ma" : req.type;
+        var spec = Boolean.FALSE.equals(req.applyRisk) ? null
+                : new BacktestEngine.RiskSpec(type, req.risk, req.notionalPct, req.liveEquity);
+        var result = engine.run(data.bars(), strategy, spec);
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("symbol", symbol); out.put("interval", interval);
@@ -54,6 +56,8 @@ public class BacktestController {
         out.put("equity", result.equity());
         out.put("trades", result.trades());
         out.put("tradeLog", result.tradeLog());
+        out.put("risk", result.risk());
+        out.put("costs", cost.toMap());
         if (data.dataSource().startsWith("closes"))
             out.put("warning", "closes 只有收盤價（O=H=L=C），依賴 high/low 的策略結果不準；改傳 symbol+interval+bars 用真實 K 線");
         return ApiResponse.ok(out);
@@ -78,6 +82,15 @@ public class BacktestController {
         public int fast;
         public int slow;
         public String type;
+        /** 套用與實盤相同的機器人風控（出場 / 盤勢 / 冷卻 / 熔斷 / 下單量）；預設 true */
+        public Boolean applyRisk;
+        public Map<String, Object> risk;
+        /** 每單名目佔權益 %（實盤每單名目 ÷ 實盤權益）；0 = 95% 現金 all-in（舊行為） */
+        public double notionalPct;
+        /** 實盤權益，把 maxLossUsdt 換算到回測本金 */
+        public double liveEquity;
+        /** measured（預設：用實盤實測滑價）| fixed */
+        public String costModel;
         public Map<String, Object> params;   // 其他策略參數（period / mult / k …）
     }
 }

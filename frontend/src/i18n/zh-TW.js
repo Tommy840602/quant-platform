@@ -644,5 +644,19 @@ export default {
       "INSUFFICIENT": "樣本不足"
     },
     "hint": "PBO：樣本內最好的組合到樣本外掉到中位數以下的比例（> 50% 比亂挑還差）。DSR：扣掉「試了很多組」的運氣後，真實 Sharpe > 0 的機率。Walk-forward：用前一段挑參數、下一段驗證，效率 = 樣本外 ÷ 樣本內。建出來的機器人會先進模擬盤。"
+  },
+  "parity": {
+    "apply": "套用機器人風控（與實盤相同）",
+    "defaults": "預設風控參數",
+    "fromBot": "沿用 {id} 的風控參數",
+    "sizing": "每單 = 權益 {pct}%（實盤權益 {eq} USDT）",
+    "costs": "成本：手續費 {fee}% · 滑價 {bps} bps",
+    "measured": "實測 {n} 筆",
+    "defaultSlip": "預設（尚無實測）",
+    "trips": "來回 {n} 筆 · 勝率 {w}%",
+    "exits": "出場",
+    "blocked": "被擋進場",
+    "paused": "⚠ 熔斷：{why}，之後不再進場",
+    "notApplied": "未套用風控（只看策略訊號）"
   }
 }
