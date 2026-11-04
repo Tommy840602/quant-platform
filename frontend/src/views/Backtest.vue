@@ -27,7 +27,7 @@
           </div>
         </el-col>
       </el-row>
-      <el-alert v-if="optBest" :title="optBest" type="success" :closable="false" style="margin-top:10px">
+      <el-alert v-if="optBest" :title="optBest" :type="robust && robust.verdict !== 'ROBUST' ? 'warning' : 'success'" :closable="false" style="margin-top:10px">
         <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
           <span>{{ t('backtest.s10') }}</span>
           <el-input v-model="botId" :placeholder="t('backtest.s3')" size="small" style="width:160px" />
@@ -36,6 +36,33 @@
           <span class="hint" v-if="bestParams">{{ btType }} · {{ btSymbol }} · {{ Object.entries(bestParams).map(([k, v]) => k + '=' + v).join(', ') }}</span>
         </div>
       </el-alert>
+      <div v-if="robust" class="robust">
+        <div class="robust-head">
+          <b>{{ t('robust.title') }}</b>
+          <el-tag :type="VERDICT_TYPE[robust.verdict] || 'info'" effect="dark">{{ t('robust.v.' + robust.verdict) }}</el-tag>
+          <span class="hint">{{ t('robust.trials', { n: robust.trials, s: robust.splits || 0 }) }}</span>
+        </div>
+        <el-row :gutter="12" style="margin-top:8px">
+          <el-col :xs="12" :sm="6"><div class="metric"><div class="m-label">PBO {{ t('robust.pboL') }}</div><div class="m-value" :style="{ color: robust.pbo > 0.5 ? '#f56c6c' : robust.pbo > 0.3 ? '#e6a23c' : '#67c23a' }">{{ robust.pbo == null ? '—' : Math.round(robust.pbo * 100) + '%' }}</div></div></el-col>
+          <el-col :xs="12" :sm="6"><div class="metric"><div class="m-label">DSR {{ t('robust.dsrL') }}</div><div class="m-value" :style="{ color: robust.dsr < 0.5 ? '#f56c6c' : robust.dsr < 0.9 ? '#e6a23c' : '#67c23a' }">{{ Math.round((robust.dsr || 0) * 100) }}%</div></div></el-col>
+          <el-col :xs="12" :sm="6"><div class="metric"><div class="m-label">{{ t('robust.hurdle') }}</div><div class="m-value">{{ robust.bestSharpe }} / {{ robust.sharpeHurdle }}</div></div></el-col>
+          <el-col :xs="12" :sm="6"><div class="metric"><div class="m-label">{{ t('robust.wfEff') }}</div><div class="m-value" :style="{ color: (robust.walkForward?.efficiency || 0) < 0.5 ? '#e6a23c' : '#67c23a' }">{{ Math.round((robust.walkForward?.efficiency || 0) * 100) }}%</div></div></el-col>
+        </el-row>
+        <ul class="reasons"><li v-for="r in robust.reasons" :key="r">{{ r }}</li></ul>
+        <el-table v-if="robust.walkForward?.folds" :data="robust.walkForward.folds" size="small" style="margin-top:6px">
+          <el-table-column prop="fold" :label="t('robust.fold')" width="70" />
+          <el-table-column :label="t('robust.picked')"><template #default="{ row }">{{ Object.entries(row.params || {}).map(([k, v]) => k + '=' + v).join(', ') }}</template></el-table-column>
+          <el-table-column prop="isSharpe" :label="t('robust.isS')" width="130" />
+          <el-table-column :label="t('robust.oosS')" width="130"><template #default="{ row }"><span :style="{ color: row.oosSharpe > 0 ? '#67c23a' : '#f56c6c' }">{{ row.oosSharpe }}</span></template></el-table-column>
+        </el-table>
+        <div v-if="robust.recommended" style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <span>{{ t('robust.rec') }}</span>
+          <b>{{ Object.entries(paramsOnly(robust.recommended)).map(([k, v]) => k + '=' + v).join(', ') }}</b>
+          <span class="hint">{{ t('robust.recOos', { s: robust.recommendedOosSharpe }) }}</span>
+          <el-button size="small" type="success" :loading="creating" @click="createFrom(paramsOnly(robust.recommended))">{{ t('robust.useRec') }}</el-button>
+        </div>
+        <div class="hint" style="margin-top:6px;line-height:1.6">{{ t('robust.hint') }}</div>
+      </div>
     </el-card>
 
     <el-card :header="t('backtest.s5')" style="margin-top:16px">
@@ -64,6 +91,10 @@ const btBars = ref(300)
 const optBest = ref('')
 const bestParams = ref(null)
 const botId = ref(''); const botQty = ref(0.001); const creating = ref(false)
+const robust = ref(null)
+const VERDICT_TYPE = { ROBUST: 'success', SUSPECT: 'warning', OVERFIT: 'danger', INSUFFICIENT: 'info' }
+const paramsOnly = row => Object.fromEntries(Object.entries(row || {}).filter(([k]) => !['sharpe', 'total_return', 'max_drawdown', 'trades', 'is_sharpe', 'oos_sharpe'].includes(k)))
+async function createFrom(p) { bestParams.value = p; return createFromBest() }
 async function createFromBest() {
   if (!bestParams.value) return
   const id = (botId.value || `${btType.value}-${btSymbol.value.toLowerCase().replace('usdt', '')}-${Date.now().toString().slice(-4)}`).trim()
@@ -112,12 +143,13 @@ function gridFor(type) {
   return { period: [9,14,20,25] }   // 擺盪類
 }
 async function runOptimize() {
-  loading.value = true; optBest.value = ''
+  loading.value = true; optBest.value = ''; robust.value = null
   try {
     const resp = await backtestApi.optimize({ type: btType.value, symbol: btSymbol.value, interval: btInterval.value, bars: btBars.value, grid: gridFor(btType.value) })
     const d = resp.data; const b = d.best
-    bestParams.value = Object.fromEntries(Object.entries(b).filter(([k]) => !['sharpe','total_return','max_drawdown','trades'].includes(k)))
-    optBest.value = t('backtest.s32', { n: d.combinations }) + Object.entries(b).filter(([k]) => !['sharpe','total_return','max_drawdown','trades'].includes(k)).map(([k,v]) => k + '=' + v).join(', ') + ` ｜ Sharpe ${b.sharpe} · 交易 ${b.trades}`
+    bestParams.value = paramsOnly(b)
+    robust.value = d.robustness || null
+    optBest.value = t('backtest.s32', { n: d.combinations }) + Object.entries(paramsOnly(b)).map(([k,v]) => k + '=' + v).join(', ') + ` ｜ Sharpe ${b.sharpe} · 交易 ${b.trades}`
     ElMessage.success(t('backtest.s20'))
   } catch (e) { ElMessage.error(t('backtest.s21')) }
   finally { loading.value = false }
@@ -174,4 +206,7 @@ onMounted(() => { chartInst = echarts.init(chart.value) })
 .m-label { color:#888; font-size:13px; }
 .m-value { font-size:22px; font-weight:700; color:#1f4e79; }
 .hint { color:#999; font-size:12px; margin-top:8px; }
+.robust{margin-top:12px;padding:12px;border:1px solid var(--el-border-color-lighter);border-radius:8px}
+.robust-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.reasons{margin:8px 0 0;padding-left:18px;font-size:13px;line-height:1.7}
 </style>

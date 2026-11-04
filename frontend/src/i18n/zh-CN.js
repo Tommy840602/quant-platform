@@ -622,5 +622,27 @@ export default {
     "allBots": "全部机器人",
     "prev": "上一个",
     "next": "下一个"
+  },
+  "robust": {
+    "title": "过拟合体检",
+    "trials": "试了 {n} 组参数 · CSCV {s} 种切法",
+    "pboL": "过拟合概率",
+    "dsrL": "真实 Sharpe>0 概率",
+    "hurdle": "最佳 Sharpe / 运气门槛",
+    "wfEff": "Walk-forward 效率",
+    "fold": "段",
+    "picked": "这段挑出的参数",
+    "isS": "挑选段 Sharpe",
+    "oosS": "下一段 Sharpe",
+    "rec": "推荐参数（样本外平均最好）：",
+    "recOos": "样本外平均 Sharpe {s}",
+    "useRec": "用推荐参数建机器人",
+    "v": {
+      "ROBUST": "稳健",
+      "SUSPECT": "可疑",
+      "OVERFIT": "过拟合",
+      "INSUFFICIENT": "样本不足"
+    },
+    "hint": "PBO：样本内最好的组合到样本外掉到中位数以下的比例（> 50% 比乱挑还差）。DSR：扣掉「试了很多组」的运气后，真实 Sharpe > 0 的概率。Walk-forward：用前一段挑参数、下一段验证，效率 = 样本外 ÷ 样本内。建出来的机器人会先进模拟盘。"
   }
 }
