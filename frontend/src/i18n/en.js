@@ -539,7 +539,9 @@ export default {
       "maxLossUsdt": "Session loss limit USDT",
       "cooldownBars": "Cooldown after exit (bars)",
       "regimeFilter": "Regime filter",
-      "blockHighVol": "Skip vol spikes"
+      "blockHighVol": "Skip vol spikes",
+      "riskPerTradePct": "Risk per trade % equity",
+      "sizeCapPct": "Max order % equity"
     },
     "h": {
       "stopAtr": "entry − N×ATR; 0=off",
@@ -550,7 +552,9 @@ export default {
       "maxLossUsdt": "realized+unrealized ≤ −N pauses; 0=off",
       "cooldownBars": "no re-entry on that coin for N bars",
       "regimeFilter": "trend bots enter only in trend/mixed, mean-reversion only in range/mixed",
-      "blockHighVol": "pause entries when 14-bar vol ≥ 2.5× normal"
+      "blockHighVol": "pause entries when 14-bar vol ≥ 2.5× normal",
+      "riskPerTradePct": "lose at most N% of equity at the stop; qty from ATR; 0 = per-order notional",
+      "sizeCapPct": "cap each order at N% of equity"
     }
   },
   "regime": {
@@ -580,5 +584,29 @@ export default {
     "hint": "Learns from each round-trip return: bots more likely to be the best get more capital (multiplier × per-order notional); weak ones drop to the floor and keep exploring. Mean multiplier = 1, so total exposure is unchanged; the floor keeps each order ≥ 5 USDT. Overrides manual allocation while on.",
     "on": "Auto allocation on",
     "off": "Auto allocation off"
+  },
+  "pipeline": {
+    "auto": "Auto promote / demote",
+    "st": {
+      "PAPER": "Paper",
+      "PILOT": "Pilot (live, min size)",
+      "LIVE": "Live"
+    },
+    "toNext": "To {next}:",
+    "keep": "Keep:",
+    "gateTip": "Evaluated every 10 min; all ✓ promotes, breaker or weak results demote",
+    "ck": {
+      "trades": "trades",
+      "hours": "hours",
+      "pf": "PF",
+      "meanPct": "avg%",
+      "slipBps": "slip bps",
+      "recentPF": "last-10 PF"
+    },
+    "shadow": "Shadow {sh} · live {live} · gap {gap} USDT (slip {slip} bps · rejected {rej})",
+    "newBot": "New bots start in Paper and are promoted to real money after passing the gates.",
+    "confirmPaper": "Switch to Paper: real positions are market-sold first; afterwards fills are simulated only.",
+    "confirmPilot": "Switch to Pilot: every order uses Binance minimum 5.5 USDT.",
+    "confirmLive": "Switch to Live: orders use per-order notional / auto allocation (real money)."
   }
 }

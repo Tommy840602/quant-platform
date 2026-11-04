@@ -539,7 +539,9 @@ export default {
       "maxLossUsdt": "本次虧損上限 USDT",
       "cooldownBars": "出場後冷卻（根）",
       "regimeFilter": "盤勢過濾",
-      "blockHighVol": "異常波動不進場"
+      "blockHighVol": "異常波動不進場",
+      "riskPerTradePct": "每筆風險 % 權益",
+      "sizeCapPct": "單筆上限 % 權益"
     },
     "h": {
       "stopAtr": "進場價 − N×ATR；0=關",
@@ -550,7 +552,9 @@ export default {
       "maxLossUsdt": "已實現+未實現 ≤ −N 暫停；0=關",
       "cooldownBars": "出場後同幣 N 根 K 內不再買",
       "regimeFilter": "趨勢型只在趨勢/中性盤進場，均值回歸型只在盤整/中性盤",
-      "blockHighVol": "近 14 根波動 ≥ 2.5× 平常時暫停進場"
+      "blockHighVol": "近 14 根波動 ≥ 2.5× 平常時暫停進場",
+      "riskPerTradePct": "停損時最多虧權益 N%，依 ATR 反推數量；0=用每單名目",
+      "sizeCapPct": "單筆名目最多佔權益 N%"
     }
   },
   "regime": {
@@ -580,5 +584,29 @@ export default {
     "hint": "依每筆來回交易的報酬學習：越可能是最好的機器人分到越多資金（倍率 × 每單名目），表現差的降到下限繼續觀察。平均倍率 = 1，總曝險不變；下限保證單筆不低於 5 USDT。開啟後會覆蓋手動配資。",
     "on": "已開啟自動配資",
     "off": "已關閉自動配資"
+  },
+  "pipeline": {
+    "auto": "自動晉升 / 降級",
+    "st": {
+      "PAPER": "模擬盤",
+      "PILOT": "真錢試行",
+      "LIVE": "正式運行"
+    },
+    "toNext": "晉升{next}：",
+    "keep": "維持條件：",
+    "gateTip": "每 10 分鐘自動評估；全部 ✓ 就晉升，熔斷或績效轉差就降級",
+    "ck": {
+      "trades": "來回",
+      "hours": "小時",
+      "pf": "獲利因子",
+      "meanPct": "平均%",
+      "slipBps": "滑價bps",
+      "recentPF": "近10筆PF"
+    },
+    "shadow": "影子 {sh} · 實盤 {live} · 差距 {gap} USDT（滑價 {slip} bps · 被拒 {rej}）",
+    "newBot": "新機器人從「模擬盤」開始，過關後自動晉升真錢。",
+    "confirmPaper": "切到模擬盤：手上真錢部位會先市價賣出，之後只模擬成交、不送單。",
+    "confirmPilot": "切到真錢試行：每單只下幣安最低 5.5 USDT。",
+    "confirmLive": "切到正式運行：依每單名目 / 自動配資下單（真錢）。"
   }
 }

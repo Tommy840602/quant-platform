@@ -41,6 +41,16 @@ public class BotRepository {
     public void setParams(String id, Map<String, Object> p) {
         jdbc.update("UPDATE strategy_bots SET params = ?::jsonb, updated_at = now() WHERE id = ?", json(p), id);
     }
+    /** 晉升階段：id -> [stage, stageSinceMs] */
+    public Map<String, Object[]> stages() {
+        Map<String, Object[]> m = new java.util.HashMap<>();
+        jdbc.query("SELECT id, stage, (extract(epoch FROM stage_since) * 1000)::bigint AS since FROM strategy_bots",
+                rs -> { m.put(rs.getString("id"), new Object[]{rs.getString("stage"), rs.getLong("since")}); });
+        return m;
+    }
+    public void setStage(String id, String stage) {
+        jdbc.update("UPDATE strategy_bots SET stage = ?, stage_since = now(), updated_at = now() WHERE id = ?", stage, id);
+    }
     public void delete(String id) { jdbc.update("DELETE FROM strategy_bots WHERE id = ?", id); }
 
     public List<BotRow> findAll() {
