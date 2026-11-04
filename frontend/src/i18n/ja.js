@@ -250,6 +250,16 @@ export default {
     "s55": "発注 code={code} · {msg}"
   },
   "login": {
+    "futTitle": "先物（USDT-M）",
+    "futEnable": "先物取引を有効にする（先物ボットが発注可、資産に先物ウォレットを含む）",
+    "futKeyOk": "先物キー設定済み",
+    "futKeyNone": "先物キー未設定",
+    "futKey": "先物 API Key",
+    "futSecret": "先物 API Secret",
+    "futKeyPh": "空欄 = 変更なし（.env を使用）",
+    "futHintMain": "本番：現物と同じキーで可。Binance の API 管理で「先物を有効」にし、先に USDT を先物ウォレットへ振替。",
+    "futHintTest": "テストネット：先物キーは testnet.binancefuture.com で別途発行（現物テストネットとは別）。",
+    "futOffHint": "オフ：先物注文はすべて拒否（先物ボットは発注しない）、資産は現物のみ。",
     "s1": "環境",
     "s2": "空欄＝現在の設定を維持",
     "s3": "発注モード",

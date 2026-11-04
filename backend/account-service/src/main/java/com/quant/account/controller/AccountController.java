@@ -19,12 +19,13 @@ public class AccountController {
     private final SseHub sseHub;
     private final BinanceAccountService binanceAccount;
     private final WalletService wallet;
+    private final FuturesAccountService futures;
 
     public AccountController(PositionStore positions, EquityCurveService equity,
                             FundingService funding, SseHub sseHub, BinanceAccountService binanceAccount,
-                            WalletService wallet) {
+                            WalletService wallet, FuturesAccountService futures) {
         this.positions = positions; this.equity = equity; this.funding = funding; this.sseHub = sseHub;
-        this.binanceAccount = binanceAccount; this.wallet = wallet;
+        this.binanceAccount = binanceAccount; this.wallet = wallet; this.futures = futures;
     }
 
     @GetMapping("/balance")
@@ -66,13 +67,20 @@ public class AccountController {
 
     /** 目前連線設定：GET /api/account/config */
     @GetMapping("/config")
-    public ApiResponse<Map<String, Object>> getConfig() { return ApiResponse.ok(binanceAccount.configStatus()); }
+    public ApiResponse<Map<String, Object>> getConfig() { return ApiResponse.ok(configStatus()); }
+
+    private Map<String, Object> configStatus() {
+        Map<String, Object> m = new java.util.LinkedHashMap<>(binanceAccount.configStatus());
+        m.put("futuresKeySet", futures.keySet()); m.put("futuresEnabled", futures.enabled());
+        return m;
+    }
 
     /** 套用連線設定：POST /api/account/config { env, apiKey, apiSecret } */
     @PostMapping("/config")
-    public ApiResponse<Map<String, Object>> setConfig(@RequestBody Map<String, String> body) {
+    public ApiResponse<Map<String, Object>> setConfig(@RequestBody Map<String, String> body) {   // futuresEnabled 由下單服務寫 Redis
         boolean envChanged = binanceAccount.applyConfig(body.get("env"), body.get("apiKey"), body.get("apiSecret"));
+        futures.applyConfig(body.get("futuresApiKey"), body.get("futuresApiSecret"));   // 套到（新的）目前 env
         if (envChanged) equity.rebaseForEnvSwitch(String.valueOf(body.get("env")));
-        return ApiResponse.ok(binanceAccount.configStatus());
+        return ApiResponse.ok(configStatus());
     }
 }

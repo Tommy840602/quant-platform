@@ -41,13 +41,16 @@ public class ConfigController {
     @GetMapping
     public ApiResponse<Map<String, Object>> get() { return ApiResponse.ok(gateway.configStatus()); }
 
-    /** 套用設定：POST /api/order/config { env, dryRun, apiKey, apiSecret } */
+    /** 套用設定：POST /api/order/config { env, dryRun, apiKey, apiSecret, futuresApiKey, futuresApiSecret, futuresEnabled } */
     @PostMapping
     public ApiResponse<Map<String, Object>> set(@RequestBody Map<String, Object> body) {
         String env = body.get("env") == null ? null : String.valueOf(body.get("env"));
         Boolean dry = body.get("dryRun") == null ? null : Boolean.valueOf(String.valueOf(body.get("dryRun")));
         String key = body.get("apiKey") == null ? null : String.valueOf(body.get("apiKey"));
         String sec = body.get("apiSecret") == null ? null : String.valueOf(body.get("apiSecret"));
-        return ApiResponse.ok(gateway.applyConfig(env, dry, key, sec));
+        String fk = body.get("futuresApiKey") == null ? null : String.valueOf(body.get("futuresApiKey"));
+        String fs = body.get("futuresApiSecret") == null ? null : String.valueOf(body.get("futuresApiSecret"));
+        Boolean fe = body.get("futuresEnabled") == null ? null : Boolean.valueOf(String.valueOf(body.get("futuresEnabled")));
+        return ApiResponse.ok(gateway.applyConfig(env, dry, key, sec, fk, fs, fe));
     }
 }
