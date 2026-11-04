@@ -111,7 +111,7 @@ public class BinanceOrderGateway {
     @Value("${binance.mainnet-futures-api-secret:}") private String futMainnetSecret;
 
     // 合約 User Data Stream（listenKey 版，合約仍支援）
-    @Value("${binance.futures-ws-url:wss://stream.binancefuture.com}") private String futWsUrl;
+    @Value("${binance.futures-ws-url:wss://fstream.binancefuture.com}") private String futWsUrl;
     @Value("${binance.mainnet-futures-ws-url:wss://fstream.binance.com}") private String futMainnetWsUrl;
 
     private String testnetSpotUrl, testnetFutUrl, testnetFutWsUrl;   // 保留測試網位址以便切回
