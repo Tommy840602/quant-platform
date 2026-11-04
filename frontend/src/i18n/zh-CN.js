@@ -644,5 +644,19 @@ export default {
       "INSUFFICIENT": "样本不足"
     },
     "hint": "PBO：样本内最好的组合到样本外掉到中位数以下的比例（> 50% 比乱挑还差）。DSR：扣掉「试了很多组」的运气后，真实 Sharpe > 0 的概率。Walk-forward：用前一段挑参数、下一段验证，效率 = 样本外 ÷ 样本内。建出来的机器人会先进模拟盘。"
+  },
+  "parity": {
+    "apply": "套用机器人风控（与实盘相同）",
+    "defaults": "默认风控参数",
+    "fromBot": "沿用 {id} 的风控参数",
+    "sizing": "每单 = 权益 {pct}%（实盘权益 {eq} USDT）",
+    "costs": "成本：手续费 {fee}% · 滑点 {bps} bps",
+    "measured": "实测 {n} 笔",
+    "defaultSlip": "默认（尚无实测）",
+    "trips": "来回 {n} 笔 · 胜率 {w}%",
+    "exits": "出场",
+    "blocked": "被挡进场",
+    "paused": "⚠ 熔断：{why}，之后不再进场",
+    "notApplied": "未套用风控（只看策略信号）"
   }
 }

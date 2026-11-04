@@ -33,33 +33,49 @@ public class BacktestContext implements StrategyContext {
         this.cash = initialCash; this.fee = fee; this.slippage = slippage; this.posFraction = posFraction;
     }
 
+    private final Map<String, Double> entryPx = new HashMap<>();
+
     @Override
-    public void submit(OrderIntent intent) {
+    public void submit(OrderIntent intent) { submitAt(intent, prices.getOrDefault(intent.symbol(), 0.0), 0); }
+
+    /**
+     * 以指定價格成交（停損 / 停利在 K 線內觸價時用觸發價，而不是收盤價）。
+     * qtyOverride &gt; 0：買進數量由外部決定（每單名目比例 / 波動率目標），受可用現金限制；0 = 用 posFraction。
+     * @return 成交紀錄；沒成交回 null
+     */
+    public Trade submitAt(OrderIntent intent, double px, double qtyOverride) {
         String sym = intent.symbol();
-        double px = prices.getOrDefault(sym, 0.0);
-        if (px <= 0) return;
+        if (px <= 0) return null;
         boolean buy = intent.side() == OrderSide.BUY;
         double fillPx = px * (1 + (buy ? slippage : -slippage));
         double pos = positions.getOrDefault(sym, 0.0);
 
         double qty;
         if (buy) {
-            if (pos > 0) return;                       // 已持有,不重複進場
-            double notional = cash * posFraction;      // 以比例現金買進
+            if (pos > 0) return null;                  // 已持有,不重複進場
+            double notional = qtyOverride > 0 ? Math.min(qtyOverride * fillPx, cash / (1 + fee)) : cash * posFraction;
             qty = notional / fillPx;
-            if (qty <= 0) return;
+            if (qty <= 0 || notional <= 0) return null;
             cash -= notional + notional * fee;
             positions.merge(sym, qty, Double::sum);
+            entryPx.put(sym, fillPx);
         } else {
-            if (pos <= 0) return;                       // 無部位可賣
+            if (pos <= 0) return null;                  // 無部位可賣
             qty = pos;                                  // 清倉
             double notional = qty * fillPx;
             cash += notional - notional * fee;
             positions.put(sym, 0.0);
+            entryPx.remove(sym);
         }
         trades++; filledQty += qty; filledNotional += qty * fillPx;
-        tradeLog.add(new Trade(barTime, sym, intent.side(), qty, fillPx));
+        Trade t = new Trade(barTime, sym, intent.side(), qty, fillPx);
+        tradeLog.add(t);
+        return t;
     }
+
+    /** 目前持倉的進場成交價（含滑價）；空手回 0。 */
+    public double entry(String symbol) { return entryPx.getOrDefault(symbol, 0.0); }
+    public double fee() { return fee; }
 
     public void setBarTime(long t) { this.barTime = t; }
     public java.util.List<Trade> tradeLog() { return tradeLog; }

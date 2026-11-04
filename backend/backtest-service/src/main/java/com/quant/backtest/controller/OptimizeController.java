@@ -19,7 +19,8 @@ import java.util.*;
 public class OptimizeController {
 
     private final BarSource source;
-    public OptimizeController(BarSource source) { this.source = source; }
+    private final com.quant.backtest.service.CostModel costs;
+    public OptimizeController(BarSource source, com.quant.backtest.service.CostModel costs) { this.source = source; this.costs = costs; }
 
     /**
      * 網格搜尋：POST /api/backtest/optimize
@@ -38,9 +39,12 @@ public class OptimizeController {
         List<Map<String, Object>> combos = expandGrid(req.grid);
         List<double[]> rets = new ArrayList<>();
         double barsPerYear = 1;
+        var cost = costs.resolve(req.symbol, req.fee, req.slippage, req.costModel);
+        var spec = Boolean.FALSE.equals(req.applyRisk) ? null
+                : new BacktestEngine.RiskSpec(req.type, req.risk, req.notionalPct, req.liveEquity);
         for (Map<String, Object> params : combos) {
-            var engine = new BacktestEngine(10000, 0.0004, 0.0002);
-            var r = engine.run(bars, StrategyFactory.build(req.type, "opt", withQty(params)));
+            var engine = new BacktestEngine(10000, cost.fee(), cost.slippage());
+            var r = engine.run(bars, StrategyFactory.build(req.type, "opt", withQty(params)), spec);
             double[] rr = Robustness.returns(r.equity());
             rets.add(rr);
             Object bpy = r.metrics().get("bars_per_year");
@@ -73,6 +77,8 @@ public class OptimizeController {
         out.put("combinations", results.size());
         out.put("best", results.isEmpty() ? Map.of() : results.get(0));
         out.put("robustness", robust);
+        out.put("costs", cost.toMap());
+        out.put("riskApplied", spec != null);
         out.put("results", results.subList(0, Math.min(results.size(), 50)));
         return ApiResponse.ok(out);
     }
@@ -95,7 +101,7 @@ public class OptimizeController {
 
         List<Map<String, Object>> members = new ArrayList<>();
         for (PortMember m : req.members) {
-            var engine = new BacktestEngine(10000, 0.0004, 0.0002);
+            var engine = new BacktestEngine(10000, 0.001, 0.0002);
             var r = engine.run(bars, StrategyFactory.build(m.type, "pf", withQty(m.params)));
             double w = m.weight / totalW;
             for (int i = 0; i < n && i < r.equity().size(); i++) combined[i] += r.equity().get(i) * w;
@@ -148,7 +154,11 @@ public class OptimizeController {
     }
     private double round(double d) { return Math.round(d * 10000.0) / 10000.0; }
 
-    public static class OptReq { public String type; public String symbol; public String interval; public int bars; public List<Double> closes; public Map<String, List<Object>> grid; }
+    public static class OptReq {
+        public String type; public String symbol; public String interval; public int bars; public List<Double> closes; public Map<String, List<Object>> grid;
+        public Boolean applyRisk; public Map<String, Object> risk; public double notionalPct; public double liveEquity;
+        public String costModel; public double fee; public double slippage;
+    }
     public static class PortReq { public String symbol; public String interval; public int bars; public List<Double> closes; public List<PortMember> members = new ArrayList<>(); }
     public static class PortMember { public String type; public double weight = 1; public Map<String, Object> params; }
 }

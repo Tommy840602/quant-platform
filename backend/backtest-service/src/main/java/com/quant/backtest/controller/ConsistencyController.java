@@ -69,7 +69,7 @@ public class ConsistencyController {
         var params = new HashMap<String, Object>();
         params.put("fast", fast); params.put("slow", slow); params.put("qty", 0.001);
         if (query != null) query.forEach((k, v) -> { if (!Set.of("strategyId","symbol","interval","fast","slow","type","warmupBars","toleranceBars").contains(k)) params.put(k, parse(v)); });
-        var result = new BacktestEngine(10000, 0.0004, 0.0002).run(data.bars(), StrategyFactory.build(type, strategyId, params));
+        var result = new BacktestEngine(10000, 0.001, 0.0002).run(data.bars(), StrategyFactory.build(type, strategyId, params));
 
         // 3) 逐筆配對
         out.putAll(ConsistencyScorer.score(live, result.tradeLog(), step, toleranceBars));

@@ -130,8 +130,8 @@ class BotRiskManagerTest {
         for (int i = 0; i < 40; i++) m.onKline(bar("UP", 100 + i + 0.6, 100 + i - 0.4, 100 + i + 0.5, true));
         // FLAT：來回震盪 → ADX 低 → 盤整盤
         for (int i = 0; i < 40; i++) { double c = 100 + (i % 2 == 0 ? 0.5 : -0.5); m.onKline(bar("FLAT", c + 0.5, c - 0.5, c, true)); }
-        assertEquals(BotRiskManager.Regime.TREND, m.regime("UP"), "ADX=" + m.adx("UP"));
-        assertEquals(BotRiskManager.Regime.RANGE, m.regime("FLAT"), "ADX=" + m.adx("FLAT"));
+        assertEquals(com.quant.common.risk.RiskRules.Regime.TREND, m.regime("UP"), "ADX=" + m.adx("UP"));
+        assertEquals(com.quant.common.risk.RiskRules.Regime.RANGE, m.regime("FLAT"), "ADX=" + m.adx("FLAT"));
         assertNull(m.regimeBlock("t", "UP"));
         assertNotNull(m.regimeBlock("t", "FLAT"), "趨勢策略在盤整盤不進場");
         assertNotNull(m.regimeBlock("r", "UP"), "均值回歸策略在趨勢盤不進場");

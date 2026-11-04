@@ -18,7 +18,29 @@
             <el-button :loading="loading" @click="runOptimize">{{ t('backtest.s9') }}</el-button>
           </div>
         </div>
+        <div class="parity">
+          <el-checkbox v-model="applyRisk">{{ t('parity.apply') }}</el-checkbox>
+          <template v-if="applyRisk">
+            <el-select v-model="riskFrom" size="small" style="width:200px" :placeholder="t('parity.defaults')">
+              <el-option :label="t('parity.defaults')" value="" />
+              <el-option v-for="b in bots" :key="b.id" :label="t('parity.fromBot', { id: b.id })" :value="b.id" />
+            </el-select>
+            <span class="hint">{{ t('parity.sizing', { pct: notionalPct ? notionalPct.toFixed(1) : '95', eq: liveEquity ? liveEquity.toFixed(2) : '—' }) }}</span>
+          </template>
+        </div>
       </template>
+      <div v-if="lastCosts || lastRisk" class="parity-result">
+        <span v-if="lastCosts">{{ t('parity.costs', { fee: (lastCosts.feeRate * 100).toFixed(2), bps: lastCosts.slippageBps }) }}
+          <el-tag size="small" :type="lastCosts.slippageSource === '實測' ? 'success' : 'info'" effect="plain">{{ lastCosts.slippageSource === '實測' ? t('parity.measured', { n: lastCosts.samples }) : t('parity.defaultSlip') }}</el-tag>
+        </span>
+        <template v-if="lastRisk && lastRisk.applied">
+          <span>{{ t('parity.trips', { n: lastRisk.roundTrips, w: lastRisk.winRate ?? '—' }) }}</span>
+          <span v-if="Object.keys(lastRisk.exits || {}).length">{{ t('parity.exits') }}：<template v-for="(n, k) in lastRisk.exits" :key="k">{{ k }} {{ n }}　</template></span>
+          <span v-if="Object.keys(lastRisk.blocked || {}).length" style="color:#e6a23c">{{ t('parity.blocked') }}：<template v-for="(n, k) in lastRisk.blocked" :key="k">{{ k }} {{ n }}　</template></span>
+          <span v-if="lastRisk.pausedReason" style="color:#f56c6c">{{ t('parity.paused', { why: lastRisk.pausedReason }) }}</span>
+        </template>
+        <span v-else-if="lastRisk" class="hint">{{ t('parity.notApplied') }}</span>
+      </div>
       <el-row :gutter="16">
         <el-col :span="4" v-for="m in metricCards" :key="m.label">
           <div class="metric">
@@ -78,7 +100,7 @@ const { t } = useI18n()
 import { computed, onMounted, ref } from 'vue'
 import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
-import { researchApi, backtestApi, marketApi, strategyApi } from '@/api'
+import { researchApi, backtestApi, marketApi, strategyApi, accountApi } from '@/api'
 import { STRATEGY_TYPES } from '@/config/strategies'
 import { SYMBOLS } from '@/config/symbols'
 
@@ -110,6 +132,21 @@ const result = ref(null)
 const source = ref(t('backtest.s14'))
 let chartInst = null
 
+// ── 與實盤一致：同一套風控、同樣的下單比例、實測成本 ──
+const applyRisk = ref(true), riskFrom = ref(''), bots = ref([])
+const liveNotional = ref(0), liveEquity = ref(0)
+const notionalPct = computed(() => liveNotional.value > 0 && liveEquity.value > 0 ? liveNotional.value / liveEquity.value * 100 : 0)
+const lastCosts = ref(null), lastRisk = ref(null)
+async function loadParity() {
+  try { bots.value = (await strategyApi.list()).data || [] } catch {}
+  try { liveNotional.value = Number((await strategyApi.getOrderNotional()).data) || 0 } catch {}
+  try { liveEquity.value = Number((await accountApi.balance()).data?.totalUsdt) || 0 } catch {}
+}
+function parityBody() {
+  if (!applyRisk.value) return { applyRisk: false }
+  const b = bots.value.find(x => x.id === riskFrom.value)
+  return { applyRisk: true, risk: b?.risk?.params || undefined, notionalPct: notionalPct.value, liveEquity: liveEquity.value }
+}
 const metricCards = computed(() => {
   const m = result.value?.metrics || {}
   const f = (v, isPct) => v == null ? '—' : (isPct ? (v * 100).toFixed(2) + '%' : v)
@@ -145,7 +182,8 @@ function gridFor(type) {
 async function runOptimize() {
   loading.value = true; optBest.value = ''; robust.value = null
   try {
-    const resp = await backtestApi.optimize({ type: btType.value, symbol: btSymbol.value, interval: btInterval.value, bars: btBars.value, grid: gridFor(btType.value) })
+    const resp = await backtestApi.optimize({ type: btType.value, symbol: btSymbol.value, interval: btInterval.value, bars: btBars.value, grid: gridFor(btType.value), ...parityBody() })
+    lastCosts.value = resp.data?.costs || null; lastRisk.value = resp.data?.riskApplied === false ? { applied: false } : null
     const d = resp.data; const b = d.best
     bestParams.value = paramsOnly(b)
     robust.value = d.robustness || null
@@ -158,7 +196,8 @@ async function runJava() {
   loading.value = true
   try {
     // 後端直接用 market-data 的真實 OHLCV（TimescaleDB），不再由前端抓收盤價送過去
-    const resp = await backtestApi.run({ symbol: btSymbol.value, interval: btInterval.value, bars: btBars.value, fast: 3, slow: 8, type: btType.value })
+    const resp = await backtestApi.run({ symbol: btSymbol.value, interval: btInterval.value, bars: btBars.value, fast: 3, slow: 8, type: btType.value, ...parityBody() })
+    lastCosts.value = resp.data?.costs || null; lastRisk.value = resp.data?.risk || null
     if (resp.code && resp.code !== 0) throw new Error(resp.message)
     result.value = resp.data
     source.value = t('backtest.s22') + (resp.data.dataSource || '') + ' · ' + resp.data.bars + t('backtest.s23')
@@ -198,7 +237,7 @@ function draw() {
     ]
   })
 }
-onMounted(() => { chartInst = echarts.init(chart.value) })
+onMounted(() => { chartInst = echarts.init(chart.value); loadParity() })
 </script>
 
 <style scoped>
@@ -209,4 +248,7 @@ onMounted(() => { chartInst = echarts.init(chart.value) })
 .robust{margin-top:12px;padding:12px;border:1px solid var(--el-border-color-lighter);border-radius:8px}
 .robust-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .reasons{margin:8px 0 0;padding-left:18px;font-size:13px;line-height:1.7}
+/* parity */
+.parity{display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap}
+.parity-result{display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:13px;margin-bottom:10px}
 </style>

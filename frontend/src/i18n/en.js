@@ -644,5 +644,19 @@ export default {
       "INSUFFICIENT": "Not enough data"
     },
     "hint": "PBO: how often the in-sample winner ranks below median out of sample (> 50% is worse than picking at random). DSR: probability the true Sharpe > 0 after accounting for how many sets were tried. Walk-forward: pick on one window, test on the next; efficiency = OOS ÷ IS. New bots start in Paper."
+  },
+  "parity": {
+    "apply": "Apply bot risk rules (same as live)",
+    "defaults": "Default risk params",
+    "fromBot": "Use {id}'s risk params",
+    "sizing": "Each order = {pct}% of equity (live equity {eq} USDT)",
+    "costs": "Costs: fee {fee}% · slippage {bps} bps",
+    "measured": "measured, {n} fills",
+    "defaultSlip": "default (no live data yet)",
+    "trips": "{n} round trips · win rate {w}%",
+    "exits": "Exits",
+    "blocked": "Entries blocked",
+    "paused": "⚠ Breaker: {why}; no entries afterwards",
+    "notApplied": "Risk rules not applied (signals only)"
   }
 }

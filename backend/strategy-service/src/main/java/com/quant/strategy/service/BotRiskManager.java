@@ -2,6 +2,8 @@ package com.quant.strategy.service;
 
 import com.quant.common.dto.Kline;
 import com.quant.common.dto.OrderIntent;
+import com.quant.common.risk.BarStats;
+import com.quant.common.risk.RiskRules;
 import com.quant.strategy.core.StrategyContextImpl;
 import com.quant.strategy.position.StrategyPositionBook;
 import org.slf4j.Logger;
@@ -33,37 +35,22 @@ public class BotRiskManager implements StrategyContextImpl.BuyRouter {
 
     private static final Logger log = LoggerFactory.getLogger(BotRiskManager.class);
     static final long RANK_WINDOW_MS = 2000;
-    static final int ATR_N = 14, MOM_N = 10, HIST = 60;
-    static final double FALLBACK_STOP_PCT = 2.0;   // ATR 還沒算出來（暖機）時的停損 %
+    static final double FALLBACK_STOP_PCT = RiskRules.FALLBACK_STOP_PCT;
+    static final double HIGH_VOL_RATIO = RiskRules.HIGH_VOL_RATIO;
+    /** 風控參數鍵與預設值（共用 {@link RiskRules#DEFAULTS}） */
+    public static final Map<String, Double> DEFAULTS = RiskRules.DEFAULTS;
+    public static String family(String type) { return RiskRules.family(type); }
+    public static boolean isRiskKey(String k) { return RiskRules.isRiskKey(k); }
 
-    /** 風控參數鍵與預設值（0 = 關閉該項） */
-    public static final Map<String, Double> DEFAULTS = new LinkedHashMap<>();
-    static {
-        DEFAULTS.put("stopAtr", 2.0);          // 停損 = 進場價 − k × ATR
-        DEFAULTS.put("trailAtr", 3.0);         // 移動停利 = 進場後最高價 − k × ATR（獲利後才啟動）
-        DEFAULTS.put("takeProfitPct", 0.0);    // 固定停利 %
-        DEFAULTS.put("maxPositions", 3.0);     // 同時持倉上限（ALL 標的機器人才有意義）
-        DEFAULTS.put("maxConsecLosses", 3.0);  // 連虧幾筆暫停
-        DEFAULTS.put("maxLossUsdt", 3.0);      // 本次上線虧損上限（USDT）
-        DEFAULTS.put("cooldownBars", 5.0);     // 出場後冷卻幾根收盤 K
-        DEFAULTS.put("regimeFilter", 1.0);     // 1 = 依盤勢過濾進場
-        DEFAULTS.put("blockHighVol", 1.0);     // 1 = 異常高波動時不進場
-        DEFAULTS.put("riskPerTradePct", 0.0);  // 波動率目標下單量：每筆最多虧權益 N%（以停損距離反推數量）；0 = 用每單名目
-        DEFAULTS.put("sizeCapPct", 25.0);      // 單筆名目上限 = 權益 N%（波動很小時避免一次壓太重）
+    /** 重啟要保住的狀態（移動停利的最高價、熔斷暫停）由 runner 注入的 store 落庫。 */
+    public interface StateStore {
+        void savePeak(String id, String symbol, double peak);
+        void deletePeak(String id, String symbol);
+        void savePaused(String id, String reasonOrNull);
     }
-
-    // ── 盤勢 ──
-    public enum Regime { TREND, RANGE, MIXED, UNKNOWN }
-    static final double ADX_TREND = 25, ADX_RANGE = 20, HIGH_VOL_RATIO = 2.5;
-    static final Set<String> TREND_TYPES = Set.of("ma", "ema", "wma", "tema", "macd", "trix", "adx", "supertrend", "sar",
-            "ichimoku", "donchian", "bollbreak", "keltner", "atr", "volbreak", "dualthrust", "momentum", "roc", "aroon", "heikin");
-    static final Set<String> MEANREV_TYPES = Set.of("rsi", "grid", "cci", "williams", "stochrsi", "boll", "kdj", "zscore", "vwap");
-    /** 策略家族：trend / meanrev / any */
-    public static String family(String type) {
-        String t = type == null ? "" : type.toLowerCase();
-        return TREND_TYPES.contains(t) ? "trend" : MEANREV_TYPES.contains(t) ? "meanrev" : "any";
-    }
-    public static boolean isRiskKey(String k) { return DEFAULTS.containsKey(k); }
+    private volatile StateStore store;
+    public void setStore(StateStore s) { this.store = s; }
+    private final Map<String, Double> savedPeak = new ConcurrentHashMap<>();
 
     private final StrategyPositionBook book;
     private final NotifyClient notify;
@@ -81,9 +68,8 @@ public class BotRiskManager implements StrategyContextImpl.BuyRouter {
     public void setBandit(BanditAllocator b) { this.bandit = b; }
     private final Map<String, Double> prices;
 
-    // 每個標的的已收盤 K 歷史（ATR / 動能）
-    private final Map<String, Deque<double[]>> bars = new ConcurrentHashMap<>();   // [high, low, close]
-    private final Map<String, Long> closedCount = new ConcurrentHashMap<>();         // symbol -> 收盤根數（冷卻計時）
+    // 每個標的的已收盤 K 歷史（ATR / ADX / 動能），計算與回測共用 common.risk.BarStats
+    private final Map<String, BarStats> bars = new ConcurrentHashMap<>();
     // 每機器人狀態
     private final Map<String, Map<String, Double>> peak = new ConcurrentHashMap<>(); // id -> symbol -> 進場後最高價
     private final Map<String, Map<String, Long>> cooldownUntil = new ConcurrentHashMap<>();
@@ -115,105 +101,33 @@ public class BotRiskManager implements StrategyContextImpl.BuyRouter {
         if (livePrices != null && livePrices != this.prices) this.prices.putAll(livePrices);
     }
 
-    public double p(String id, String key) {
-        Map<String, Object> m = params.apply(id);
-        Object v = m == null ? null : m.get(key);
-        if (v instanceof Number n) return n.doubleValue();
-        if (v instanceof String s) try { return Double.parseDouble(s); } catch (NumberFormatException ignore) {}
-        return DEFAULTS.getOrDefault(key, 0.0);
-    }
+    public double p(String id, String key) { return RiskRules.param(params.apply(id), key); }
+    private Map<String, Object> pm(String id) { Map<String, Object> m = params.apply(id); return m == null ? Map.of() : m; }
+    private BarStats st(String symbol) { return bars.getOrDefault(symbol, EMPTY); }
+    private static final BarStats EMPTY = new BarStats();
+    private long closedCount(String symbol) { return st(symbol).closedCount(); }
 
     // ── 行情 ──
     /** 每根 K（含未收盤 tick）呼叫一次；收盤的才進歷史。 */
     public void onKline(Kline k) {
         prices.put(k.symbol(), k.close());
         if (!k.closed()) return;
-        Deque<double[]> d = bars.computeIfAbsent(k.symbol(), s -> new ConcurrentLinkedDeque<>());
-        d.addLast(new double[]{k.high(), k.low(), k.close()});
-        while (d.size() > HIST) d.removeFirst();
-        closedCount.merge(k.symbol(), 1L, Long::sum);
+        bars.computeIfAbsent(k.symbol(), x -> new BarStats()).add(k.high(), k.low(), k.close());
     }
 
-    public double atr(String symbol) {
-        Deque<double[]> d = bars.get(symbol);
-        if (d == null || d.size() < ATR_N + 1) return 0;
-        List<double[]> l = new ArrayList<>(d);
-        double sum = 0;
-        for (int i = l.size() - ATR_N; i < l.size(); i++) {
-            double[] c = l.get(i), prev = l.get(i - 1);
-            sum += Math.max(c[0] - c[1], Math.max(Math.abs(c[0] - prev[2]), Math.abs(c[1] - prev[2])));
-        }
-        return sum / ATR_N;
-    }
-
-    /** 排名分數：近 MOM_N 根的漲幅 ÷ ATR（跨幣可比）。資料不足 = 0。 */
-    public double score(String symbol) {
-        Deque<double[]> d = bars.get(symbol);
-        double a = atr(symbol);
-        if (d == null || d.size() <= MOM_N || a <= 0) return 0;
-        List<double[]> l = new ArrayList<>(d);
-        return (l.get(l.size() - 1)[2] - l.get(l.size() - 1 - MOM_N)[2]) / a;
-    }
+    public double atr(String symbol) { return st(symbol).atr(); }
+    /** 排名分數：近 10 根漲幅 ÷ ATR（跨幣可比）。 */
+    public double score(String symbol) { return st(symbol).score(); }
+    public double adx(String symbol) { return st(symbol).adx(); }
+    public double volRatio(String symbol) { return st(symbol).volRatio(); }
+    public RiskRules.Regime regime(String symbol) { return st(symbol).regime(); }
 
     /**
-     * 波動率目標下單量：每筆最多虧「權益 × riskPerTradePct%」。停損距離 = stopAtr × ATR（ATR 未就緒用 2%），
-     * 數量 = 風險預算 ÷ 停損距離 → 波動大的幣自動少買、波動小的多買；單筆名目上限 = 權益 × sizeCapPct%。
+     * 波動率目標下單量：每筆最多虧「權益 × riskPerTradePct%」，數量 = 風險預算 ÷ 停損距離；上限 = 權益 × sizeCapPct%。
      * 回 0 = 未啟用（沿用每單名目）。最低 5 USDT 的夾值在 context 做。
      */
     public double sizeQty(String id, String sym, double px) {
-        double pct = p(id, "riskPerTradePct"), eq = equity.getAsDouble();
-        if (pct <= 0 || eq <= 0 || px <= 0) return 0;
-        double a = atr(sym), k = p(id, "stopAtr");
-        double dist = k > 0 && a > 0 ? k * a : px * FALLBACK_STOP_PCT / 100;
-        double qty = eq * pct / 100 / dist;
-        double capPct = p(id, "sizeCapPct");
-        if (capPct > 0) qty = Math.min(qty, eq * capPct / 100 / px);
-        return qty;
-    }
-
-    /** Wilder ADX(14)。資料不足回 -1。 */
-    public double adx(String symbol) {
-        Deque<double[]> d = bars.get(symbol);
-        int n = ATR_N;
-        if (d == null || d.size() < 2 * n + 1) return -1;
-        List<double[]> l = new ArrayList<>(d);
-        double tr = 0, pdm = 0, mdm = 0, adx = 0; int dxCount = 0;
-        for (int i = 1; i < l.size(); i++) {
-            double[] c = l.get(i), p = l.get(i - 1);
-            double t = Math.max(c[0] - c[1], Math.max(Math.abs(c[0] - p[2]), Math.abs(c[1] - p[2])));
-            double up = c[0] - p[0], dn = p[1] - c[1];
-            double pd = up > dn && up > 0 ? up : 0, md = dn > up && dn > 0 ? dn : 0;
-            if (i <= n) { tr += t; pdm += pd; mdm += md; if (i < n) continue; }
-            else { tr = tr - tr / n + t; pdm = pdm - pdm / n + pd; mdm = mdm - mdm / n + md; }
-            double pdi = tr > 0 ? 100 * pdm / tr : 0, mdi = tr > 0 ? 100 * mdm / tr : 0;
-            double dx = pdi + mdi > 0 ? 100 * Math.abs(pdi - mdi) / (pdi + mdi) : 0;
-            if (dxCount < n) { adx += dx; dxCount++; if (dxCount == n) adx /= n; }
-            else adx = (adx * (n - 1) + dx) / n;
-        }
-        return dxCount < n ? -1 : adx;
-    }
-
-    /** 近 14 根平均 TR% ÷ 整段 TR% 中位數。>2.5 視為異常高波動。資料不足回 0。 */
-    public double volRatio(String symbol) {
-        Deque<double[]> d = bars.get(symbol);
-        if (d == null || d.size() < 30) return 0;
-        List<double[]> l = new ArrayList<>(d);
-        List<Double> trp = new ArrayList<>();
-        for (int i = 1; i < l.size(); i++) {
-            double[] c = l.get(i), p = l.get(i - 1);
-            double t = Math.max(c[0] - c[1], Math.max(Math.abs(c[0] - p[2]), Math.abs(c[1] - p[2])));
-            trp.add(p[2] > 0 ? t / p[2] : 0);
-        }
-        List<Double> sorted = new ArrayList<>(trp); Collections.sort(sorted);
-        double med = sorted.get(sorted.size() / 2);
-        double recent = trp.subList(trp.size() - ATR_N, trp.size()).stream().mapToDouble(Double::doubleValue).average().orElse(0);
-        return med > 0 ? recent / med : 0;
-    }
-
-    public Regime regime(String symbol) {
-        double a = adx(symbol);
-        if (a < 0) return Regime.UNKNOWN;
-        return a >= ADX_TREND ? Regime.TREND : a <= ADX_RANGE ? Regime.RANGE : Regime.MIXED;
+        return RiskRules.sizeQty(equity.getAsDouble(), px, atr(sym), pm(id));
     }
 
     /** 給 UI：每個標的的盤勢。 */
@@ -232,16 +146,7 @@ public class BotRiskManager implements StrategyContextImpl.BuyRouter {
     }
 
     /** 盤勢不適合這個機器人進場時回原因，否則 null。 */
-    String regimeBlock(String id, String sym) {
-        if (p(id, "blockHighVol") > 0 && volRatio(sym) >= HIGH_VOL_RATIO)
-            return String.format("異常高波動（%.1f×），暫不進場", volRatio(sym));
-        if (p(id, "regimeFilter") <= 0) return null;
-        String fam = family(typeOf.apply(id));
-        Regime r = regime(sym);
-        if ("trend".equals(fam) && r == Regime.RANGE) return "盤整盤（ADX " + Math.round(adx(sym)) + "），趨勢策略不進場";
-        if ("meanrev".equals(fam) && r == Regime.TREND) return "趨勢盤（ADX " + Math.round(adx(sym)) + "），均值回歸策略不進場";
-        return null;
-    }
+    String regimeBlock(String id, String sym) { return RiskRules.regimeBlock(typeOf.apply(id), st(sym), pm(id)); }
 
     // ── 1. 出場 ──
     /** 對運行中的機器人逐 tick 檢查停損 / 移動停利 / 停利。暫停中的機器人也照樣檢查。 */
@@ -251,36 +156,50 @@ public class BotRiskManager implements StrategyContextImpl.BuyRouter {
         if (!paper && !book.isReconciled()) return;
         String sym = k.symbol();
         double q = ctx.position(sym);
-        if (q <= 1e-12) { Map<String, Double> pk = peak.get(id); if (pk != null) pk.remove(sym); return; }
+        if (q <= 1e-12) { Map<String, Double> pk = peak.get(id); if (pk != null && pk.remove(sym) != null) dropPeak(id, sym); return; }
         if (ctx.pending(sym)) return;
         double px = k.close();
         double entry = ctx.entry(sym);
         if (entry <= 0) { if (!paper) book.seedCost(id, sym, px); entry = px; }
         double hi = peak.computeIfAbsent(id, x -> new ConcurrentHashMap<>()).merge(sym, Math.max(k.high(), px), Math::max);
+        persistPeak(id, sym, hi);
         String why = exitReason(id, sym, px, entry, hi);
         if (why == null) return;
         ctx.exit(sym, why);
-        peak.get(id).remove(sym);
+        peak.get(id).remove(sym); dropPeak(id, sym);
         cooldownUntil.computeIfAbsent(id, x -> new ConcurrentHashMap<>())
-                .put(sym, closedCount.getOrDefault(sym, 0L) + (long) p(id, "cooldownBars"));
+                .put(sym, closedCount(sym) + (long) p(id, "cooldownBars"));
         send(String.format(":octagonal_sign: [%s]%s %s %s出場 @ %s（進場 %s，%+.2f%%）", names.apply(id), paper ? "（模擬）" : "",
                 sym, why, fmt(px), fmt(entry), (px / entry - 1) * 100));
     }
 
     /** 回傳觸發的出場原因，未觸發回 null。 */
     String exitReason(String id, String sym, double px, double entry, double hi) {
-        double a = atr(sym);
-        double stopK = p(id, "stopAtr"), trailK = p(id, "trailAtr"), tp = p(id, "takeProfitPct");
-        if (stopK > 0) {
-            double stop = a > 0 ? entry - stopK * a : entry * (1 - FALLBACK_STOP_PCT / 100);
-            if (px <= stop) return "停損";
+        return RiskRules.exitReason(px, entry, hi, atr(sym), pm(id));
+    }
+
+    /** 最高價漲超過 0.05% 才寫一次，避免每個 tick 打 DB。 */
+    private void persistPeak(String id, String sym, double hi) {
+        StateStore s = store; if (s == null) return;
+        String key = id + "|" + sym; Double last = savedPeak.get(key);
+        if (last != null && hi <= last * 1.0005) return;
+        savedPeak.put(key, hi);
+        try { s.savePeak(id, sym, hi); } catch (Exception e) { log.debug("peak 寫入失敗: {}", e.getMessage()); }
+    }
+    private void dropPeak(String id, String sym) {
+        savedPeak.remove(id + "|" + sym);
+        StateStore s = store; if (s != null) try { s.deletePeak(id, sym); } catch (Exception e) { log.debug("peak 刪除失敗: {}", e.getMessage()); }
+    }
+
+    /** 重啟後還原：熔斷狀態、本次已實現損益、連虧筆數、各持倉的最高價。 */
+    public void restore(String id, String pausedReason, double realizedSinceStart, int consec, Map<String, Double> peaks) {
+        if (pausedReason != null && !pausedReason.isBlank()) paused.put(id, pausedReason);
+        if (realizedSinceStart != 0) realized.put(id, realizedSinceStart);
+        if (consec > 0) consecLosses.put(id, consec);
+        if (peaks != null && !peaks.isEmpty()) {
+            peak.computeIfAbsent(id, x -> new ConcurrentHashMap<>()).putAll(peaks);
+            peaks.forEach((sym, v) -> savedPeak.put(id + "|" + sym, v));
         }
-        if (trailK > 0 && a > 0 && hi > entry) {
-            double trail = hi - trailK * a;
-            if (trail > entry && px <= trail) return "移動停利";   // 只在已經有獲利時鎖利
-        }
-        if (tp > 0 && px >= entry * (1 + tp / 100)) return "停利";
-        return null;
     }
 
     /** 給 UI：各持倉的進場價、停損、移動停利、停利價。 */
@@ -294,11 +213,9 @@ public class BotRiskManager implements StrategyContextImpl.BuyRouter {
             double hi = peak.getOrDefault(id, Map.of()).getOrDefault(sym, Math.max(entry, px));
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("symbol", sym); m.put("qty", q); m.put("entry", entry); m.put("last", px);
-            double stopK = p(id, "stopAtr"), trailK = p(id, "trailAtr"), tp = p(id, "takeProfitPct");
-            m.put("stop", stopK <= 0 || entry <= 0 ? 0 : a > 0 ? entry - stopK * a : entry * (1 - FALLBACK_STOP_PCT / 100));
-            double trail = trailK > 0 && a > 0 ? hi - trailK * a : 0;
-            m.put("trail", trail > entry ? trail : 0);
-            m.put("takeProfit", tp > 0 && entry > 0 ? entry * (1 + tp / 100) : 0);
+            m.put("stop", RiskRules.stopPrice(entry, a, pm(id)));
+            m.put("trail", RiskRules.trailPrice(entry, hi, a, pm(id)));
+            m.put("takeProfit", RiskRules.takeProfitPrice(entry, pm(id)));
             out.add(m);
         });
         return out;
@@ -312,7 +229,7 @@ public class BotRiskManager implements StrategyContextImpl.BuyRouter {
         String why = paused.get(id);
         if (why != null) { ctx.decide(sym, intent.side(), "已暫停進場：" + why); return true; }
         Long until = cooldownUntil.getOrDefault(id, Map.of()).get(sym);
-        if (until != null && closedCount.getOrDefault(sym, 0L) < until) {
+        if (until != null && closedCount(sym) < until) {
             ctx.decide(sym, intent.side(), "冷卻中（出場後 " + (long) p(id, "cooldownBars") + " 根內不進場）"); return true;
         }
         String rb = regimeBlock(id, sym);
@@ -396,6 +313,7 @@ public class BotRiskManager implements StrategyContextImpl.BuyRouter {
 
     void pause(String id, String why) {
         if (paused.putIfAbsent(id, why) != null) return;
+        StateStore st = store; if (st != null) try { st.savePaused(id, why); } catch (Exception e) { log.warn("熔斷狀態寫入失敗: {}", e.getMessage()); }
         log.warn("[{}] 機器人熔斷：{} → 暫停進場（既有部位的停損/停利照常）", id, why);
         StrategyContextImpl c = ctxOf.get(id);
         if (c != null) c.markOutcome("已暫停進場：" + why);
@@ -408,7 +326,8 @@ public class BotRiskManager implements StrategyContextImpl.BuyRouter {
 
     /** 上線 / 恢復：清空本次統計。 */
     public void reset(String id) {
-        paused.remove(id); consecLosses.remove(id); realized.remove(id);
+        if (paused.remove(id) != null) { StateStore st = store; if (st != null) try { st.savePaused(id, null); } catch (Exception e) { log.warn("熔斷狀態寫入失敗: {}", e.getMessage()); } }
+        consecLosses.remove(id); realized.remove(id);
         Map<String, Long> cd = cooldownUntil.get(id); if (cd != null) cd.clear();
     }
     /** 下線：不再追蹤（部位由使用者決定是否平倉）。 */
