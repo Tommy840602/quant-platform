@@ -117,6 +117,9 @@ export default {
     "s34": "Value("
   },
   "backtest": {
+    "mkSpot": "Spot (long only)",
+    "mkFut": "Futures (long/short)",
+    "lsLine": "Long {l} trips {lp} USDT · Short {s} trips {sp} USDT",
     "s1": "Interval",
     "s2": "Bars",
     "s3": "Bot ID",

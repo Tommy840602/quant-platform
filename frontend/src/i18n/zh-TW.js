@@ -117,6 +117,9 @@ export default {
     "s34": "估值("
   },
   "backtest": {
+    "mkSpot": "現貨（只做多）",
+    "mkFut": "合約（多空）",
+    "lsLine": "多單 {l} 筆 {lp} USDT · 空單 {s} 筆 {sp} USDT",
     "s1": "K 線週期",
     "s2": "根數",
     "s3": "機器人 ID",
