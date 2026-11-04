@@ -250,6 +250,16 @@ export default {
     "s55": "下单 code={code} · {msg}"
   },
   "login": {
+    "futTitle": "合约（USDT-M）",
+    "futEnable": "开启合约交易（合约机器人可下单、权益计入合约钱包）",
+    "futKeyOk": "合约密钥已设置",
+    "futKeyNone": "尚未设置合约密钥",
+    "futKey": "合约 API Key",
+    "futSecret": "合约 API Secret",
+    "futKeyPh": "留空 = 不变更（沿用 .env）",
+    "futHintMain": "正式网：可与现货用同一把密钥，但要在币安 API 管理勾选「允许合约」，并先把 USDT 转到合约钱包。",
+    "futHintTest": "测试网：合约密钥要到 testnet.binancefuture.com 另外申请，与现货测试网密钥不同。",
+    "futOffHint": "关闭后：合约单一律拒绝（合约机器人不会下单），权益只算现货。",
     "s1": "环境",
     "s2": "留空=沿用目前设置",
     "s3": "下单模式",

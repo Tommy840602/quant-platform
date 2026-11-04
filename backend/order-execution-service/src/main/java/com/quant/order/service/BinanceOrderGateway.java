@@ -99,6 +99,7 @@ public class BinanceOrderGateway {
     @Value("${binance.futures-rest-url:https://testnet.binancefuture.com}") private String futUrl;
     @Value("${binance.futures-api-key:}") private String futKey;
     @Value("${binance.futures-api-secret:}") private String futSecret;
+    private String envFutKey = "", envFutSecret = "";   // .env 的測試網合約金鑰（切回 testnet 用）
     @Value("${binance.recv-window:5000}") private long recvWindow;
     // 環境切換：testnet(預設,安全) / mainnet(真錢)
     @Value("${binance.env:testnet}") private String env;
@@ -149,6 +150,7 @@ public class BinanceOrderGateway {
     @PostConstruct
     void resolveEnv() {
         testnetSpotUrl = spotUrl;  testnetFutUrl = futUrl;  testnetFutWsUrl = futWsUrl;   // 先記住 testnet 位址
+        envFutKey = futKey == null ? "" : futKey; envFutSecret = futSecret == null ? "" : futSecret;
         if ("mainnet".equalsIgnoreCase(env)) {
             spotUrl = spotMainnetUrl;  futUrl = futMainnetUrl;  futWsUrl = futMainnetWsUrl;
             if (!spotMainnetKey.isBlank())    spotKey = spotMainnetKey;
@@ -188,12 +190,26 @@ public class BinanceOrderGateway {
 
     /** 執行期套用連線設定（登入頁推送）。keys 空字串代表不變更；dryRun 為 null 代表不變更。 */
     public synchronized Map<String, Object> applyConfig(String newEnv, Boolean newDryRun, String newKey, String newSecret) {
+        return applyConfig(newEnv, newDryRun, newKey, newSecret, null, null, null);
+    }
+
+    /**
+     * 含合約：futKey / futSecret 空 = 不變更；futuresEnabled null = 不變更。
+     * 換 env 時合約金鑰跟著換成該 env 的 .env 設定（以前只換網址，切到正式網還拿測試網合約金鑰）；有從頁面貼新金鑰則以頁面為準。
+     */
+    public synchronized Map<String, Object> applyConfig(String newEnv, Boolean newDryRun, String newKey, String newSecret,
+                                                        String newFutKey, String newFutSecret, Boolean futuresEnabled) {
         if (newEnv != null && !newEnv.isBlank()) {
+            String before = env;
             env = newEnv.trim().toLowerCase();
             boolean m = "mainnet".equals(env);
             spotUrl = m ? spotMainnetUrl : testnetSpotUrl;
             futUrl  = m ? futMainnetUrl  : testnetFutUrl;
             futWsUrl = m ? futMainnetWsUrl : testnetFutWsUrl;
+            if (!env.equalsIgnoreCase(before)) {
+                futKey = m && futMainnetKey != null && !futMainnetKey.isBlank() ? futMainnetKey : envFutKey;
+                futSecret = m && futMainnetSecret != null && !futMainnetSecret.isBlank() ? futMainnetSecret : envFutSecret;
+            }
             syncClock();
         }
         if (newDryRun != null) {
@@ -204,15 +220,30 @@ public class BinanceOrderGateway {
         }
         if (newKey != null && !newKey.isBlank())   { spotKey = newKey.trim(); }
         if (newSecret != null && !newSecret.isBlank()) { spotSecret = newSecret.trim(); }
-        log.warn("套用下單設定：env={} dryRun={} spot={} keySet={}", env, dryRun, spotUrl, !spotKey.isBlank());
+        if (newFutKey != null && !newFutKey.isBlank())       { futKey = newFutKey.trim(); }
+        if (newFutSecret != null && !newFutSecret.isBlank()) { futSecret = newFutSecret.trim(); }
+        if (futuresEnabled != null) {
+            try { redis.opsForValue().set(FUT_ENABLED_KEY, futuresEnabled ? "1" : "0"); }
+            catch (Exception e) { log.warn("寫入合約開關失敗: {}", e.getMessage()); }
+        }
+        log.warn("套用下單設定：env={} dryRun={} spot={} keySet={} futures={} futKeySet={}", env, dryRun, spotUrl, !spotKey.isBlank(),
+                futuresEnabled(), futuresKeySet());
         fireModeChanged("applyConfig");
         return configStatus();
     }
+
+    /** 合約交易總開關（Redis trading:futures-enabled；沒設過 = 開，維持舊行為）。 */
+    static final String FUT_ENABLED_KEY = "trading:futures-enabled";
+    public boolean futuresEnabled() {
+        try { return !"0".equals(redis.opsForValue().get(FUT_ENABLED_KEY)); } catch (Exception e) { return true; }
+    }
+    public boolean futuresKeySet() { return futKey != null && !futKey.isBlank() && futSecret != null && !futSecret.isBlank(); }
 
     public Map<String, Object> configStatus() {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("env", env); m.put("dryRun", dryRun); m.put("spotUrl", spotUrl);
         m.put("keySet", !spotKey.isBlank() && !spotSecret.isBlank());
+        m.put("futuresEnabled", futuresEnabled()); m.put("futuresKeySet", futuresKeySet()); m.put("futuresUrl", futUrl);
         m.put("mainnet", "mainnet".equalsIgnoreCase(env));
         m.put("clockOffsetMs", clock.offset(spotUrl));
         m.put("clockSyncedAt", clock.syncedAt(spotUrl));
@@ -305,6 +336,8 @@ public class BinanceOrderGateway {
 
     // ---------- 下單 ----------
     public String placeOrder(OrderIntent intent) {
+        if (intent.isFutures() && !futuresEnabled())
+            throw new ExchangeRejectedException(400, -1, "合約交易已關閉（連線設定頁「開啟合約交易」）");
         if (isDryRun()) {
             log.info("[DRY-RUN] {} place {} {} {} qty={}", intent.isFutures() ? "合約" : "現貨",
                     intent.symbol(), intent.side(), intent.type(), intent.quantity());
@@ -369,6 +402,7 @@ public class BinanceOrderGateway {
 
     // ---------- 設定合約槓桿 ----------
     public String setLeverage(String symbol, int leverage) {
+        if (!futuresEnabled()) throw new ExchangeRejectedException(400, -1, "合約交易已關閉（連線設定頁「開啟合約交易」）");
         if (isDryRun()) return "{\"symbol\":\"" + symbol + "\",\"leverage\":" + leverage + ",\"dryRun\":true}";
         Map<String, String> p = new LinkedHashMap<>();
         p.put("symbol", symbol);

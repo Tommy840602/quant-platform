@@ -55,13 +55,36 @@ public class FuturesAccountService {
     public record Snapshot(double walletBalance, double unrealizedPnl, double marginBalance, double availableBalance,
                            double grossNotional, List<Map<String, Object>> positions, long fetchedAt) {}
 
-    /** 這個 env 有沒有設合約金鑰（跟下單閘道同規則：正式網用 MAINNET_FUTURES 金鑰，沒設才退回 FUTURES）。 */
-    public boolean configured() { return !key().isBlank() && !secret().isBlank(); }
+    /** 連線設定頁貼的金鑰（依 env 分開記，空 = 用 .env）。 */
+    private final Map<String, String[]> uiKeys = new java.util.concurrent.ConcurrentHashMap<>();
+    private org.springframework.data.redis.core.StringRedisTemplate redis;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setRedis(org.springframework.data.redis.core.StringRedisTemplate r) { this.redis = r; }
+
+    /** 連線設定頁：套用合約金鑰到目前 env（空字串 = 不變更）。 */
+    public synchronized void applyConfig(String key, String secret) {
+        boolean k = key != null && !key.isBlank(), s = secret != null && !secret.isBlank();
+        if (!k && !s) return;
+        String[] cur = uiKeys.getOrDefault(spot.env(), new String[]{key(), secret()});
+        uiKeys.put(spot.env(), new String[]{k ? key.trim() : cur[0], s ? secret.trim() : cur[1]});
+        last = null;   // 換金鑰 = 可能換帳戶，舊快照作廢
+    }
+
+    /** 合約總開關（與下單服務共用 Redis trading:futures-enabled；沒設過 = 開）。 */
+    public boolean enabled() {
+        try { return redis == null || !"0".equals(redis.opsForValue().get("trading:futures-enabled")); } catch (Exception e) { return true; }
+    }
+
+    /** 這個 env 有沒有設合約金鑰且合約開關打開（跟下單閘道同規則：正式網用 MAINNET_FUTURES 金鑰，沒設才退回 FUTURES）。 */
+    public boolean configured() { return enabled() && !key().isBlank() && !secret().isBlank(); }
+    public boolean keySet() { return !key().isBlank() && !secret().isBlank(); }
 
     private boolean mainnet() { return "mainnet".equalsIgnoreCase(spot.env()); }
     private String url()    { return mainnet() ? mainUrl : testUrl; }
-    private String key()    { String k = mainnet() && mainKey != null && !mainKey.isBlank() ? mainKey : testKey;       return k == null ? "" : k.trim(); }
-    private String secret() { String k = mainnet() && mainSecret != null && !mainSecret.isBlank() ? mainSecret : testSecret; return k == null ? "" : k.trim(); }
+    private String key()    { String[] u = uiKeys.get(spot.env()); if (u != null && !u[0].isBlank()) return u[0];
+                              String k = mainnet() && mainKey != null && !mainKey.isBlank() ? mainKey : testKey;       return k == null ? "" : k.trim(); }
+    private String secret() { String[] u = uiKeys.get(spot.env()); if (u != null && !u[1].isBlank()) return u[1];
+                              String k = mainnet() && mainSecret != null && !mainSecret.isBlank() ? mainSecret : testSecret; return k == null ? "" : k.trim(); }
 
     /**
      * 取快照：10 秒內重用；失敗時沿用 10 分鐘內的舊值（stale=true）。

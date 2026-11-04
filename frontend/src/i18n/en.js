@@ -250,6 +250,16 @@ export default {
     "s55": "Order code={code} · {msg}"
   },
   "login": {
+    "futTitle": "Futures (USDT-M)",
+    "futEnable": "Enable futures trading (futures bots can trade; equity includes futures wallet)",
+    "futKeyOk": "Futures key set",
+    "futKeyNone": "No futures key",
+    "futKey": "Futures API Key",
+    "futSecret": "Futures API Secret",
+    "futKeyPh": "Leave blank = keep (.env)",
+    "futHintMain": "Mainnet: the spot key works if “Enable Futures” is ticked in Binance API management; transfer USDT to the futures wallet first.",
+    "futHintTest": "Testnet: futures keys come from testnet.binancefuture.com and differ from spot testnet keys.",
+    "futOffHint": "When off: all futures orders are rejected (futures bots will not trade) and equity counts spot only.",
     "s1": "Environment",
     "s2": "Leave blank to keep current",
     "s3": "Order mode",

@@ -250,6 +250,16 @@ export default {
     "s55": "下單 code={code} · {msg}"
   },
   "login": {
+    "futTitle": "合約（USDT-M）",
+    "futEnable": "開啟合約交易（合約機器人可下單、權益計入合約錢包）",
+    "futKeyOk": "合約金鑰已設定",
+    "futKeyNone": "尚未設定合約金鑰",
+    "futKey": "合約 API Key",
+    "futSecret": "合約 API Secret",
+    "futKeyPh": "留空 = 不變更（沿用 .env）",
+    "futHintMain": "正式網：可跟現貨用同一把金鑰，但要在幣安 API 管理勾選「允許合約」，並先把 USDT 轉到合約錢包。",
+    "futHintTest": "測試網：合約金鑰要到 testnet.binancefuture.com 另外申請，跟現貨測試網金鑰不同。",
+    "futOffHint": "關閉後：合約單一律拒絕（合約機器人不會下單），權益只算現貨。",
     "s1": "環境",
     "s2": "留空=沿用目前設定",
     "s3": "下單模式",
