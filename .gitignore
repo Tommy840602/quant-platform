@@ -23,3 +23,6 @@ application-local.yml
 
 # 執行期日誌與 PID
 backend/logs/
+
+# 資料庫備份檔
+backups/

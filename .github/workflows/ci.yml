@@ -138,6 +138,24 @@ jobs:
             PGPASSWORD=quant psql -h localhost -U quant -d quant -tAc "select to_regclass('$t')" | grep -q "^$t$" || { echo "::error::缺表 $t"; exit 1; }
           done
           PGPASSWORD=quant psql -h localhost -U quant -d quant -tAc "select count(*) from timescaledb_information.hypertables where hypertable_name='kline'" | grep -q '^1$' || { echo "::error::kline 不是 hypertable"; exit 1; }
+      - name: 備份 → 還原演練（infra/backup/backup.sh 真的跑一次）
+        run: |
+          mkdir -p /tmp/bk
+          docker run --rm --network host -e PGHOST=localhost -e PGUSER=quant -e PGPASSWORD=quant -e PGDATABASE=quant -e TZ=CST-8 \
+            -v "$PWD/infra/backup/backup.sh:/backup.sh:ro" -v /tmp/bk:/backups --entrypoint /bin/sh \
+            timescale/timescaledb:latest-pg16 /backup.sh once
+          f=$(ls /tmp/bk/quant-*.dump); echo "備份檔 $f"; test -s "$f"
+          export PGPASSWORD=quant
+          psql -h localhost -U quant -d postgres -c "CREATE DATABASE quant_restore;"
+          psql -h localhost -U quant -d quant_restore -c "CREATE EXTENSION IF NOT EXISTS timescaledb;" -c "SELECT timescaledb_pre_restore();"
+          docker run --rm --network host -e PGPASSWORD=quant -v /tmp/bk:/bk timescale/timescaledb:latest-pg16 \
+            pg_restore -h localhost -U quant -d quant_restore --no-owner "/bk/$(basename "$f")" || true
+          psql -h localhost -U quant -d quant_restore -c "SELECT timescaledb_post_restore();"
+          a=$(psql -h localhost -U quant -d quant -tAc "select count(*) from flyway_schema_history")
+          b=$(psql -h localhost -U quant -d quant_restore -tAc "select count(*) from flyway_schema_history")
+          [ "$a" = "$b" ] || { echo "::error::還原後 migration 筆數不符 $a vs $b"; exit 1; }
+          psql -h localhost -U quant -d quant_restore -tAc "select count(*) from timescaledb_information.hypertables where hypertable_name='kline'" | grep -q '^1$' || { echo "::error::還原後 kline 不是 hypertable"; exit 1; }
+          echo "還原 OK（$b 筆 migration、kline hypertable 在）"
 
   frontend:
     name: Frontend (Vue 3 / Vite)
