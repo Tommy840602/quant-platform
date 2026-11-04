@@ -622,5 +622,27 @@ export default {
     "allBots": "All bots",
     "prev": "Prev",
     "next": "Next"
+  },
+  "robust": {
+    "title": "Overfitting check",
+    "trials": "{n} parameter sets · {s} CSCV splits",
+    "pboL": "prob. of overfit",
+    "dsrL": "P(true Sharpe>0)",
+    "hurdle": "Best Sharpe / luck hurdle",
+    "wfEff": "Walk-forward efficiency",
+    "fold": "Fold",
+    "picked": "Params picked",
+    "isS": "Pick-window Sharpe",
+    "oosS": "Next-window Sharpe",
+    "rec": "Recommended (best average out-of-sample):",
+    "recOos": "avg OOS Sharpe {s}",
+    "useRec": "Create bot with recommended",
+    "v": {
+      "ROBUST": "Robust",
+      "SUSPECT": "Suspect",
+      "OVERFIT": "Overfit",
+      "INSUFFICIENT": "Not enough data"
+    },
+    "hint": "PBO: how often the in-sample winner ranks below median out of sample (> 50% is worse than picking at random). DSR: probability the true Sharpe > 0 after accounting for how many sets were tried. Walk-forward: pick on one window, test on the next; efficiency = OOS ÷ IS. New bots start in Paper."
   }
 }

@@ -622,5 +622,27 @@ export default {
     "allBots": "全部機器人",
     "prev": "上一個",
     "next": "下一個"
+  },
+  "robust": {
+    "title": "過擬合體檢",
+    "trials": "試了 {n} 組參數 · CSCV {s} 種切法",
+    "pboL": "過擬合機率",
+    "dsrL": "真實 Sharpe>0 機率",
+    "hurdle": "最佳 Sharpe / 運氣門檻",
+    "wfEff": "Walk-forward 效率",
+    "fold": "段",
+    "picked": "這段挑出的參數",
+    "isS": "挑選段 Sharpe",
+    "oosS": "下一段 Sharpe",
+    "rec": "推薦參數（樣本外平均最好）：",
+    "recOos": "樣本外平均 Sharpe {s}",
+    "useRec": "用推薦參數建機器人",
+    "v": {
+      "ROBUST": "穩健",
+      "SUSPECT": "可疑",
+      "OVERFIT": "過擬合",
+      "INSUFFICIENT": "樣本不足"
+    },
+    "hint": "PBO：樣本內最好的組合到樣本外掉到中位數以下的比例（> 50% 比亂挑還差）。DSR：扣掉「試了很多組」的運氣後，真實 Sharpe > 0 的機率。Walk-forward：用前一段挑參數、下一段驗證，效率 = 樣本外 ÷ 樣本內。建出來的機器人會先進模擬盤。"
   }
 }

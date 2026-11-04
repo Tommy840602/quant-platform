@@ -1,6 +1,7 @@
 package com.quant.backtest.controller;
 
 import com.quant.backtest.engine.BacktestEngine;
+import com.quant.backtest.engine.Robustness;
 import com.quant.backtest.engine.StrategyFactory;
 import com.quant.backtest.service.BarSource;
 import com.quant.common.dto.ApiResponse;
@@ -26,6 +27,7 @@ public class OptimizeController {
      * 回傳依 Sharpe 排序的所有組合與最佳參數。
      */
     @PostMapping("/optimize")
+    @SuppressWarnings("unchecked")
     public ApiResponse<Map<String, Object>> optimize(@RequestBody OptReq req) {
         BarSource.Bars data;
         try { data = toBars(req.symbol, req.interval, req.bars, req.closes); }
@@ -34,25 +36,45 @@ public class OptimizeController {
         List<Map<String, Object>> results = new ArrayList<>();
 
         List<Map<String, Object>> combos = expandGrid(req.grid);
+        List<double[]> rets = new ArrayList<>();
+        double barsPerYear = 1;
         for (Map<String, Object> params : combos) {
             var engine = new BacktestEngine(10000, 0.0004, 0.0002);
             var r = engine.run(bars, StrategyFactory.build(req.type, "opt", withQty(params)));
+            double[] rr = Robustness.returns(r.equity());
+            rets.add(rr);
+            Object bpy = r.metrics().get("bars_per_year");
+            if (bpy instanceof Number n) barsPerYear = n.doubleValue();
             Map<String, Object> row = new LinkedHashMap<>(params);
             row.put("sharpe", r.metrics().get("sharpe"));
             row.put("total_return", r.metrics().get("total_return"));
             row.put("max_drawdown", r.metrics().get("max_drawdown"));
             row.put("trades", r.trades());
+            // 前 70% 當樣本內、後 30% 當樣本外的 Sharpe（年化），一眼看出「只在前段好看」的組合
+            int cut = (int) (rr.length * 0.7);
+            double ann = Math.sqrt(Math.max(1, barsPerYear));
+            row.put("is_sharpe", Math.round(Robustness.sr(rr, 0, cut) * ann * 100) / 100.0);
+            row.put("oos_sharpe", Math.round(Robustness.sr(rr, cut, rr.length) * ann * 100) / 100.0);
             results.add(row);
         }
+        Map<String, Object> robust = Robustness.analyze(rets, barsPerYear);
+        Object ri = robust.get("recommendedIndex");
+        if (ri instanceof Integer i && i < results.size()) robust.put("recommended", results.get(i));
+        Object wf = robust.get("walkForward");
+        if (wf instanceof Map<?, ?> w && w.get("folds") instanceof List<?> fl)
+            for (Object o : fl) if (o instanceof Map<?, ?> f && f.get("index") instanceof Integer i && i < combos.size())
+                ((Map<String, Object>) f).put("params", combos.get(i));
         results.sort((a, b) -> Double.compare(
                 ((Number) b.getOrDefault("sharpe", 0)).doubleValue(),
                 ((Number) a.getOrDefault("sharpe", 0)).doubleValue()));
-        return ApiResponse.ok(Map.of(
-                "type", req.type, "symbol", req.symbol == null ? "BTCUSDT" : req.symbol.toUpperCase(),
-                "dataSource", data.dataSource(), "bars", bars.size(),
-                "combinations", results.size(),
-                "best", results.isEmpty() ? Map.of() : results.get(0),
-                "results", results.subList(0, Math.min(results.size(), 50))));
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("type", req.type); out.put("symbol", req.symbol == null ? "BTCUSDT" : req.symbol.toUpperCase());
+        out.put("dataSource", data.dataSource()); out.put("bars", bars.size());
+        out.put("combinations", results.size());
+        out.put("best", results.isEmpty() ? Map.of() : results.get(0));
+        out.put("robustness", robust);
+        out.put("results", results.subList(0, Math.min(results.size(), 50)));
+        return ApiResponse.ok(out);
     }
 
     /**
