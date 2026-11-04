@@ -66,6 +66,21 @@ export default {
     "trades": "成交"
   },
   "account": {
+    "futSpot": "現貨",
+    "futShort": "合約",
+    "futPartial": "合約帳戶查詢失敗：總資產只含現貨，回撤判斷暫停",
+    "futTitle": "USDT-M 合約錢包",
+    "futStale": "資料延遲",
+    "futWallet": "錢包餘額",
+    "futUpnl": "未實現盈虧",
+    "futMargin": "保證金餘額（計入總資產）",
+    "futAvail": "可用",
+    "futNone": "沒有合約持倉",
+    "futSide": "方向",
+    "futLong": "多",
+    "futShortSide": "空",
+    "futNotional": "名目 (USDT)",
+    "futLev": "槓桿",
     "s1": "狀態",
     "s2": "USDT 可用",
     "s3": "USDT 凍結",
@@ -285,6 +300,9 @@ export default {
     "reason": "原因（拒單 / 狀態不明）"
   },
   "risk": {
+    "futLev": "合約總曝險",
+    "futLevLimit": "合約總曝險上限（倍）",
+    "futLevHint": "所有合約持倉名目 + 本單 ≤ 總權益 × 倍數；1 = 不加槓桿，0 = 不限",
     "s1": "下單風控（即時生效，免重啟）",
     "s2": "每單名目金額 (USDT)",
     "s3": "單筆名目上限 (USDT)",

@@ -66,6 +66,21 @@ export default {
     "trades": "成交"
   },
   "account": {
+    "futSpot": "现货",
+    "futShort": "合约",
+    "futPartial": "合约账户查询失败：总资产只含现货，回撤判断暂停",
+    "futTitle": "USDT-M 合约钱包",
+    "futStale": "数据延迟",
+    "futWallet": "钱包余额",
+    "futUpnl": "未实现盈亏",
+    "futMargin": "保证金余额（计入总资产）",
+    "futAvail": "可用",
+    "futNone": "没有合约持仓",
+    "futSide": "方向",
+    "futLong": "多",
+    "futShortSide": "空",
+    "futNotional": "名义 (USDT)",
+    "futLev": "杠杆",
     "s1": "状态",
     "s2": "USDT 可用",
     "s3": "USDT 冻结",
@@ -285,6 +300,9 @@ export default {
     "reason": "原因（拒单 / 状态不明）"
   },
   "risk": {
+    "futLev": "合约总敞口",
+    "futLevLimit": "合约总敞口上限（倍）",
+    "futLevHint": "所有合约持仓名义 + 本单 ≤ 总权益 × 倍数；1 = 不加杠杆，0 = 不限",
     "s1": "下单风控（实时生效，免重启）",
     "s2": "每单名义金额 (USDT)",
     "s3": "单笔名义上限 (USDT)",

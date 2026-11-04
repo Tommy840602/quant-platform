@@ -92,7 +92,8 @@ public class RiskEngine {
         boolean reduce = Boolean.TRUE.equals(intent.get("reduceOnly"));
         boolean opening = !reduce && (buy || futures);
         double maxLoss = limits.maxDailyLossPct(), maxPos = futures ? 0 : limits.maxPositionPct();   // 集中度看的是現貨持幣，合約不適用
-        if (opening && (maxLoss > 0 || maxPos > 0)) {
+        double maxLev = futures ? limits.maxFuturesLeverage() : 0;                                  // 合約看總曝險 / 權益
+        if (opening && (maxLoss > 0 || maxPos > 0 || maxLev > 0)) {
             Equity eq = equity();
             if (eq == null) {
                 if (limits.failClosed()) return reject("取不到帳戶權益（account-service），依 fail-closed 拒絕買入");
@@ -107,6 +108,13 @@ public class RiskEngine {
                             return reject(String.format("今日虧損 %.1f%% 已達上限 %.1f%%（日初權益 %.0f → %.0f），停止開倉；減倉 / 平倉不受限",
                                     dd * 100, maxLoss * 100, dayStart, eq.total));
                     }
+                }
+                // 8. 合約總曝險（所有合約持倉名目 + 本單）/ 總權益
+                if (maxLev > 0 && eq.total > 0 && notional > 0) {
+                    double lev = (eq.futuresGross + notional) / eq.total;
+                    if (lev > maxLev)
+                        return reject(String.format("合約總曝險 %.0f + 本單 %.0f = 權益的 %.2f 倍，超過上限 %.2f 倍",
+                                eq.futuresGross, notional, lev, maxLev));
                 }
                 // 7. 集中度
                 if (maxPos > 0 && eq.total > 0 && notional > 0) {
@@ -135,6 +143,8 @@ public class RiskEngine {
         m.put("equity", eq == null ? null : round2(eq.total));
         m.put("nonStableValue", eq == null ? null : round2(eq.nonStable));
         m.put("positionPct", eq == null || eq.total <= 0 ? null : round4(eq.nonStable / eq.total));
+        m.put("futuresGross", eq == null ? null : round2(eq.futuresGross));
+        m.put("futuresLeverage", eq == null || eq.total <= 0 ? null : round4(eq.futuresGross / eq.total));
         double ds = eq == null ? 0 : dayStartEquity(acct, eq.total);
         m.put("dayStartEquity", ds <= 0 ? null : round2(ds));
         m.put("dayPnlPct", eq == null || ds <= 0 ? null : round4(eq.total / ds - 1));
@@ -154,7 +164,10 @@ public class RiskEngine {
     }
 
     // ── helpers ──
-    record Equity(double total, double nonStable) {}
+    /** total = 現貨 + 合約保證金餘額；nonStable = 現貨非穩定幣市值；futuresGross = 合約持倉名目絕對值合計。 */
+    record Equity(double total, double nonStable, double futuresGross) {
+        Equity(double total, double nonStable) { this(total, nonStable, 0); }
+    }
 
     /** 權益與非穩定幣市值；拿不到回 null。account-service 的 /balance 已含各資產 valueUsdt。 */
     Equity equity() {
@@ -162,6 +175,9 @@ public class RiskEngine {
         try {
             Map<String, Object> bal = account.balance().data();
             if (bal == null || !(bal.get("totalUsdt") instanceof Number t)) return null;
+            // 合約帳戶查不到時總額少一截：拿來算日虧損會誤鎖，當作「取不到權益」交給 fail-closed 處理
+            if (Boolean.TRUE.equals(bal.get("partial"))) { log.warn("帳戶權益不完整（合約查詢失敗）"); return null; }
+            double futGross = bal.get("futures") instanceof Map<?, ?> fm && fm.get("grossNotional") instanceof Number g ? g.doubleValue() : 0;
             double nonStable = 0;
             Object list = bal.get("balances");
             if (list instanceof List<?> rows) {
@@ -172,7 +188,7 @@ public class RiskEngine {
                     if (r.get("valueUsdt") instanceof Number v) nonStable += v.doubleValue();
                 }
             }
-            return new Equity(t.doubleValue(), nonStable);
+            return new Equity(t.doubleValue(), nonStable, futGross);
         } catch (Exception e) {
             log.warn("查帳戶權益失敗: {}", e.getMessage());
             return null;

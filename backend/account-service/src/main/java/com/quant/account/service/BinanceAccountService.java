@@ -113,6 +113,7 @@ public class BinanceAccountService {
     @Value("${account.max-assets:50}") private int maxAssets;
 
     public boolean live() { return !apiKey.isBlank() && !apiSecret.isBlank(); }
+    public String env() { return env; }
 
     private HttpResponse<String> signedAccountGet() throws Exception {
         String query = "recvWindow=5000&timestamp=" + clock.now(restUrl);

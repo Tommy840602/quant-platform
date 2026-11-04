@@ -18,16 +18,18 @@ public class AccountController {
     private final FundingService funding;
     private final SseHub sseHub;
     private final BinanceAccountService binanceAccount;
+    private final WalletService wallet;
 
     public AccountController(PositionStore positions, EquityCurveService equity,
-                            FundingService funding, SseHub sseHub, BinanceAccountService binanceAccount) {
+                            FundingService funding, SseHub sseHub, BinanceAccountService binanceAccount,
+                            WalletService wallet) {
         this.positions = positions; this.equity = equity; this.funding = funding; this.sseHub = sseHub;
-        this.binanceAccount = binanceAccount;
+        this.binanceAccount = binanceAccount; this.wallet = wallet;
     }
 
     @GetMapping("/balance")
     public ApiResponse<Map<String, Object>> balance(@RequestParam(defaultValue = "main") String account) {
-        return ApiResponse.ok(binanceAccount.balance());
+        return ApiResponse.ok(wallet.balance());   // 現貨 + 合約
     }
 
     @GetMapping("/positions")
