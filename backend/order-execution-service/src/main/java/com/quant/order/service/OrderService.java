@@ -285,7 +285,8 @@ public class OrderService {
             double executed = n.path("executedQty").asDouble(0);
             double avg = 0;
             if (executed > 0) {
-                if (n.has("avgPrice")) avg = n.path("avgPrice").asDouble(0);
+                if (n.path("avgPrice").asDouble(0) > 0) avg = n.path("avgPrice").asDouble(0);
+                else if (n.path("cumQuote").asDouble(0) > 0) avg = n.path("cumQuote").asDouble(0) / executed;
                 else { double q = n.path("cummulativeQuoteQty").asDouble(0); avg = q > 0 ? q / executed : 0; }
             }
             OrderStatus mapped = switch (st) {
@@ -427,7 +428,14 @@ public class OrderService {
             if (executed > 0) {
                 double avg;
                 if (n.hasNonNull("avgPrice") && n.path("avgPrice").asDouble(0) > 0) avg = n.path("avgPrice").asDouble(0);   // 合約
+                else if (n.path("cumQuote").asDouble(0) > 0) avg = n.path("cumQuote").asDouble(0) / executed;               // 合約（統一帳戶）
                 else { double q = n.path("cummulativeQuoteQty").asDouble(0); avg = q > 0 ? q / executed : 0; }               // 現貨
+                if (avg <= 0) {
+                    // 回應有成交量卻沒成交價（統一帳戶 UM 下單回應不一定帶 avgPrice）：別記 0 元成交，立刻回查訂單拿均價
+                    log.info("下單回應缺成交價 {}，改回查訂單", intent.clientOrderId());
+                    reconcileOne(intent.clientOrderId(), intent.symbol(), intent.isFutures(), intent.side(), intent.accountOrDefault());
+                    return;
+                }
                 String st = n.path("status").asText("");
                 OrderStatus status = "PARTIALLY_FILLED".equals(st)
                         ? OrderStatus.PARTIALLY_FILLED : OrderStatus.FILLED;

@@ -51,6 +51,7 @@ public class ConfigController {
         String fk = body.get("futuresApiKey") == null ? null : String.valueOf(body.get("futuresApiKey"));
         String fs = body.get("futuresApiSecret") == null ? null : String.valueOf(body.get("futuresApiSecret"));
         Boolean fe = body.get("futuresEnabled") == null ? null : Boolean.valueOf(String.valueOf(body.get("futuresEnabled")));
-        return ApiResponse.ok(gateway.applyConfig(env, dry, key, sec, fk, fs, fe));
+        Boolean pm = body.get("futuresPm") == null ? null : Boolean.valueOf(String.valueOf(body.get("futuresPm")));
+        return ApiResponse.ok(gateway.applyConfig(env, dry, key, sec, fk, fs, fe, pm));
     }
 }

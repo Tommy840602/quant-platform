@@ -117,4 +117,32 @@ class FuturesAccountServiceTest {
         when(spot.env()).thenReturn("mainnet");
         assertTrue(fut.snapshot().isEmpty(), "測試網的數字不能當正式網用");
     }
+
+    @Test
+    void parsesPortfolioMarginAccount() throws Exception {
+        String body = """
+            {"pmAccount":{"uniMMR":"5.2","accountEquity":"950.5","actualEquity":"1000.0","accountStatus":"NORMAL","virtualMaxWithdrawAmount":"700","totalAvailableBalance":""},
+             "pmUm":{"positions":[
+               {"symbol":"BTCUSDT","positionAmt":"-0.002","entryPrice":"70000","unrealizedProfit":"-2.0","leverage":"1"},
+               {"symbol":"ETHUSDT","positionAmt":"0","entryPrice":"0","unrealizedProfit":"0","leverage":"5"}]}}""";
+        var s = FuturesAccountService.parse(body, 0);
+        assertTrue(s.pm());
+        assertEquals(1000.0, s.marginBalance(), 1e-9, "用 actualEquity");
+        assertEquals(700.0, s.availableBalance(), 1e-9);
+        assertEquals(1, s.positions().size());
+        assertEquals(-142.0, (double) s.positions().get(0).get("notional"), 1e-9, "−0.002×70000 − 2");
+        assertEquals(142.0, s.grossNotional(), 1e-9);
+        Map<String, Object> m = FuturesAccountService.toMap(s, false);
+        assertEquals("5.2", m.get("uniMMR")); assertEquals("NORMAL", m.get("accountStatus"));
+    }
+
+    @Test
+    void pmOnlyOnMainnet() {
+        BinanceAccountService spot = mock(BinanceAccountService.class);
+        when(spot.env()).thenReturn("testnet");
+        FuturesAccountService fut = new FuturesAccountService(spot, () -> 0) { { pmDefault = true; } };
+        assertFalse(fut.pm(), "統一帳戶沒有測試網");
+        when(spot.env()).thenReturn("mainnet");
+        assertTrue(fut.pm());
+    }
 }

@@ -91,6 +91,10 @@ public class BinanceFuturesUserDataStream extends TextWebSocketHandler {
     }
 
     public synchronized void startIfNeeded(String by) {
+        if (gateway.futuresPm()) {   // 統一帳戶的成交回報走 papi listenKey，這裡沒接 → 不連，改靠下單回應 + 對帳排程
+            log.info("統一帳戶模式：合約 UDS 不啟動，成交以下單回應 + 對帳排程（約 30 秒）補記");
+            return;
+        }
         if (!started.compareAndSet(false, true)) return;
         registry.expect(UdsRegistry.FUTURES);
         scheduler.execute(this::start);

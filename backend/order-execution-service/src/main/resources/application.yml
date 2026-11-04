@@ -79,6 +79,9 @@ binance:
   mainnet-futures-rest-url: ${BINANCE_MAINNET_FUTURES_REST:https://fapi.binance.com}
   mainnet-futures-api-key: ${BINANCE_MAINNET_FUTURES_API_KEY:}
   mainnet-futures-api-secret: ${BINANCE_MAINNET_FUTURES_API_SECRET:}
+  # 統一帳戶（Portfolio Margin）：合約改走 papi.binance.com（只有正式網）；連線設定頁可切換
+  futures-pm: ${BINANCE_FUTURES_PM:false}
+  mainnet-pm-rest-url: ${BINANCE_MAINNET_PM_REST:https://papi.binance.com}
   ws-base-url: ${BINANCE_WS:wss://stream.testnet.binance.vision}
   api-key: ${BINANCE_API_KEY:}        # 空 = 不送真實單；填入 testnet 金鑰並設 trading.dry-run=false 才會下單
   api-secret: ${BINANCE_API_SECRET:}
