@@ -658,5 +658,9 @@ export default {
     "blocked": "被挡进场",
     "paused": "⚠ 熔断：{why}，之后不再进场",
     "notApplied": "未套用风控（只看策略信号）"
+  },
+  "interval": {
+    "label": "K 线周期",
+    "warmed": "已用历史 K 线预热 {n} 个标的"
   }
 }

@@ -50,11 +50,12 @@ public class DecisionLog implements ShadowEngine.DecisionSink {
         if (queue.size() >= MAX_QUEUE) return;   // DB 掛了也不讓記憶體爆
         Map<String, Object> d = new LinkedHashMap<>();
         try {
-            d.put("regime", risk.regime(symbol).name());
-            double a = risk.adx(symbol); if (a >= 0) d.put("adx", Math.round(a * 10) / 10.0);
-            d.put("atr", risk.atr(symbol));
-            d.put("volRatio", Math.round(risk.volRatio(symbol) * 100) / 100.0);
-            d.put("score", Math.round(risk.score(symbol) * 100) / 100.0);
+            var st = risk.stats(bot, symbol);   // 該機器人自己週期的盤勢
+            d.put("regime", st.regime().name());
+            double a = st.adx(); if (a >= 0) d.put("adx", Math.round(a * 10) / 10.0);
+            d.put("atr", st.atr());
+            d.put("volRatio", Math.round(st.volRatio() * 100) / 100.0);
+            d.put("score", Math.round(st.score() * 100) / 100.0);
         } catch (Exception ignore) {}
         String detail;
         try { detail = M.writeValueAsString(d); } catch (Exception e) { detail = "{}"; }

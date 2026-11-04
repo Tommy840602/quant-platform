@@ -20,6 +20,20 @@ public class BinanceProperties {
     public void setWsBaseUrl(String v) { this.wsBaseUrl = v; }
     public String getRestBaseUrl() { return restBaseUrl; }
     public void setRestBaseUrl(String v) { this.restBaseUrl = v; }
-    public List<String> getStreams() { return streams; }
+    /** 機器人可選的額外 K 線週期：每條 @kline_1m 會自動多訂這些週期（機器人可用 5m / 15m / 1h 跑，不必全吃 1 分 K）。 */
+    private List<String> extraIntervals = List.of("5m", "15m", "1h");
+    public List<String> getExtraIntervals() { return extraIntervals; }
+    public void setExtraIntervals(List<String> v) { this.extraIntervals = v == null ? List.of() : v; }
+
+    /** 設定的串流 + 每條 1m K 線衍生的額外週期（去重、保持順序）。 */
+    public List<String> getStreams() {
+        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>(streams);
+        for (String st : streams) {
+            if (!st.endsWith("@kline_1m")) continue;
+            String base = st.substring(0, st.length() - "1m".length());
+            for (String iv : extraIntervals) if (iv != null && !iv.isBlank()) out.add(base + iv.trim());
+        }
+        return new java.util.ArrayList<>(out);
+    }
     public void setStreams(List<String> v) { this.streams = v; }
 }

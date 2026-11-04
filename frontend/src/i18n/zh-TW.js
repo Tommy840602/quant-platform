@@ -658,5 +658,9 @@ export default {
     "blocked": "被擋進場",
     "paused": "⚠ 熔斷：{why}，之後不再進場",
     "notApplied": "未套用風控（只看策略訊號）"
+  },
+  "interval": {
+    "label": "K 線週期",
+    "warmed": "已用歷史 K 線暖機 {n} 個標的"
   }
 }

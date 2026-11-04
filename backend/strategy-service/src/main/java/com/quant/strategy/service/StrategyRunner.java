@@ -1,6 +1,8 @@
 package com.quant.strategy.service;
 
 import com.quant.common.event.MarketDataEvent;
+import com.quant.common.dto.Kline;
+import com.quant.common.strategy.StrategyContext;
 import com.quant.common.event.Topics;
 import com.quant.common.enums.OrderType;
 import com.quant.common.enums.OrderSide;
@@ -58,6 +60,8 @@ public class StrategyRunner {
         r.bind(id -> paramsOf.getOrDefault(id, Map.of()), id -> names.getOrDefault(id, id), id -> types.getOrDefault(id, "ma"), null);
         contexts.values().forEach(c -> c.setBuyRouter(r));
         r.setEquity(() -> equityCache);
+        r.setIntervalOf(this::intervalOf);
+        if (market != null) r.setHistory(this::history);
         wireStore();
         if (shadow != null) { shadow.bind(r, this::stageOf, id -> names.getOrDefault(id, id), notifyClient);
             r.setTradeHook(c -> { if (trips != null) try { trips.insert(c, "LIVE"); } catch (Exception ex) { log.warn("來回紀錄寫入失敗: {}", ex.getMessage()); } }); }
@@ -469,21 +473,79 @@ public class StrategyRunner {
     @KafkaListener(topics = Topics.MARKET_KLINE, groupId = "strategy-service")
     public void onMarketData(MarketDataEvent event) {
         if (event == null || event.kline() == null) return;
-        String sym = event.kline().symbol();
-        prices.put(sym, event.kline().close());
-        if (risk != null) risk.onKline(event.kline());
+        Kline k = event.kline();
+        String sym = k.symbol();
+        String iv = k.interval() == null || k.interval().isBlank() ? "1m" : k.interval();
+        boolean tick = "1m".equals(iv);   // 1 分 K（含未收盤）當即時報價：出場檢查、現價
+        if (tick) prices.put(sym, k.close());
+        if (risk != null) risk.onKline(k);
         for (String id : running) {
             String filter = symbolFilter.get(id);
             if (filter != null && !filter.equals(sym)) continue;   // 機器人限定 symbol
             if (!factories.containsKey(id)) continue;
-            if (shadow != null && !"PAPER".equals(stageOf(id))) shadow.onTick(id, event.kline());
-            if (risk != null) try { risk.checkExits(id, event.kline(), contexts.get(id)); }
-                              catch (Exception e) { log.warn("[{}] 出場檢查失敗 {}: {}", id, sym, e.getMessage()); }
-            long[] st = barStats.computeIfAbsent(id, k -> new long[3]);
-            st[0]++; if (event.kline().closed()) st[1]++; st[2] = System.currentTimeMillis();
-            try { instanceFor(id, sym).onBar(event.kline(), contexts.get(id)); }
+            if (tick) {
+                if (shadow != null && !"PAPER".equals(stageOf(id))) shadow.onTick(id, k);
+                if (risk != null) try { risk.checkExits(id, k, contexts.get(id)); }
+                                  catch (Exception e) { log.warn("[{}] 出場檢查失敗 {}: {}", id, sym, e.getMessage()); }
+            }
+            if (!iv.equals(intervalOf(id))) continue;               // 策略只吃自己週期的 K 線
+            long[] st = barStats.computeIfAbsent(id, x -> new long[3]);
+            st[0]++; if (k.closed()) st[1]++; st[2] = System.currentTimeMillis();
+            try {
+                Strategy inst = instanceFor(id, sym);
+                Long warmedTo = warmed(id, sym, iv, inst, k.openTime());
+                if (warmedTo != null && k.openTime() <= warmedTo) continue;   // 歷史已經餵過這根
+                inst.onBar(k, contexts.get(id));
+            }
             catch (Exception e) { log.warn("策略 {} [{}] 執行錯誤: {}", id, sym, e.getMessage()); }
         }
+    }
+
+    /** 機器人的 K 線週期（params.interval，預設 1m）。 */
+    public String intervalOf(String id) {
+        Object v = paramsOf.getOrDefault(id, Map.of()).get("interval");
+        String s = v == null ? "" : String.valueOf(v).trim();
+        return s.isEmpty() ? "1m" : s;
+    }
+
+    // ── 歷史暖機：新的策略實例先吃一段歷史 K 線，不必等真實 K 線慢慢累積（1h 機器人原本要等 30 小時） ──
+    static final int WARM_BARS = 200;
+    private MarketClient market;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setMarket(MarketClient m) {
+        this.market = m;
+        if (risk != null) risk.setHistory(this::history);
+    }
+    /** 實例 -> 暖機餵到的最後一根 openTime（實例被換掉就自然重暖） */
+    private final Map<Strategy, Long> warmedAt = Collections.synchronizedMap(new WeakHashMap<>());
+    private final Map<String, Integer> warmedCount = new ConcurrentHashMap<>();
+
+    List<Kline> history(String symbol, String interval) {
+        if (market == null) return List.of();
+        var r = market.klines(symbol, interval, WARM_BARS + 1);
+        return r != null && r.code() == 0 && r.data() != null ? r.data() : List.of();
+    }
+
+    /** 第一次遇到這個實例：用歷史 K 線餵一遍（下單全部吞掉）。回傳餵到的最後一根 openTime；沒暖機回 null。 */
+    private Long warmed(String id, String sym, String iv, Strategy inst, long beforeOpenTime) {
+        Long t = warmedAt.get(inst);
+        if (t != null) return t;
+        long last = -1;
+        try {
+            StrategyContextImpl real = contexts.get(id);
+            StrategyContext muted = new StrategyContext() {
+                @Override public void submit(OrderIntent intent) { /* 暖機期間不下單 */ }
+                @Override public double position(String symbol) { return real == null ? 0 : real.position(symbol); }
+                @Override public double price(String symbol) { return prices.getOrDefault(symbol, 0.0); }
+            };
+            for (Kline b : history(sym, iv)) {
+                if (!b.closed() || b.openTime() >= beforeOpenTime) continue;
+                inst.onBar(b, muted); last = b.openTime();
+            }
+            if (last > 0) warmedCount.merge(id, 1, Integer::sum);
+        } catch (Exception e) { log.debug("[{}] {} {} 歷史暖機失敗（改用即時 K 線慢慢暖）: {}", id, sym, iv, e.getMessage()); }
+        warmedAt.put(inst, last);
+        return last;
     }
 
     /** 各機器人損益（本次上線以來），向 OMS 查，5 秒快取；OMS 不在就空。 */
@@ -525,6 +587,8 @@ public class StrategyRunner {
             Map<String, Object> diag = new java.util.LinkedHashMap<>();
             diag.put("bars", bs[0]); diag.put("closedBars", bs[1]); diag.put("lastBarAt", bs[2]);
             diag.put("symbols", symbolFilter.containsKey(id) ? 1 : prices.size());
+            diag.put("interval", intervalOf(id));
+            diag.put("warmed", warmedCount.getOrDefault(id, 0));
             diag.put("signals", c.signals()); diag.put("lastSignalAt", c.lastSignalAt());
             diag.put("lastSignal", c.lastSignal()); diag.put("lastOutcome", c.lastOutcome());
             m.put("diag", diag);
@@ -560,7 +624,7 @@ public class StrategyRunner {
         if (!factories.containsKey(id)) return "no such strategy: " + id;
         String bad = "PAPER".equals(stageOf(id)) ? null : exposureViolation(id, contexts.get(id) == null ? 1.0 : contexts.get(id).getAllocation());
         if (bad != null) { log.warn("拒絕上線 {}: {}", id, bad); return "rejected: " + bad; }
-        running.add(id); startedAt.put(id, System.currentTimeMillis()); log.info("機器人上線: {}", id);
+        running.add(id); startedAt.put(id, System.currentTimeMillis()); warmedCount.remove(id); log.info("機器人上線: {}", id);
         if (risk != null) risk.reset(id);
         if (shadow != null) shadow.reset(id);
         if (repo != null) try { repo.setRunning(id, true); } catch (Exception e) { log.warn("持久化失敗: {}", e.getMessage()); }

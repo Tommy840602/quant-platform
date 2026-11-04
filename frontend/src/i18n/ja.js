@@ -658,5 +658,9 @@ export default {
     "blocked": "エントリー阻止",
     "paused": "⚠ 停止：{why}、以降エントリーなし",
     "notApplied": "リスク管理未適用（シグナルのみ）"
+  },
+  "interval": {
+    "label": "足種",
+    "warmed": "過去足でウォームアップ済み（{n} 銘柄）"
   }
 }

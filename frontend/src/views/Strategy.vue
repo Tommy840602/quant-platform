@@ -25,6 +25,7 @@
         <el-table-column prop="name" :label="t('strategy.s1')">
           <template #default="{ row }">
             {{ row.name }}
+            <el-tag size="small" effect="plain" type="info" style="margin-left:4px">{{ row.diag?.interval || row.params?.interval || '1m' }}</el-tag>
             <el-tag v-if="row.family && row.family !== 'any'" size="small" :type="row.family === 'trend' ? 'success' : 'primary'" effect="plain" style="margin-left:4px">{{ t('regime.fam.' + row.family) }}</el-tag>
           </template>
         </el-table-column>
@@ -70,6 +71,7 @@
               <div :title="row.diag.lastBarAt ? t('strategy.diagLastBar') + locale.fmtTime(row.diag.lastBarAt) : ''">
                 {{ t('strategy.diagBars', { n: row.diag.closedBars, syms: row.diag.symbols }) }}
                 <span v-if="!row.diag.closedBars" style="color:#e6a23c">· {{ t('strategy.diagNoBars') }}</span>
+                <span v-if="row.diag.warmed" class="hint">· {{ t('interval.warmed', { n: row.diag.warmed }) }}</span>
                 <span v-else-if="row.diag.closedBars < (row.params?.slow || 8) * row.diag.symbols" style="color:#e6a23c">· {{ t('strategy.diagWarmup', { n: row.params?.slow || 8 }) }}</span>
               </div>
               <div v-if="row.gates && row.gates.checks?.length" :title="t('pipeline.gateTip')">
@@ -158,6 +160,9 @@
         <el-form-item :label="t('strategy.s2')">
           <symbol-select v-model="bot.symbol" allow-all :all-label="t('strategy.allSymbols')" style="width:190px" />
         </el-form-item>
+        <el-form-item :label="t('interval.label')">
+          <el-select v-model="bot.interval" style="width:90px"><el-option v-for="i in ['1m', '5m', '15m', '1h']" :key="i" :label="i" :value="i" /></el-select>
+        </el-form-item>
         <el-form-item :label="t('strategy.s10')"><el-input-number v-model="bot.qty" :step="0.001" :min="0.001" /></el-form-item>
         <el-form-item><el-button type="primary" @click="createBot">{{ t('strategy.s22') }}</el-button></el-form-item>
       </el-form>
@@ -175,7 +180,10 @@
       </el-form>
       <el-divider content-position="left">{{ t('botRisk.strategySection') }}</el-divider>
       <el-form label-width="120px">
-        <el-form-item v-for="k in edit.keys.filter(k => !RISK_KEYS.includes(k))" :key="k" :label="k">
+        <el-form-item :label="t('interval.label')">
+          <el-select v-model="edit.params.interval" style="width:120px"><el-option v-for="i in ['1m', '5m', '15m', '1h']" :key="i" :label="i" :value="i" /></el-select>
+        </el-form-item>
+        <el-form-item v-for="k in edit.keys.filter(k => !RISK_KEYS.includes(k) && k !== 'interval' && k !== 'stage')" :key="k" :label="k">
           <el-input-number v-model="edit.params[k]" :step="stepFor(k, edit.params[k])" :precision="precisionFor(edit.params[k])" style="width:200px" />
         </el-form-item>
         <el-form-item :label="t('strategy.s11')">
@@ -234,7 +242,7 @@ const locale = useLocaleStore()
 import { SYMBOLS } from '@/config/symbols'
 
 const list = ref([]); const loading = ref(false)
-const bot = reactive({ id: '', type: 'rsi', symbol: 'BTCUSDT', qty: 0.001 })
+const bot = reactive({ id: '', type: 'rsi', symbol: 'BTCUSDT', qty: 0.001, interval: '15m' })
 
 async function load(silent = false) {
   if (!silent) loading.value = true
@@ -357,7 +365,7 @@ function openEdit(row) {
   const p = { ...(row.risk?.params || {}), ...(row.params || {}) }
   for (const k of (DEFAULT_KEYS[row.type] || ['period'])) if (!(k in p)) p[k] = null
   if (!('qty' in p)) p.qty = 0.001
-  edit.id = row.id; edit.params = Object.fromEntries(Object.entries(p).map(([k, v]) => [k, v == null ? undefined : +v])); edit.keys = Object.keys(edit.params); edit.orig = { ...edit.params }; edit.show = true
+  edit.id = row.id; edit.params = Object.fromEntries(Object.entries(p).map(([k, v]) => [k, v == null ? undefined : (k === 'interval' || k === 'stage') ? v : +v])); if (!edit.params.interval) edit.params.interval = '1m'; edit.keys = Object.keys(edit.params); edit.orig = { ...edit.params }; edit.show = true
 }
 function addKey() { if (!edit.newKey) return; edit.params[edit.newKey] = +edit.newVal; edit.keys = Object.keys(edit.params); edit.newKey = '' }
 const precisionFor = v => (v != null && !Number.isInteger(+v)) ? 4 : 0
@@ -366,7 +374,7 @@ async function saveEdit() {
   edit.saving = true
   try {
     // 只送有改的鍵：只改風控參數時後端不重建策略、不重新暖機
-    const body = Object.fromEntries(Object.entries(edit.params).filter(([k, v]) => v != null && !Number.isNaN(v) && v !== edit.orig?.[k]))
+    const body = Object.fromEntries(Object.entries(edit.params).filter(([k, v]) => v != null && !(typeof v === 'number' && Number.isNaN(v)) && v !== edit.orig?.[k]))
     if (!Object.keys(body).length) { edit.show = false; return }
     const r = await strategyApi.paramsAny(edit.id, body)
     if (r.code && r.code !== 0) throw new Error(r.message)
@@ -376,7 +384,7 @@ async function saveEdit() {
 }
 async function createBot() {
   if (!bot.id) return ElMessage.warning(t('strategy.s38'))
-  const resp = await strategyApi.create({ id: bot.id, type: bot.type, symbol: bot.symbol === 'ALL' ? null : bot.symbol, params: { qty: bot.qty } })
+  const resp = await strategyApi.create({ id: bot.id, type: bot.type, symbol: bot.symbol === 'ALL' ? null : bot.symbol, params: { qty: bot.qty, interval: bot.interval } })
   ElMessage.success(resp.data || t('strategy.s39')); bot.id = ''; load()
 }
 async function testSlack() {

@@ -658,5 +658,9 @@ export default {
     "blocked": "Entries blocked",
     "paused": "⚠ Breaker: {why}; no entries afterwards",
     "notApplied": "Risk rules not applied (signals only)"
+  },
+  "interval": {
+    "label": "Interval",
+    "warmed": "warmed up from history ({n} symbols)"
   }
 }
