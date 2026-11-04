@@ -103,6 +103,7 @@
             </el-dropdown>
             <el-button size="small" @click="openEdit(row)">{{ t('strategy.s20') }}</el-button>
             <el-button size="small" @click="openLog(row)">{{ t('decisions.btn') }}</el-button>
+            <el-button size="small" @click="rec?.open(row.id)">{{ t('recon.btn') }}</el-button>
             <el-button size="small" type="danger" plain :disabled="row.builtin" :title="row.builtin ? t('strategy.s51') : ''" @click="removeBot(row)">{{ t('strategy.s21') }}</el-button>
           </template>
         </el-table-column>
@@ -177,6 +178,7 @@
       <el-alert v-if="bot.market === 'USDT_M'" type="warning" :closable="false" show-icon style="margin-top:8px" :title="t('futures.note')" />
     </el-card>
 
+    <ReconcileDialog ref="rec" />
     <el-dialog v-model="edit.show" :title="t('strategy.s52') + edit.id" width="560px">
       <el-divider content-position="left">{{ t('botRisk.section') }}</el-divider>
       <el-form label-width="170px">
@@ -245,6 +247,8 @@ import { useRouter } from 'vue-router'
 import { useMarketStore } from '@/store/market'
 import { sizingProblem, MIN_NOTIONAL } from '@/composables/useSizingCheck'
 import { STRATEGY_TYPES } from '@/config/strategies'
+import ReconcileDialog from '@/components/ReconcileDialog.vue'
+const rec = ref(null)
 import { useLocaleStore } from '@/store/locale'
 const locale = useLocaleStore()
 import { SYMBOLS } from '@/config/symbols'

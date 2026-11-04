@@ -324,6 +324,17 @@ public class StrategyRunner {
         return out;
     }
 
+    /** 模擬 / 影子 / 實盤對帳：近 days 天。 */
+    public Map<String, Object> reconcile(String id, int days) {
+        if (trips == null) return Map.of("error", "沒有資料庫");
+        long since = System.currentTimeMillis() - days * 86_400_000L;
+        Map<String, Object> out = new LinkedHashMap<>(Reconciliation.build(trips.tripRows(id, since), trips.slipRows(id, since),
+                0.001, shadow == null ? 0 : shadow.rejects(id)));
+        out.put("botId", id); out.put("days", days); out.put("stage", stageOf(id));
+        out.put("stageSince", stageSince.getOrDefault(id, 0L));
+        return out;
+    }
+
     public Map<String, Map<String, Object>> regimes() { return risk == null ? Map.of() : risk.regimes(); }
 
     private AccountClient accountClient;   // 可為 null（單元測試）
