@@ -328,6 +328,35 @@ services:
       api-gateway: { condition: service_started }
       research:    { condition: service_started }
 
+  # ---------- 遠端存取：Cloudflare Tunnel（預設不啟動） ----------
+  # 由容器主動往外連 Cloudflare，不用開任何對外埠、不用改路由器；只轉發到前端（Grafana/Nacos/DB 都不經過）。
+  # 正式版（固定網址 + Cloudflare Access 信箱驗證）：
+  #   docker compose -f docker-compose.prod.yml --profile tunnel up -d cloudflared
+  cloudflared:
+    image: cloudflare/cloudflared:2024.12.2
+    container_name: qp-cloudflared
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    <<: *logging
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      frontend: { condition: service_started }
+
+  # 臨時版（免帳號、隨機 *.trycloudflare.com 網址，重啟就換網址）：
+  #   docker compose -f docker-compose.prod.yml --profile quick-tunnel up -d cloudflared-quick
+  #   docker compose -f docker-compose.prod.yml logs cloudflared-quick | grep trycloudflare
+  cloudflared-quick:
+    image: cloudflare/cloudflared:2024.12.2
+    container_name: qp-cloudflared-quick
+    profiles: ["quick-tunnel"]
+    restart: unless-stopped
+    <<: *logging
+    command: tunnel --no-autoupdate --url http://frontend:80
+    depends_on:
+      frontend: { condition: service_started }
+
 volumes:
   redis-data:
   ts_data:

@@ -18,13 +18,23 @@ public class AuthController {
 
     private final JwtService jwt;
     private final UserService users;
+    private final com.quant.auth.service.LoginGuard guard;
 
-    public AuthController(JwtService jwt, UserService users) { this.jwt = jwt; this.users = users; }
+    public AuthController(JwtService jwt, UserService users, com.quant.auth.service.LoginGuard guard) {
+        this.jwt = jwt; this.users = users; this.guard = guard;
+    }
 
     @PostMapping("/login")
-    public ApiResponse<Map<String, Object>> login(@RequestBody Map<String, String> body) {
-        return users.authenticate(body.get("username"), body.get("password"))
+    public ApiResponse<Map<String, Object>> login(@RequestBody Map<String, String> body,
+                                                  jakarta.servlet.http.HttpServletRequest req) {
+        String username = body.get("username");
+        String ip = com.quant.auth.service.LoginGuard.clientIp(req.getHeader("CF-Connecting-IP"), req.getHeader("X-Real-IP"),
+                req.getHeader("X-Forwarded-For"), req.getRemoteAddr());
+        long locked = guard.lockedSeconds(username, ip);
+        if (locked > 0) return ApiResponse.error(429, "登入失敗次數過多，請 " + ((locked + 59) / 60) + " 分鐘後再試");
+        return users.authenticate(username, body.get("password"))
                 .map(u -> {
+                    guard.onSuccess(username);
                     var roles = UserService.roles(u);
                     String token = jwt.generate(u.getUsername(), roles);
                     return ApiResponse.ok(Map.<String, Object>of(
@@ -32,7 +42,7 @@ public class AuthController {
                             "username", u.getUsername(), "roles", roles,
                             "expiresIn", jwt.ttlSeconds()));
                 })
-                .orElseGet(() -> ApiResponse.error(401, "帳號或密碼錯誤"));
+                .orElseGet(() -> { guard.onFailure(username, ip); return ApiResponse.error(401, "帳號或密碼錯誤"); });
     }
 
     /** 建立帳號：只有 ADMIN 能呼叫。 */

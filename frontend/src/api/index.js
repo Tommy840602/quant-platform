@@ -1,5 +1,5 @@
 import axios from 'axios'
-import http from './http'
+import http, { getToken } from './http'
 
 export const authApi = {
   login: (body) => http.post('/auth/login', body),
@@ -86,6 +86,7 @@ export const backtestApi = {
 
 // Python 向量化回測走獨立 proxy（/research -> :8000）
 const research = axios.create({ baseURL: '/research', timeout: 20000 })
+research.interceptors.request.use((cfg) => { const t = getToken(); if (t) cfg.headers.Authorization = `Bearer ${t}`; return cfg })
 export const researchApi = {
   backtest: (payload) => research.post('/backtest/run', payload).then(r => r.data)
 }
