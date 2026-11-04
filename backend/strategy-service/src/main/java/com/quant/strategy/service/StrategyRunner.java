@@ -57,7 +57,146 @@ public class StrategyRunner {
         this.risk = r;
         r.bind(id -> paramsOf.getOrDefault(id, Map.of()), id -> names.getOrDefault(id, id), id -> types.getOrDefault(id, "ma"), null);
         contexts.values().forEach(c -> c.setBuyRouter(r));
+        r.setEquity(() -> equityCache);
+        if (shadow != null) { shadow.bind(r, this::stageOf, id -> names.getOrDefault(id, id), notifyClient);
+            r.setTradeHook(c -> { if (trips != null) try { trips.insert(c, "LIVE"); } catch (Exception ex) { log.warn("來回紀錄寫入失敗: {}", ex.getMessage()); } }); }
     }
+    // ── 晉升管線：PAPER（模擬盤）→ PILOT（真錢最小單）→ LIVE ──
+    public static final List<String> STAGES = List.of("PAPER", "PILOT", "LIVE");
+    private final Map<String, String> stage = new ConcurrentHashMap<>();
+    private final Map<String, Long> stageSince = new ConcurrentHashMap<>();
+    private volatile boolean pipelineAuto = true;
+    /** 關卡門檻（可由 strategy_settings 的 gate.<key> 覆寫） */
+    static final Map<String, Double> GATES = new LinkedHashMap<>();
+    static {
+        GATES.put("paperMinTrades", 10.0);   // PAPER → PILOT：模擬盤至少 N 筆來回
+        GATES.put("paperMinHours", 24.0);    //                 且在模擬盤至少 N 小時
+        GATES.put("paperMinPF", 1.2);        //                 獲利因子 ≥
+        GATES.put("pilotMinTrades", 10.0);   // PILOT → LIVE：真錢最小單至少 N 筆
+        GATES.put("pilotMinPF", 1.1);        //                 獲利因子 ≥
+        GATES.put("pilotMaxSlipBps", 20.0);  //                 平均滑價 ≤ N bps
+        GATES.put("demotePF", 0.9);          // 降級：最近 10 筆獲利因子 <
+    }
+    private final Map<String, Double> gateOverride = new ConcurrentHashMap<>();
+    double gate(String k) { return gateOverride.getOrDefault(k, GATES.get(k)); }
+    public String stageOf(String id) { return stage.getOrDefault(id, "LIVE"); }
+
+    private ShadowEngine shadow;
+    private RoundTripRepository trips;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setShadow(ShadowEngine e) {
+        this.shadow = e;
+        e.bind(risk, this::stageOf, id -> names.getOrDefault(id, id), notifyClient);
+        e.attach(book);
+        contexts.values().forEach(c -> c.setExecution(e));
+        if (risk != null) risk.setTradeHook(c -> { if (trips != null) try { trips.insert(c, "LIVE"); } catch (Exception ex) { log.warn("來回紀錄寫入失敗: {}", ex.getMessage()); } });
+    }
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setTrips(RoundTripRepository r) { this.trips = r; }
+
+    // ── 權益快取（波動率目標下單量用） ──
+    private volatile double equityCache = 0;
+    @Scheduled(initialDelay = 15_000, fixedDelay = 60_000)
+    public void refreshEquity() {
+        if (accountClient == null) return;
+        try { Object t = accountClient.balance().data().get("totalUsdt"); if (t instanceof Number n) equityCache = n.doubleValue(); }
+        catch (Exception e) { log.debug("取權益失敗: {}", e.getMessage()); }
+    }
+
+    /** 設定階段。降到 PAPER 前先把真錢部位市價出清（否則切成模擬後沒人管）；離開 PAPER 丟掉模擬部位。 */
+    public synchronized String setStage(String id, String to, String why) {
+        if (!factories.containsKey(id)) return "no such strategy: " + id;
+        to = to == null ? "" : to.toUpperCase();
+        if (!STAGES.contains(to)) return "未知階段: " + to;
+        String from = stageOf(id);
+        if (from.equals(to)) return "stage unchanged: " + to;
+        StrategyContextImpl c = contexts.get(id);
+        if ("PAPER".equals(to) && c != null) for (var e : c.snapshot().entrySet()) if (e.getValue() > 1e-12) c.exit(e.getKey(), "降級模擬盤");
+        if ("PAPER".equals(from) && shadow != null) shadow.clearPaper(id);
+        stage.put(id, to); stageSince.put(id, System.currentTimeMillis());
+        if (repo != null) try { repo.setStage(id, to); } catch (Exception e) { log.warn("持久化失敗: {}", e.getMessage()); }
+        if (c != null) c.setAllocation(1.0);
+        if (risk != null) risk.reset(id);
+        if (shadow != null) shadow.reset(id);
+        boolean up = STAGES.indexOf(to) > STAGES.indexOf(from);
+        log.warn("[{}] 晉升管線 {} → {}（{}）", id, from, to, why);
+        notify((up ? ":arrow_up: 晉升 " : ":arrow_down: 降級 ") + "[" + names.getOrDefault(id, id) + "] " + label(from) + " → " + label(to) + "（" + why + "）");
+        return "stage: " + id + " " + from + " -> " + to;
+    }
+    static String label(String st) { return switch (st) { case "PAPER" -> "模擬盤"; case "PILOT" -> "真錢試行"; default -> "正式運行"; }; }
+
+    /** 每 10 分鐘評估關卡（自動模式）。 */
+    @Scheduled(initialDelay = 180_000, fixedDelay = 600_000)
+    public void pipelineTick() {
+        if (!pipelineAuto) return;
+        for (String id : new ArrayList<>(running)) {
+            try {
+                Map<String, Object> g = gates(id);
+                Object act = g.get("action");
+                if (act instanceof String a && !a.isBlank()) setStage(id, a, String.valueOf(g.get("reason")));
+            } catch (Exception e) { log.warn("[{}] 關卡評估失敗: {}", id, e.getMessage()); }
+        }
+    }
+
+    /** 目前階段的關卡進度：checks（每項 value / need / ok）、action（該晉升 / 降級到哪）、reason。 */
+    public Map<String, Object> gates(String id) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        String st = stageOf(id); long since = stageSince.getOrDefault(id, System.currentTimeMillis());
+        m.put("stage", st); m.put("since", since);
+        List<Map<String, Object>> checks = new ArrayList<>();
+        m.put("checks", checks);
+        if (trips == null) return m;
+        String paused = risk == null ? null : risk.pausedReason(id);
+        switch (st) {
+            case "PAPER" -> {
+                var t = trips.stats(id, "PAPER", since);
+                double hours = (System.currentTimeMillis() - since) / 3_600_000.0;
+                checks.add(check("trades", t.n(), gate("paperMinTrades"), t.n() >= gate("paperMinTrades")));
+                checks.add(check("hours", Math.round(hours * 10) / 10.0, gate("paperMinHours"), hours >= gate("paperMinHours")));
+                checks.add(check("pf", r2(t.profitFactor()), gate("paperMinPF"), t.profitFactor() >= gate("paperMinPF")));
+                checks.add(check("meanPct", r2(t.meanRet() * 100), 0, t.meanRet() > 0));
+                if (checks.stream().allMatch(c -> (boolean) c.get("ok"))) { m.put("action", "PILOT"); m.put("reason", "模擬盤關卡全數通過"); }
+                m.put("next", "PILOT");
+            }
+            case "PILOT" -> {
+                var t = trips.stats(id, "LIVE", since);
+                double[] sl = trips.slippage(id, since);
+                checks.add(check("trades", t.n(), gate("pilotMinTrades"), t.n() >= gate("pilotMinTrades")));
+                checks.add(check("pf", r2(t.profitFactor()), gate("pilotMinPF"), t.profitFactor() >= gate("pilotMinPF")));
+                checks.add(check("meanPct", r2(t.meanRet() * 100), 0, t.meanRet() > 0));
+                checks.add(check("slipBps", Math.round(sl[0] * 10) / 10.0, gate("pilotMaxSlipBps"), sl[1] < 3 || sl[0] <= gate("pilotMaxSlipBps")));
+                m.put("next", "LIVE");
+                if (paused != null) { m.put("action", "PAPER"); m.put("reason", "試行中熔斷：" + paused); }
+                else if (t.n() >= gate("pilotMinTrades") && t.profitFactor() < 0.8) { m.put("action", "PAPER"); m.put("reason", String.format("試行 %d 筆獲利因子 %.2f < 0.8", t.n(), t.profitFactor())); }
+                else if (checks.stream().allMatch(c -> (boolean) c.get("ok"))) { m.put("action", "LIVE"); m.put("reason", "真錢試行關卡全數通過"); }
+            }
+            default -> {
+                var t = trips.recentStats(id, "LIVE", 10);
+                checks.add(check("recentPF", r2(t.profitFactor()), gate("demotePF"), t.n() < 10 || t.profitFactor() >= gate("demotePF")));
+                if (paused != null) { m.put("action", "PILOT"); m.put("reason", "熔斷：" + paused); }
+                else if (t.n() >= 10 && t.profitFactor() < gate("demotePF")) { m.put("action", "PILOT"); m.put("reason", String.format("最近 10 筆獲利因子 %.2f < %.2f", t.profitFactor(), gate("demotePF"))); }
+            }
+        }
+        return m;
+    }
+    private static Map<String, Object> check(String k, Object v, Object need, boolean ok) {
+        Map<String, Object> c = new LinkedHashMap<>(); c.put("key", k); c.put("value", v); c.put("need", need); c.put("ok", ok); return c;
+    }
+    private static double r2(double v) { return Math.round(v * 100) / 100.0; }
+
+    public Map<String, Object> pipelineStatus() {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("auto", pipelineAuto);
+        Map<String, Double> g = new LinkedHashMap<>(); for (String k : GATES.keySet()) g.put(k, gate(k));
+        m.put("gates", g);
+        return m;
+    }
+    public Map<String, Object> setPipelineAuto(boolean on) {
+        pipelineAuto = on;
+        if (repo != null) try { repo.setSetting("pipeline_auto", String.valueOf(on)); } catch (Exception e) { log.warn("持久化失敗: {}", e.getMessage()); }
+        return pipelineStatus();
+    }
+
     // ── Thompson Sampling 自動配資 ──
     private BanditAllocator bandit;
     @org.springframework.beans.factory.annotation.Autowired(required = false)
@@ -78,7 +217,7 @@ public class StrategyRunner {
 
     public synchronized Map<String, Object> applyBandit(String by) {
         if (bandit == null) return banditStatus();
-        List<String> ids = new ArrayList<>(running); Collections.sort(ids);
+        List<String> ids = new ArrayList<>(running); ids.removeIf(id -> !"LIVE".equals(stageOf(id))); Collections.sort(ids);
         if (ids.isEmpty()) return banditStatus();
         Map<String, Double> alloc = bandit.allocations(ids, banditFloor(), BANDIT_CAP);
         StringBuilder sb = new StringBuilder();
@@ -103,7 +242,7 @@ public class StrategyRunner {
         m.put("floor", banditFloor()); m.put("cap", BANDIT_CAP);
         List<Map<String, Object>> bots = new ArrayList<>();
         if (bandit != null) {
-            List<String> ids = new ArrayList<>(running); Collections.sort(ids);
+            List<String> ids = new ArrayList<>(running); ids.removeIf(id -> !"LIVE".equals(stageOf(id))); Collections.sort(ids);
             Map<String, Double> pb = bandit.pBest(ids);
             for (String id : ids) {
                 Map<String, Object> r = new LinkedHashMap<>(bandit.stats(id));
@@ -139,6 +278,7 @@ public class StrategyRunner {
         Set<String> ids = new java.util.HashSet<>(running); ids.add(id);
         double sumAlloc = 0, exposure = 0;
         for (String b : ids) {
+            if (!b.equals(id) && "PAPER".equals(stageOf(b))) continue;   // 模擬盤不佔真錢曝險
             double a = b.equals(id) ? allocationForId : (contexts.get(b) == null ? 1.0 : contexts.get(b).getAllocation());
             sumAlloc += a;
             int syms = symbolFilter.containsKey(b) ? 1 : Math.max(1, prices.size());
@@ -199,6 +339,10 @@ public class StrategyRunner {
         try {
             repo.setting("order_notional").ifPresent(v -> orderNotional = Math.max(0, Double.parseDouble(v)));
             repo.setting("bandit_enabled").ifPresent(v -> banditEnabled = Boolean.parseBoolean(v));
+            repo.setting("pipeline_auto").ifPresent(v -> pipelineAuto = Boolean.parseBoolean(v));
+            for (String k : GATES.keySet()) repo.setting("gate." + k).ifPresent(v -> { try { gateOverride.put(k, Double.parseDouble(v)); } catch (NumberFormatException ignore) {} });
+            try { repo.stages().forEach((id, v) -> { stage.put(id, String.valueOf(v[0])); stageSince.put(id, (Long) v[1]); }); }
+            catch (Exception e) { log.warn("讀取晉升階段失敗（V7 未套用？）: {}", e.getMessage()); }
             int restored = 0, resumed = 0;
             for (BotRepository.BotRow b : repo.findAll()) {
                 if (!factories.containsKey(b.id())) {
@@ -215,6 +359,10 @@ public class StrategyRunner {
             // 內建的若 DB 還沒有列，寫一筆讓之後的改動有地方存
             for (String id : builtins) if (repo.findAll().stream().noneMatch(r -> r.id().equals(id))) persist(id);
             log.info("機器人持久化：恢復 {} 個自建、{} 個恢復運行", restored, resumed);
+            if (bandit != null && trips != null) for (String id : factories.keySet()) {
+                try { for (double r : trips.recentReturns(id, List.of("LIVE", "PAPER"), BanditAllocator.WINDOW)) bandit.record(id, r); }
+                catch (Exception e) { log.debug("配資學習資料讀取失敗: {}", e.getMessage()); }
+            }
             if (resumed > 0) notify(":repeat: 重啟後恢復 " + resumed + " 個機器人運行：" + running);
         } catch (Exception e) {
             log.error("讀回機器人設定失敗（繼續以記憶體狀態運行）: {}", e.getMessage());
@@ -235,6 +383,7 @@ public class StrategyRunner {
         instances.put(id, new ConcurrentHashMap<>());
         contexts.putIfAbsent(id, new StrategyContextImpl(id, orderClient, prices, () -> orderNotional, book));
         if (risk != null) contexts.get(id).setBuyRouter(risk);
+        if (shadow != null) contexts.get(id).setExecution(shadow);
         names.put(id, name);
         if (symbol != null) symbolFilter.put(id, symbol.toUpperCase());
     }
@@ -269,6 +418,7 @@ public class StrategyRunner {
             String filter = symbolFilter.get(id);
             if (filter != null && !filter.equals(sym)) continue;   // 機器人限定 symbol
             if (!factories.containsKey(id)) continue;
+            if (shadow != null && !"PAPER".equals(stageOf(id))) shadow.onTick(id, event.kline());
             if (risk != null) try { risk.checkExits(id, event.kline(), contexts.get(id)); }
                               catch (Exception e) { log.warn("[{}] 出場檢查失敗 {}: {}", id, sym, e.getMessage()); }
             long[] st = barStats.computeIfAbsent(id, k -> new long[3]);
@@ -320,12 +470,22 @@ public class StrategyRunner {
             diag.put("signals", c.signals()); diag.put("lastSignalAt", c.lastSignalAt());
             diag.put("lastSignal", c.lastSignal()); diag.put("lastOutcome", c.lastOutcome());
             m.put("diag", diag);
+            m.put("stage", stageOf(id));
+            m.put("stageSince", stageSince.getOrDefault(id, 0L));
+            if (running.contains(id)) {
+                try { m.put("gates", gates(id)); } catch (Exception e) { log.debug("gates: {}", e.getMessage()); }
+                if (shadow != null && !"PAPER".equals(stageOf(id)) && risk != null) {
+                    double live = risk.sessionPnl(id);
+                    m.put("shadow", shadow.compare(id, live));
+                    shadow.alertGap(id, live);
+                }
+            }
             if (risk != null) {
                 Map<String, Object> rk = new java.util.LinkedHashMap<>();
                 rk.put("paused", risk.pausedReason(id));
                 rk.put("consecLosses", risk.consecLosses(id));
                 rk.put("sessionPnl", Math.round(risk.sessionPnl(id) * 10000) / 10000.0);
-                rk.put("openSlots", book.openSlots(id));
+                rk.put("openSlots", contexts.get(id).openSlots());
                 Map<String, Object> eff = new java.util.LinkedHashMap<>();
                 for (String k : BotRiskManager.DEFAULTS.keySet()) eff.put(k, risk.p(id, k));
                 rk.put("params", eff);
@@ -340,10 +500,11 @@ public class StrategyRunner {
 
     public String start(String id) {
         if (!factories.containsKey(id)) return "no such strategy: " + id;
-        String bad = exposureViolation(id, contexts.get(id) == null ? 1.0 : contexts.get(id).getAllocation());
+        String bad = "PAPER".equals(stageOf(id)) ? null : exposureViolation(id, contexts.get(id) == null ? 1.0 : contexts.get(id).getAllocation());
         if (bad != null) { log.warn("拒絕上線 {}: {}", id, bad); return "rejected: " + bad; }
         running.add(id); startedAt.put(id, System.currentTimeMillis()); log.info("機器人上線: {}", id);
         if (risk != null) risk.reset(id);
+        if (shadow != null) shadow.reset(id);
         if (repo != null) try { repo.setRunning(id, true); } catch (Exception e) { log.warn("持久化失敗: {}", e.getMessage()); }
         notify(":arrow_forward: 機器人上線 [" + names.getOrDefault(id, id) + "] (" + id
                 + ") 標的 " + symbolFilter.getOrDefault(id, "ALL"));
@@ -481,7 +642,13 @@ public class StrategyRunner {
         put(id, s, name + (symbol != null ? " · " + symbol.toUpperCase() : ""), symbol);
         types.put(id, type.toLowerCase());
         paramsOf.put(id, p == null ? new java.util.LinkedHashMap<>() : new java.util.LinkedHashMap<>(p));
-        if (persist) persist(id);
+        if (persist) {
+            persist(id);
+            // 新機器人從模擬盤開始，過關才用真錢（p.stage 可指定，例如 LIVE 跳過）
+            String st = p != null && p.get("stage") instanceof String x && STAGES.contains(x.toUpperCase()) ? x.toUpperCase() : "PAPER";
+            stage.put(id, st); stageSince.put(id, System.currentTimeMillis());
+            if (repo != null) try { repo.setStage(id, st); } catch (Exception e) { log.warn("持久化失敗: {}", e.getMessage()); }
+        }
         log.info("建立機器人 {} type={} symbol={}", id, type, symbol);
         if (persist) notify(":new: 建立機器人 [" + name + "] (" + id + ") 標的 "
                 + (symbol != null ? symbol.toUpperCase() : "ALL"));
@@ -519,7 +686,8 @@ public class StrategyRunner {
         if (builtins.contains(id)) return "內建策略不可刪除: " + id;
         if (running.contains(id)) stop(id, flatten);
         factories.remove(id); instances.remove(id); contexts.remove(id); names.remove(id);
-        symbolFilter.remove(id); types.remove(id); paramsOf.remove(id); startedAt.remove(id);
+        symbolFilter.remove(id); types.remove(id); paramsOf.remove(id); startedAt.remove(id); stage.remove(id); stageSince.remove(id);
+        if (shadow != null) shadow.clearPaper(id);
         if (repo != null) try { repo.delete(id); } catch (Exception e) { log.warn("刪除持久化失敗: {}", e.getMessage()); }
         notify(":wastebasket: 刪除機器人 (" + id + ")");
         return "deleted: " + id;
@@ -527,6 +695,11 @@ public class StrategyRunner {
 
     /** 下線並（可選）平倉：對策略帳上每個有多頭部位的標的送市價 SELL。 */
     public String stop(String id, boolean flatten) {
+        StrategyContextImpl pc = contexts.get(id);
+        if (flatten && pc != null && pc.isPaper()) {
+            for (var e : pc.snapshot().entrySet()) if (e.getValue() > 1e-12) pc.exit(e.getKey(), "下線平倉");
+            return stop(id) + ", paper flattened";
+        }
         String r = stop(id);
         if (!flatten) return r;
         int sent = 0;

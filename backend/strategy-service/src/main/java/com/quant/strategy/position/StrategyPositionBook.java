@@ -35,9 +35,18 @@ public class StrategyPositionBook {
     /** strategyId -> symbol -> 平均成本（出場風控算停損/停利、來回損益用） */
     private final Map<String, Map<String, Double>> avgCost = new ConcurrentHashMap<>();
     /** 平倉（SELL 成交）時回報一筆來回損益：(strategyId, symbol, pnlUsdt) */
-    public interface CloseListener { void onClose(String strategyId, String symbol, double pnl, double entryNotional); }
+    /** 一筆平倉（來回）：qty 為平掉的數量，pnl 已扣來回手續費估計。 */
+    public record Close(String strategyId, String symbol, double qty, double entryPx, double exitPx, double pnl) {
+        public double entryNotional() { return entryPx * qty; }
+        public double ret() { return entryNotional() > 0 ? pnl / entryNotional() : 0; }
+    }
+    public interface CloseListener { void onClose(Close c); }
     private volatile CloseListener closeListener;
     public void setCloseListener(CloseListener l) { this.closeListener = l; }
+    /** 每筆成交（滑價計算用）：(clientOrderId, strategyId, symbol, side, qty, price) */
+    public interface FillListener { void onFill(String clientOrderId, String strategyId, String symbol, OrderSide side, double qty, double px); }
+    private volatile FillListener fillListener;
+    public void setFillListener(FillListener l) { this.fillListener = l; }
     private static final double FEE_RATE = 0.001;   // 單邊手續費估計，來回 ×2
 
     public record Inflight(String strategyId, String symbol) {}
@@ -95,10 +104,12 @@ public class StrategyPositionBook {
                 double q = Math.min(before, -signed);
                 double pnl = (px - avg) * q - (px + avg) * q * FEE_RATE;
                 CloseListener l = closeListener;
-                if (l != null) try { l.onClose(sid, sym, pnl, avg * q); } catch (Exception ex) { log.warn("平倉回報處理失敗: {}", ex.getMessage()); }
+                if (l != null) try { l.onClose(new Close(sid, sym, q, avg, px, pnl)); } catch (Exception ex) { log.warn("平倉回報處理失敗: {}", ex.getMessage()); }
             }
             positions.computeIfAbsent(sid, k -> new ConcurrentHashMap<>()).merge(sym, signed, Double::sum);
             if (position(sid, sym) <= 1e-12) costs.remove(sym);
+            FillListener fl = fillListener;
+            if (fl != null && px > 0) try { fl.onFill(e.clientOrderId(), sid, sym, e.side(), e.filledQty(), px); } catch (Exception ex) { log.debug("fill hook: {}", ex.getMessage()); }
             log.info("[{}] 部位 {} {}{} → {}", sid, sym, signed >= 0 ? "+" : "", signed, position(sid, sym));
         }
         boolean terminal = st == OrderStatus.FILLED || st == OrderStatus.CANCELED

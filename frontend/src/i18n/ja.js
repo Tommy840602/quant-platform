@@ -539,7 +539,9 @@ export default {
       "maxLossUsdt": "今回の損失上限 USDT",
       "cooldownBars": "決済後クールダウン（本）",
       "regimeFilter": "相場フィルター",
-      "blockHighVol": "異常ボラで新規停止"
+      "blockHighVol": "異常ボラで新規停止",
+      "riskPerTradePct": "1回のリスク % 資産",
+      "sizeCapPct": "1注文上限 % 資産"
     },
     "h": {
       "stopAtr": "建値 − N×ATR；0=オフ",
@@ -550,7 +552,9 @@ export default {
       "maxLossUsdt": "実現+未実現 ≤ −N で停止；0=オフ",
       "cooldownBars": "同銘柄を N 本は再エントリーしない",
       "regimeFilter": "トレンド型はトレンド/中立、逆張り型はレンジ/中立のみ",
-      "blockHighVol": "直近 14 本のボラが平常の 2.5 倍以上で停止"
+      "blockHighVol": "直近 14 本のボラが平常の 2.5 倍以上で停止",
+      "riskPerTradePct": "損切り時の損失を資産 N% 以内に、ATR から数量算出；0=1注文名目",
+      "sizeCapPct": "1注文の名目を資産 N% までに"
     }
   },
   "regime": {
@@ -580,5 +584,29 @@ export default {
     "hint": "往復ごとのリターンから学習し、最良である可能性が高いボットほど多く配分（倍率 × 1注文名目）。成績の悪いボットは下限で観察を継続。平均倍率 = 1 で総エクスポージャーは不変、下限で1注文 5 USDT 以上を保証。オン中は手動配分を上書きします。",
     "on": "自動配分オン",
     "off": "自動配分オフ"
+  },
+  "pipeline": {
+    "auto": "自動昇格 / 降格",
+    "st": {
+      "PAPER": "ペーパー",
+      "PILOT": "実弾試行",
+      "LIVE": "本番"
+    },
+    "toNext": "{next}へ：",
+    "keep": "維持条件：",
+    "gateTip": "10 分ごとに自動評価。すべて ✓ で昇格、停止や成績悪化で降格",
+    "ck": {
+      "trades": "往復",
+      "hours": "時間",
+      "pf": "PF",
+      "meanPct": "平均%",
+      "slipBps": "滑りbps",
+      "recentPF": "直近10PF"
+    },
+    "shadow": "影 {sh} · 実弾 {live} · 差 {gap} USDT（滑り {slip} bps · 拒否 {rej}）",
+    "newBot": "新しいボットはペーパーから開始し、関門を通過すると実弾へ自動昇格します。",
+    "confirmPaper": "ペーパーへ：実弾ポジションは先に成行売却し、以降は模擬約定のみ。",
+    "confirmPilot": "実弾試行へ：各注文は Binance 最低 5.5 USDT。",
+    "confirmLive": "本番へ：1注文名目 / 自動配分で発注（実弾）。"
   }
 }

@@ -5,6 +5,8 @@
         <div style="display:flex;justify-content:space-between;align-items:center">
           <span>{{ t('strategy.s13') }}</span>
           <div>
+            <span class="hint" style="margin-right:6px">{{ t('pipeline.auto') }}</span>
+            <el-switch v-model="pipeline.auto" size="small" style="margin-right:12px" @change="togglePipeline" />
             <el-button size="small" @click="testSlack">{{ t('strategy.s14') }}</el-button>
             <el-button size="small" type="primary" @click="load">{{ t('strategy.s15') }}</el-button>
           </div>
@@ -55,6 +57,12 @@
         </el-table-column>
         <el-table-column prop="status" :label="t('strategy.s6')" width="300">
           <template #default="{ row }">
+            <el-dropdown trigger="click" @command="st => changeStage(row, st)" style="margin-right:6px;vertical-align:middle">
+              <el-tag :type="STAGE_TYPE[row.stage || 'LIVE']" effect="dark" style="cursor:pointer">{{ t('pipeline.st.' + (row.stage || 'LIVE')) }} ▾</el-tag>
+              <template #dropdown><el-dropdown-menu>
+                <el-dropdown-item v-for="st in ['PAPER', 'PILOT', 'LIVE']" :key="st" :command="st" :disabled="st === (row.stage || 'LIVE')">{{ t('pipeline.st.' + st) }}</el-dropdown-item>
+              </el-dropdown-menu></template>
+            </el-dropdown>
             <el-tag :type="row.status === 'RUNNING' ? (row.risk?.paused ? 'warning' : 'success') : 'info'">{{ row.status === 'RUNNING' && row.risk?.paused ? t('botRisk.paused') : row.status }}</el-tag>
             <el-button v-if="row.status === 'RUNNING' && row.risk?.paused" size="small" type="warning" link style="margin-left:6px" @click="resume(row.id)">{{ t('botRisk.resume') }}</el-button>
             <div v-if="row.status === 'RUNNING' && row.risk?.paused" style="color:#e6a23c;font-size:12px">{{ row.risk.paused }}</div>
@@ -63,6 +71,13 @@
                 {{ t('strategy.diagBars', { n: row.diag.closedBars, syms: row.diag.symbols }) }}
                 <span v-if="!row.diag.closedBars" style="color:#e6a23c">· {{ t('strategy.diagNoBars') }}</span>
                 <span v-else-if="row.diag.closedBars < (row.params?.slow || 8) * row.diag.symbols" style="color:#e6a23c">· {{ t('strategy.diagWarmup', { n: row.params?.slow || 8 }) }}</span>
+              </div>
+              <div v-if="row.gates && row.gates.checks?.length" :title="t('pipeline.gateTip')">
+                {{ row.gates.next ? t('pipeline.toNext', { next: t('pipeline.st.' + row.gates.next) }) : t('pipeline.keep') }}
+                <span v-for="c in row.gates.checks" :key="c.key" :style="{ color: c.ok ? '#67c23a' : '#e6a23c', marginRight: '6px' }">{{ t('pipeline.ck.' + c.key) }} {{ c.value }}/{{ c.need }}{{ c.ok ? '✓' : '' }}</span>
+              </div>
+              <div v-if="row.shadow" :style="{ color: row.shadow.gap < -1 ? '#f56c6c' : '' }">
+                {{ t('pipeline.shadow', { sh: num(row.shadow.shadowPnl), live: num(row.shadow.livePnl), gap: num(row.shadow.gap), slip: row.shadow.slipBps, rej: row.shadow.rejects }) }}
               </div>
               <div v-if="row.risk">{{ t('botRisk.line', { open: row.risk.openSlots, max: row.risk.params.maxPositions, loss: row.risk.consecLosses, pnl: num(row.risk.sessionPnl) }) }}</div>
               <div v-for="x in row.risk?.exits || []" :key="x.symbol" style="color:var(--el-text-color-regular)">
@@ -145,7 +160,7 @@
         <el-form-item :label="t('strategy.s10')"><el-input-number v-model="bot.qty" :step="0.001" :min="0.001" /></el-form-item>
         <el-form-item><el-button type="primary" @click="createBot">{{ t('strategy.s22') }}</el-button></el-form-item>
       </el-form>
-      <div class="hint">{{ t('strategy.s23') }}</div>
+      <div class="hint">{{ t('strategy.s23') }} {{ t('pipeline.newBot') }}</div>
     </el-card>
 
     <el-dialog v-model="edit.show" :title="t('strategy.s52') + edit.id" width="560px">
@@ -153,7 +168,7 @@
       <el-form label-width="170px">
         <el-form-item v-for="k in RISK_KEYS" :key="k" :label="t('botRisk.k.' + k)">
  <el-switch v-if="k === 'regimeFilter' || k === 'blockHighVol'" :model-value="edit.params[k] > 0" @update:model-value="v => edit.params[k] = v ? 1 : 0" style="width:150px" />
-          <el-input-number v-else v-model="edit.params[k]" :min="0" :step="k.endsWith('Atr') ? 0.5 : 1" :precision="k.endsWith('Atr') || k === 'takeProfitPct' ? 1 : 0" style="width:150px" />
+ <el-input-number v-else v-model="edit.params[k]" :min="0" :step="k.endsWith('Atr') || k === 'riskPerTradePct' ? 0.5 : 1" :precision="k.endsWith('Atr') || k === 'takeProfitPct' || k === 'riskPerTradePct' ? 1 : 0" style="width:150px" />
           <span class="hint" style="margin-left:8px">{{ t('botRisk.h.' + k) }}</span>
         </el-form-item>
       </el-form>
@@ -279,7 +294,17 @@ const DEFAULT_KEYS = { ma: ['fast','slow'], ema: ['fast','slow'], wma: ['fast','
   boll: ['period','mult'], bollbreak: ['period','mult'], keltner: ['period','mult'], atr: ['period','mult'], volbreak: ['period','mult'],
   rsi: ['window','oversold','overbought'], grid: ['gridPct'], dualthrust: ['period','k'], momentum: ['period','threshold'], roc: ['period','threshold'],
   zscore: ['period','threshold'], vwap: ['period','dev'], sar: ['step','max'], supertrend: ['period','mult'] }
-const RISK_KEYS = ['stopAtr', 'trailAtr', 'takeProfitPct', 'maxPositions', 'maxConsecLosses', 'maxLossUsdt', 'cooldownBars', 'regimeFilter', 'blockHighVol']
+const RISK_KEYS = ['riskPerTradePct', 'sizeCapPct', 'stopAtr', 'trailAtr', 'takeProfitPct', 'maxPositions', 'maxConsecLosses', 'maxLossUsdt', 'cooldownBars', 'regimeFilter', 'blockHighVol']
+// ── 晉升管線 ──
+const STAGE_TYPE = { PAPER: 'info', PILOT: 'warning', LIVE: 'success' }
+const pipeline = ref({ auto: true })
+async function loadPipeline() { try { pipeline.value = (await strategyApi.pipeline()).data || pipeline.value } catch {} }
+async function togglePipeline(on) { try { pipeline.value = (await strategyApi.setPipeline(on)).data } catch { pipeline.value.auto = !on } }
+async function changeStage(row, st) {
+  const msg = st === 'PAPER' ? t('pipeline.confirmPaper') : st === 'LIVE' ? t('pipeline.confirmLive') : t('pipeline.confirmPilot')
+  try { await ElMessageBox.confirm(msg, t('pipeline.st.' + st), { type: st === 'PAPER' ? 'info' : 'warning' }) } catch { return }
+  const r = await strategyApi.setStage(row.id, st); ElMessage.success(r.data || 'OK'); load(true)
+}
 // ── 盤勢 / 自動配資 ──
 const regimes = ref({})
 const bandit = ref({ enabled: false, bots: [] })
@@ -328,7 +353,7 @@ async function testSlack() {
   catch { ElMessage.error(t('strategy.s42')) }
 }
 let timer
-onMounted(() => { load(); loadNotional(); loadRegimeBandit(); timer = setInterval(() => { load(true); loadNotional(); loadRegimeBandit() }, 15000) })   // 背景靜默更新，不閃 loading
+onMounted(() => { load(); loadNotional(); loadRegimeBandit(); loadPipeline(); timer = setInterval(() => { load(true); loadNotional(); loadRegimeBandit() }, 15000) })   // 背景靜默更新，不閃 loading
 onUnmounted(() => clearInterval(timer))
 </script>
 <style scoped>.hint{color:#999;font-size:12px;margin-top:8px}</style>

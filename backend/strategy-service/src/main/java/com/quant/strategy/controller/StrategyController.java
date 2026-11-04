@@ -41,6 +41,18 @@ public class StrategyController {
     @PostMapping("/bandit/rebalance")
     public ApiResponse<Map<String, Object>> rebalance() { return ApiResponse.ok(runner.applyBandit("手動")); }
 
+    /** 手動調整晉升階段：POST /api/strategy/strategies/{id}/stage?stage=PAPER|PILOT|LIVE */
+    @PostMapping("/{id}/stage")
+    public ApiResponse<String> stage(@PathVariable String id, @RequestParam String stage) { return ApiResponse.ok(runner.setStage(id, stage, "手動")); }
+
+    /** 晉升管線設定：GET /api/strategy/strategies/pipeline */
+    @GetMapping("/pipeline")
+    public ApiResponse<Map<String, Object>> pipeline() { return ApiResponse.ok(runner.pipelineStatus()); }
+
+    /** 自動晉升 / 降級開關：POST /api/strategy/strategies/pipeline?auto=true */
+    @PostMapping("/pipeline")
+    public ApiResponse<Map<String, Object>> setPipeline(@RequestParam boolean auto) { return ApiResponse.ok(runner.setPipelineAuto(auto)); }
+
     /** 熔斷後恢復進場：POST /api/strategy/strategies/{id}/resume */
     @PostMapping("/{id}/resume")
     public ApiResponse<String> resume(@PathVariable String id) { return ApiResponse.ok(runner.resume(id)); }

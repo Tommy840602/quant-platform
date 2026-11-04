@@ -48,6 +48,8 @@ public class BotRiskManager implements StrategyContextImpl.BuyRouter {
         DEFAULTS.put("cooldownBars", 5.0);     // 出場後冷卻幾根收盤 K
         DEFAULTS.put("regimeFilter", 1.0);     // 1 = 依盤勢過濾進場
         DEFAULTS.put("blockHighVol", 1.0);     // 1 = 異常高波動時不進場
+        DEFAULTS.put("riskPerTradePct", 0.0);  // 波動率目標下單量：每筆最多虧權益 N%（以停損距離反推數量）；0 = 用每單名目
+        DEFAULTS.put("sizeCapPct", 25.0);      // 單筆名目上限 = 權益 N%（波動很小時避免一次壓太重）
     }
 
     // ── 盤勢 ──
@@ -69,6 +71,12 @@ public class BotRiskManager implements StrategyContextImpl.BuyRouter {
     private volatile Function<String, String> names = id -> id;
     private volatile Function<String, String> typeOf = id -> "ma";
     private BanditAllocator bandit;
+    /** 實盤平倉回報（給影子引擎 / 晉升管線記錄來回交易）。 */
+    public interface TradeHook { void onLiveTrade(StrategyPositionBook.Close c); }
+    private volatile TradeHook tradeHook;
+    public void setTradeHook(TradeHook h) { this.tradeHook = h; }
+    private volatile java.util.function.DoubleSupplier equity = () -> 0;
+    public void setEquity(java.util.function.DoubleSupplier e) { this.equity = e; }
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     public void setBandit(BanditAllocator b) { this.bandit = b; }
     private final Map<String, Double> prices;
@@ -95,7 +103,7 @@ public class BotRiskManager implements StrategyContextImpl.BuyRouter {
     }
     BotRiskManager(StrategyPositionBook book, NotifyClient notify, Map<String, Double> prices) {
         this.book = book; this.notify = notify; this.prices = prices;
-        book.setCloseListener(this::onClose);
+        book.setCloseListener(this::onLiveClose);
     }
 
     void bind(Function<String, Map<String, Object>> params, Function<String, String> names, Map<String, Double> livePrices) {
@@ -145,6 +153,22 @@ public class BotRiskManager implements StrategyContextImpl.BuyRouter {
         if (d == null || d.size() <= MOM_N || a <= 0) return 0;
         List<double[]> l = new ArrayList<>(d);
         return (l.get(l.size() - 1)[2] - l.get(l.size() - 1 - MOM_N)[2]) / a;
+    }
+
+    /**
+     * 波動率目標下單量：每筆最多虧「權益 × riskPerTradePct%」。停損距離 = stopAtr × ATR（ATR 未就緒用 2%），
+     * 數量 = 風險預算 ÷ 停損距離 → 波動大的幣自動少買、波動小的多買；單筆名目上限 = 權益 × sizeCapPct%。
+     * 回 0 = 未啟用（沿用每單名目）。最低 5 USDT 的夾值在 context 做。
+     */
+    public double sizeQty(String id, String sym, double px) {
+        double pct = p(id, "riskPerTradePct"), eq = equity.getAsDouble();
+        if (pct <= 0 || eq <= 0 || px <= 0) return 0;
+        double a = atr(sym), k = p(id, "stopAtr");
+        double dist = k > 0 && a > 0 ? k * a : px * FALLBACK_STOP_PCT / 100;
+        double qty = eq * pct / 100 / dist;
+        double capPct = p(id, "sizeCapPct");
+        if (capPct > 0) qty = Math.min(qty, eq * capPct / 100 / px);
+        return qty;
     }
 
     /** Wilder ADX(14)。資料不足回 -1。 */
@@ -223,24 +247,24 @@ public class BotRiskManager implements StrategyContextImpl.BuyRouter {
     /** 對運行中的機器人逐 tick 檢查停損 / 移動停利 / 停利。暫停中的機器人也照樣檢查。 */
     public void checkExits(String id, Kline k, StrategyContextImpl ctx) {
         ctxOf.put(id, ctx);
-        if (!book.isReconciled()) return;
+        boolean paper = ctx.isPaper();
+        if (!paper && !book.isReconciled()) return;
         String sym = k.symbol();
-        double q = book.position(id, sym);
+        double q = ctx.position(sym);
         if (q <= 1e-12) { Map<String, Double> pk = peak.get(id); if (pk != null) pk.remove(sym); return; }
-        if (book.isPending(id, sym)) return;
+        if (ctx.pending(sym)) return;
         double px = k.close();
-        double entry = book.avgCost(id, sym);
-        if (entry <= 0) { book.seedCost(id, sym, px); entry = px; }
+        double entry = ctx.entry(sym);
+        if (entry <= 0) { if (!paper) book.seedCost(id, sym, px); entry = px; }
         double hi = peak.computeIfAbsent(id, x -> new ConcurrentHashMap<>()).merge(sym, Math.max(k.high(), px), Math::max);
         String why = exitReason(id, sym, px, entry, hi);
         if (why == null) return;
         ctx.exit(sym, why);
-        ctx.markOutcome(why + "出場 @" + fmt(px));
         peak.get(id).remove(sym);
         cooldownUntil.computeIfAbsent(id, x -> new ConcurrentHashMap<>())
                 .put(sym, closedCount.getOrDefault(sym, 0L) + (long) p(id, "cooldownBars"));
-        send(String.format(":octagonal_sign: [%s] %s %s出場 @ %s（進場 %s，%+.2f%%）", names.apply(id), sym, why,
-                fmt(px), fmt(entry), (px / entry - 1) * 100));
+        send(String.format(":octagonal_sign: [%s]%s %s %s出場 @ %s（進場 %s，%+.2f%%）", names.apply(id), paper ? "（模擬）" : "",
+                sym, why, fmt(px), fmt(entry), (px / entry - 1) * 100));
     }
 
     /** 回傳觸發的出場原因，未觸發回 null。 */
@@ -262,9 +286,11 @@ public class BotRiskManager implements StrategyContextImpl.BuyRouter {
     /** 給 UI：各持倉的進場價、停損、移動停利、停利價。 */
     public List<Map<String, Object>> exitLevels(String id) {
         List<Map<String, Object>> out = new ArrayList<>();
-        book.snapshot(id).forEach((sym, q) -> {
+        StrategyContextImpl c = ctxOf.get(id);
+        Map<String, Double> snap = c != null ? c.snapshot() : book.snapshot(id);
+        snap.forEach((sym, q) -> {
             if (q <= 1e-12) return;
-            double entry = book.avgCost(id, sym), a = atr(sym), px = prices.getOrDefault(sym, 0.0);
+            double entry = c != null ? c.entry(sym) : book.avgCost(id, sym), a = atr(sym), px = prices.getOrDefault(sym, 0.0);
             double hi = peak.getOrDefault(id, Map.of()).getOrDefault(sym, Math.max(entry, px));
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("symbol", sym); m.put("qty", q); m.put("entry", entry); m.put("last", px);
@@ -284,13 +310,13 @@ public class BotRiskManager implements StrategyContextImpl.BuyRouter {
         String id = ctx.strategyId(), sym = intent.symbol();
         ctxOf.put(id, ctx);
         String why = paused.get(id);
-        if (why != null) { ctx.markOutcome("已暫停進場：" + why); return true; }
+        if (why != null) { ctx.decide(sym, intent.side(), "已暫停進場：" + why); return true; }
         Long until = cooldownUntil.getOrDefault(id, Map.of()).get(sym);
         if (until != null && closedCount.getOrDefault(sym, 0L) < until) {
-            ctx.markOutcome("冷卻中（出場後 " + (long) p(id, "cooldownBars") + " 根內不進場）"); return true;
+            ctx.decide(sym, intent.side(), "冷卻中（出場後 " + (long) p(id, "cooldownBars") + " 根內不進場）"); return true;
         }
         String rb = regimeBlock(id, sym);
-        if (rb != null) { ctx.markOutcome(sym + " " + rb); return true; }
+        if (rb != null) { ctx.decide(sym, intent.side(), rb); return true; }
         buffer.computeIfAbsent(id, x -> Collections.synchronizedList(new ArrayList<>())).add(intent);
         ctx.markOutcome("排名中…");
         if (flushScheduled.add(id)) exec.schedule(() -> flush(id), RANK_WINDOW_MS, TimeUnit.MILLISECONDS);
@@ -307,26 +333,36 @@ public class BotRiskManager implements StrategyContextImpl.BuyRouter {
         List<OrderIntent> ranked = new ArrayList<>(uniq.values());
         ranked.sort(Comparator.comparingDouble((OrderIntent i) -> score(i.symbol())).reversed());
         int cap = Math.max(1, (int) p(id, "maxPositions"));
-        int slots = cap - book.openSlots(id);
-        int taken = 0;
+        int slots = cap - ctx.openSlots();
+        int taken = 0, rank = 0;
         for (OrderIntent i : ranked) {
-            if (taken < slots && !book.isPending(id, i.symbol()) && book.position(id, i.symbol()) <= 1e-12) {
+            rank++;
+            if (taken < slots && !ctx.pending(i.symbol()) && ctx.position(i.symbol()) <= 1e-12) {
                 ctx.execute(i); taken++;
+            } else {
+                ctx.decide(i.symbol(), i.side(), String.format("排名第 %d（分數 %.2f），同時持倉上限 %d 已滿", rank, score(i.symbol()), cap));
             }
         }
         if (ranked.size() > taken) {
             String skipped = ranked.subList(taken, ranked.size()).stream().map(OrderIntent::symbol).limit(5)
                     .reduce((a, b) -> a + ", " + b).orElse("");
-            if (taken == 0) ctx.markOutcome("已達同時持倉上限 " + cap + "，略過 " + skipped);
             log.info("[{}] {} 個 BUY 訊號，持倉上限 {}（已佔 {}），送出 {} 個，略過 {}", id, ranked.size(), cap,
                     cap - slots, taken, skipped);
         }
     }
 
     // ── 3. 機器人熔斷 ──
-    void onClose(String id, String sym, double pnl, double entryNotional) {
+    void onLiveClose(StrategyPositionBook.Close c) {
+        onClose(c);
+        TradeHook h = tradeHook;
+        if (h != null) try { h.onLiveTrade(c); } catch (Exception e) { log.warn("trade hook: {}", e.getMessage()); }
+    }
+
+    /** 來回交易平倉（實盤 / 模擬盤都走這裡）：連虧、本次損益、Bandit 學習。 */
+    public void onClose(StrategyPositionBook.Close c) {
+        String id = c.strategyId(), sym = c.symbol(); double pnl = c.pnl();
         realized.merge(id, pnl, Double::sum);
-        if (bandit != null && entryNotional > 0) bandit.record(id, pnl / entryNotional);
+        if (bandit != null && c.entryNotional() > 0) bandit.record(id, c.ret());
         if (pnl < 0) consecLosses.merge(id, 1, Integer::sum); else consecLosses.put(id, 0);
         log.info("[{}] {} 平倉損益 {}，連虧 {}，本次累計 {}", id, sym, fmt(pnl), consecLosses.get(id), fmt(realized.get(id)));
         evaluate(id);
@@ -348,8 +384,11 @@ public class BotRiskManager implements StrategyContextImpl.BuyRouter {
 
     public double sessionPnl(String id) {
         double u = 0;
-        for (Map.Entry<String, Double> e : book.snapshot(id).entrySet()) {
-            double q = e.getValue(), entry = book.avgCost(id, e.getKey()), px = prices.getOrDefault(e.getKey(), 0.0);
+        StrategyContextImpl c = ctxOf.get(id);
+        Map<String, Double> snap = c != null ? c.snapshot() : book.snapshot(id);
+        for (Map.Entry<String, Double> e : snap.entrySet()) {
+            double q = e.getValue(), px = prices.getOrDefault(e.getKey(), 0.0);
+            double entry = c != null ? c.entry(e.getKey()) : book.avgCost(id, e.getKey());
             if (q > 1e-12 && entry > 0 && px > 0) u += (px - entry) * q;
         }
         return realized.getOrDefault(id, 0.0) + u;

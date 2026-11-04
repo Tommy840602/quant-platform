@@ -539,7 +539,9 @@ export default {
       "maxLossUsdt": "本次亏损上限 USDT",
       "cooldownBars": "出场后冷却（根）",
       "regimeFilter": "盘势过滤",
-      "blockHighVol": "异常波动不进场"
+      "blockHighVol": "异常波动不进场",
+      "riskPerTradePct": "每笔风险 % 权益",
+      "sizeCapPct": "单笔上限 % 权益"
     },
     "h": {
       "stopAtr": "进场价 − N×ATR；0=关",
@@ -550,7 +552,9 @@ export default {
       "maxLossUsdt": "已实现+未实现 ≤ −N 暂停；0=关",
       "cooldownBars": "出场后同币 N 根 K 内不再买",
       "regimeFilter": "趋势型只在趋势/中性盘进场，均值回归型只在盘整/中性盘",
-      "blockHighVol": "近 14 根波动 ≥ 2.5× 平常时暂停进场"
+      "blockHighVol": "近 14 根波动 ≥ 2.5× 平常时暂停进场",
+      "riskPerTradePct": "止损时最多亏权益 N%，依 ATR 反推数量；0=用每单名义",
+      "sizeCapPct": "单笔名义最多占权益 N%"
     }
   },
   "regime": {
@@ -580,5 +584,29 @@ export default {
     "hint": "依每笔来回交易的收益学习：越可能是最好的机器人分到越多资金（倍率 × 每单名义），表现差的降到下限继续观察。平均倍率 = 1，总敞口不变；下限保证单笔不低于 5 USDT。开启后会覆盖手动配资。",
     "on": "已开启自动配资",
     "off": "已关闭自动配资"
+  },
+  "pipeline": {
+    "auto": "自动晋升 / 降级",
+    "st": {
+      "PAPER": "模拟盘",
+      "PILOT": "真钱试行",
+      "LIVE": "正式运行"
+    },
+    "toNext": "晋升{next}：",
+    "keep": "维持条件：",
+    "gateTip": "每 10 分钟自动评估；全部 ✓ 就晋升，熔断或绩效转差就降级",
+    "ck": {
+      "trades": "来回",
+      "hours": "小时",
+      "pf": "盈利因子",
+      "meanPct": "平均%",
+      "slipBps": "滑点bps",
+      "recentPF": "近10笔PF"
+    },
+    "shadow": "影子 {sh} · 实盘 {live} · 差距 {gap} USDT（滑点 {slip} bps · 被拒 {rej}）",
+    "newBot": "新机器人从「模拟盘」开始，过关后自动晋升真钱。",
+    "confirmPaper": "切到模拟盘：手上真钱仓位会先市价卖出，之后只模拟成交、不下单。",
+    "confirmPilot": "切到真钱试行：每单只下币安最低 5.5 USDT。",
+    "confirmLive": "切到正式运行：依每单名义 / 自动配资下单（真钱）。"
   }
 }
