@@ -179,7 +179,7 @@ public class ShadowEngine implements StrategyContextImpl.Execution {
         double bps = (px - refPx) / refPx * 1e4 * (side == OrderSide.BUY ? 1 : -1);
         Deque<Double> d = slips.computeIfAbsent(id, k -> new java.util.concurrent.ConcurrentLinkedDeque<>());
         d.addLast(bps); while (d.size() > 50) d.removeFirst();
-        if (repo != null) try { repo.insertSlip(id, sym, side.name(), refPx, px, bps); } catch (Exception e) { log.debug("slip 寫入失敗: {}", e.getMessage()); }
+        if (repo != null) try { repo.insertSlip(id, sym, side.name(), refPx, px, bps, qty); } catch (Exception e) { log.debug("slip 寫入失敗: {}", e.getMessage()); }
         log.info("[{}] {} {} 滑價 {} bps（參考 {} → 成交 {}）", id, sym, side, Math.round(bps * 10) / 10.0, refPx, px);
     }
 

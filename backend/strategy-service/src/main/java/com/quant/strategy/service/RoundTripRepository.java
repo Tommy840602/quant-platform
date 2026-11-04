@@ -19,9 +19,31 @@ public class RoundTripRepository {
                 c.strategyId(), c.symbol(), mode, c.qty(), c.entryPx(), c.exitPx(), c.pnl(), c.ret());
     }
 
-    public void insertSlip(String bot, String sym, String side, double ref, double fill, double bps) {
-        jdbc.update("INSERT INTO strategy_slippage (bot_id, symbol, side, ref_px, fill_px, bps) VALUES (?,?,?,?,?,?)",
-                bot, sym, side, ref, fill, bps);
+    public void insertSlip(String bot, String sym, String side, double ref, double fill, double bps, double qty) {
+        jdbc.update("INSERT INTO strategy_slippage (bot_id, symbol, side, ref_px, fill_px, bps, qty) VALUES (?,?,?,?,?,?,?)",
+                bot, sym, side, ref, fill, bps, qty);
+    }
+
+    /** 對帳用：每個 (mode, symbol) 的筆數、勝場、總損益、成交額（進+出）、平均報酬。 */
+    public List<Reconciliation.TripRow> tripRows(String bot, long sinceMs) {
+        return jdbc.query("""
+                SELECT mode, symbol, count(*) AS n, count(*) FILTER (WHERE pnl > 0) AS wins, coalesce(sum(pnl), 0) AS pnl,
+                       coalesce(sum((entry_px + exit_px) * qty), 0) AS turnover, coalesce(avg(ret), 0) AS mean
+                  FROM strategy_round_trips WHERE bot_id = ? AND closed_at >= ? GROUP BY mode, symbol""",
+                (rs, i) -> new Reconciliation.TripRow(rs.getString("mode"), rs.getString("symbol"), rs.getInt("n"), rs.getInt("wins"),
+                        rs.getDouble("pnl"), rs.getDouble("turnover"), rs.getDouble("mean")),
+                bot, new Timestamp(sinceMs));
+    }
+
+    /** 對帳用：每個標的的滑價筆數、平均 bps、滑價金額（有 qty 的筆）、有 qty 的筆數。正 = 對我們不利。 */
+    public List<Reconciliation.SlipRow> slipRows(String bot, long sinceMs) {
+        return jdbc.query("""
+                SELECT symbol, count(*) AS n, coalesce(avg(bps), 0) AS bps,
+                       coalesce(sum((fill_px - ref_px) * qty * CASE WHEN side = 'BUY' THEN 1 ELSE -1 END) FILTER (WHERE qty IS NOT NULL), 0) AS cost,
+                       count(qty) AS nq
+                  FROM strategy_slippage WHERE bot_id = ? AND ts >= ? GROUP BY symbol""",
+                (rs, i) -> new Reconciliation.SlipRow(rs.getString("symbol"), rs.getInt("n"), rs.getDouble("bps"), rs.getDouble("cost"), rs.getInt("nq")),
+                bot, new Timestamp(sinceMs));
     }
 
     /** 統計：n、勝場、總獲利、總虧損、平均報酬、總損益。 */

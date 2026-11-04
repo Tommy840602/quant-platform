@@ -61,6 +61,12 @@ public class StrategyController {
         return ApiResponse.ok(runner.decisions(botId, symbol, from, to, acted, limit));
     }
 
+    /** 模擬 / 影子 / 實盤對帳：GET /api/strategy/strategies/{id}/reconcile?days=30 */
+    @GetMapping("/{id}/reconcile")
+    public ApiResponse<Map<String, Object>> reconcile(@PathVariable String id, @RequestParam(defaultValue = "30") int days) {
+        return ApiResponse.ok(runner.reconcile(id, Math.max(1, Math.min(days, 365))));
+    }
+
     /** 各標的實測滑價（回測成本校正用）：GET /api/strategy/strategies/slippage?days=30 */
     @GetMapping("/slippage")
     public ApiResponse<Map<String, Map<String, Object>>> slippage(@RequestParam(defaultValue = "30") int days) {
