@@ -608,5 +608,19 @@ export default {
     "confirmPaper": "Switch to Paper: real positions are market-sold first; afterwards fills are simulated only.",
     "confirmPilot": "Switch to Pilot: every order uses Binance minimum 5.5 USDT.",
     "confirmLive": "Switch to Live: orders use per-order notional / auto allocation (real money)."
+  },
+  "decisions": {
+    "btn": "Log",
+    "title": "Decision log",
+    "allSymbols": "All symbols",
+    "actedOnly": "Actions only",
+    "empty": "No decisions yet (recorded on signals)",
+    "outcome": "Outcome",
+    "market": "Market",
+    "onChart": "On chart",
+    "onChartToggle": "Bot decisions",
+    "allBots": "All bots",
+    "prev": "Prev",
+    "next": "Next"
   }
 }

@@ -608,5 +608,19 @@ export default {
     "confirmPaper": "切到模擬盤：手上真錢部位會先市價賣出，之後只模擬成交、不送單。",
     "confirmPilot": "切到真錢試行：每單只下幣安最低 5.5 USDT。",
     "confirmLive": "切到正式運行：依每單名目 / 自動配資下單（真錢）。"
+  },
+  "decisions": {
+    "btn": "日誌",
+    "title": "決策日誌",
+    "allSymbols": "全部標的",
+    "actedOnly": "只看有動作",
+    "empty": "還沒有決策紀錄（有訊號才會記）",
+    "outcome": "結果",
+    "market": "當下盤勢",
+    "onChart": "圖上看",
+    "onChartToggle": "機器人決策",
+    "allBots": "全部機器人",
+    "prev": "上一個",
+    "next": "下一個"
   }
 }

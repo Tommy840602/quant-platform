@@ -99,6 +99,7 @@
               </el-dropdown-menu></template>
             </el-dropdown>
             <el-button size="small" @click="openEdit(row)">{{ t('strategy.s20') }}</el-button>
+            <el-button size="small" @click="openLog(row)">{{ t('decisions.btn') }}</el-button>
             <el-button size="small" type="danger" plain :disabled="row.builtin" :title="row.builtin ? t('strategy.s51') : ''" @click="removeBot(row)">{{ t('strategy.s21') }}</el-button>
           </template>
         </el-table-column>
@@ -189,6 +190,27 @@
         <el-button type="primary" :loading="edit.saving" @click="saveEdit">{{ t('strategy.s27') }}</el-button>
       </template>
     </el-dialog>
+
+    <el-drawer v-model="dlog.show" :title="t('decisions.title') + ' · ' + dlog.id" size="min(860px, 96vw)">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+        <symbol-select v-model="dlog.symbol" clearable :placeholder="t('decisions.allSymbols')" style="width:170px" @change="loadLog" />
+        <el-checkbox v-model="dlog.acted" @change="loadLog">{{ t('decisions.actedOnly') }}</el-checkbox>
+        <el-button size="small" @click="loadLog">{{ t('strategy.s15') }}</el-button>
+      </div>
+      <el-table :data="dlog.rows" size="small" v-loading="dlog.loading" :empty-text="t('decisions.empty')" height="calc(100vh - 170px)">
+        <el-table-column :label="t('orders.time')" width="140"><template #default="{ row }">{{ locale.fmtTime(row.ts, { year: undefined }) }}</template></el-table-column>
+        <el-table-column prop="symbol" :label="t('strategy.s2')" width="110" />
+        <el-table-column :label="t('live.s4')" width="64"><template #default="{ row }"><span :style="{ color: row.side === 'BUY' ? '#26a69a' : '#ef5350' }">{{ row.side }}</span></template></el-table-column>
+        <el-table-column :label="t('live.s30')" width="100"><template #default="{ row }">{{ row.price ? +row.price.toPrecision(6) : '' }}</template></el-table-column>
+        <el-table-column :label="t('decisions.outcome')" min-width="240">
+          <template #default="{ row }"><span :style="{ color: row.acted ? '#67c23a' : 'var(--el-text-color-secondary)', fontWeight: row.acted ? 600 : 400 }">{{ row.outcome }}</span></template>
+        </el-table-column>
+        <el-table-column :label="t('decisions.market')" width="150">
+          <template #default="{ row }"><span class="hint">{{ row.detail?.regime ? t('regime.' + row.detail.regime) : '' }}<template v-if="row.detail?.adx != null"> · ADX {{ row.detail.adx }}</template></span></template>
+        </el-table-column>
+        <el-table-column width="80"><template #default="{ row }"><el-button link type="primary" size="small" @click="toChart(row)">{{ t('decisions.onChart') }}</el-button></template></el-table-column>
+      </el-table>
+    </el-drawer>
   </div>
 </template>
 
@@ -295,6 +317,15 @@ const DEFAULT_KEYS = { ma: ['fast','slow'], ema: ['fast','slow'], wma: ['fast','
   rsi: ['window','oversold','overbought'], grid: ['gridPct'], dualthrust: ['period','k'], momentum: ['period','threshold'], roc: ['period','threshold'],
   zscore: ['period','threshold'], vwap: ['period','dev'], sar: ['step','max'], supertrend: ['period','mult'] }
 const RISK_KEYS = ['riskPerTradePct', 'sizeCapPct', 'stopAtr', 'trailAtr', 'takeProfitPct', 'maxPositions', 'maxConsecLosses', 'maxLossUsdt', 'cooldownBars', 'regimeFilter', 'blockHighVol']
+// ── 決策日誌 ──
+const dlog = reactive({ show: false, id: '', symbol: '', acted: false, rows: [], loading: false })
+function openLog(row) { dlog.id = row.id; dlog.symbol = row.symbol && row.symbol !== 'ALL' ? row.symbol : ''; dlog.show = true; loadLog() }
+async function loadLog() {
+  dlog.loading = true
+  try { dlog.rows = (await strategyApi.decisions({ botId: dlog.id, symbol: dlog.symbol || undefined, acted: dlog.acted || undefined, limit: 500 })).data || [] }
+  catch { dlog.rows = [] } finally { dlog.loading = false }
+}
+function toChart(row) { router.push({ path: '/chart', query: { symbol: row.symbol, t: row.ts, bot: row.botId } }) }
 // ── 晉升管線 ──
 const STAGE_TYPE = { PAPER: 'info', PILOT: 'warning', LIVE: 'success' }
 const pipeline = ref({ auto: true })

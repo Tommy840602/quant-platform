@@ -88,11 +88,18 @@ public class StrategyRunner {
         this.shadow = e;
         e.bind(risk, this::stageOf, id -> names.getOrDefault(id, id), notifyClient);
         e.attach(book);
+        if (decisionLog != null) e.setDecisionSink(decisionLog);
         contexts.values().forEach(c -> c.setExecution(e));
         if (risk != null) risk.setTradeHook(c -> { if (trips != null) try { trips.insert(c, "LIVE"); } catch (Exception ex) { log.warn("來回紀錄寫入失敗: {}", ex.getMessage()); } });
     }
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     public void setTrips(RoundTripRepository r) { this.trips = r; }
+    private DecisionLog decisionLog;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setDecisionLog(DecisionLog d) { this.decisionLog = d; if (shadow != null) shadow.setDecisionSink(d); }
+    public List<Map<String, Object>> decisions(String bot, String symbol, Long from, Long to, Boolean acted, int limit) {
+        return decisionLog == null ? List.of() : decisionLog.query(bot, symbol, from, to, acted, limit);
+    }
 
     // ── 權益快取（波動率目標下單量用） ──
     private volatile double equityCache = 0;

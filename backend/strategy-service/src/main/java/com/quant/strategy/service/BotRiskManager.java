@@ -147,7 +147,7 @@ public class BotRiskManager implements StrategyContextImpl.BuyRouter {
     }
 
     /** 排名分數：近 MOM_N 根的漲幅 ÷ ATR（跨幣可比）。資料不足 = 0。 */
-    double score(String symbol) {
+    public double score(String symbol) {
         Deque<double[]> d = bars.get(symbol);
         double a = atr(symbol);
         if (d == null || d.size() <= MOM_N || a <= 0) return 0;
