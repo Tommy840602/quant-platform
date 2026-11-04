@@ -434,6 +434,9 @@ export default {
     "allSymbols": "All symbols (20 pairs)"
   },
   "system": {
+    "mdLabel": "Market data",
+    "mdAgo": "s ago",
+    "mdNone": "no data yet",
     "s1": "Service",
     "s2": "Status",
     "s3": "Latency (ms)",
