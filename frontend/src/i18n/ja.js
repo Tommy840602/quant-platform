@@ -537,7 +537,9 @@ export default {
       "maxPositions": "同時保有上限",
       "maxConsecLosses": "連敗で停止（回）",
       "maxLossUsdt": "今回の損失上限 USDT",
-      "cooldownBars": "決済後クールダウン（本）"
+      "cooldownBars": "決済後クールダウン（本）",
+      "regimeFilter": "相場フィルター",
+      "blockHighVol": "異常ボラで新規停止"
     },
     "h": {
       "stopAtr": "建値 − N×ATR；0=オフ",
@@ -546,7 +548,37 @@ export default {
       "maxPositions": "ランキング上位 N のみ",
       "maxConsecLosses": "新規停止、決済は継続；0=オフ",
       "maxLossUsdt": "実現+未実現 ≤ −N で停止；0=オフ",
-      "cooldownBars": "同銘柄を N 本は再エントリーしない"
+      "cooldownBars": "同銘柄を N 本は再エントリーしない",
+      "regimeFilter": "トレンド型はトレンド/中立、逆張り型はレンジ/中立のみ",
+      "blockHighVol": "直近 14 本のボラが平常の 2.5 倍以上で停止"
     }
+  },
+  "regime": {
+    "title": "相場環境（銘柄ごと、1 分足）",
+    "legend": "ADX ≥ 25 トレンド · ≤ 20 レンジ · ボラ ≥ 2.5× 異常",
+    "TREND": "トレンド",
+    "RANGE": "レンジ",
+    "MIXED": "中立",
+    "UNKNOWN": "データ不足",
+    "highVol": "異常ボラ",
+    "vol": "ボラ",
+    "fam": {
+      "trend": "トレンド型",
+      "meanrev": "逆張り型"
+    }
+  },
+  "bandit": {
+    "title": "自動資金配分（Thompson Sampling）",
+    "rebalance": "今すぐ再配分",
+    "range": "×{lo} ~ ×{hi}、10 分ごと",
+    "empty": "稼働中のボットなし",
+    "bot": "ボット",
+    "trades": "往復",
+    "mean": "平均リターン",
+    "pBest": "最良の確率",
+    "alloc": "配分",
+    "hint": "往復ごとのリターンから学習し、最良である可能性が高いボットほど多く配分（倍率 × 1注文名目）。成績の悪いボットは下限で観察を継続。平均倍率 = 1 で総エクスポージャーは不変、下限で1注文 5 USDT 以上を保証。オン中は手動配分を上書きします。",
+    "on": "自動配分オン",
+    "off": "自動配分オフ"
   }
 }

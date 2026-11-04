@@ -59,7 +59,7 @@ class BotRiskManagerTest {
         StrategyPositionBook book = new StrategyPositionBook(); book.reconcile(List.of());
         Map<String, Double> px = new ConcurrentHashMap<>();
         BotRiskManager m = new BotRiskManager(book, mock(NotifyClient.class));
-        m.bind(id -> Map.of("maxPositions", 2.0), id -> id, null);
+        m.bind(id -> Map.of("maxPositions", 2.0, "regimeFilter", 0.0, "blockHighVol", 0.0), id -> id, null);
         StrategyContextImpl ctx = new StrategyContextImpl("b", oms, px, () -> 0, book);
         ctx.setBuyRouter(m);
         // A 漲最多、C 次之、B 平
@@ -118,5 +118,34 @@ class BotRiskManagerTest {
         long autowired = java.util.Arrays.stream(BotRiskManager.class.getDeclaredConstructors())
                 .filter(c -> c.isAnnotationPresent(org.springframework.beans.factory.annotation.Autowired.class)).count();
         assertTrue(ctors.length == 1 || autowired == 1);
+    }
+
+    @Test
+    void regimeGatesEntriesByStrategyFamily() {
+        StrategyPositionBook book = new StrategyPositionBook(); book.reconcile(List.of());
+        Map<String, String> types = Map.of("t", "ma", "r", "rsi");
+        BotRiskManager m = new BotRiskManager(book, mock(NotifyClient.class));
+        m.bind(id -> Map.of(), id -> id, types::get, null);
+        // UP：每根 +1 的單邊上漲 → ADX 高 → 趨勢盤
+        for (int i = 0; i < 40; i++) m.onKline(bar("UP", 100 + i + 0.6, 100 + i - 0.4, 100 + i + 0.5, true));
+        // FLAT：來回震盪 → ADX 低 → 盤整盤
+        for (int i = 0; i < 40; i++) { double c = 100 + (i % 2 == 0 ? 0.5 : -0.5); m.onKline(bar("FLAT", c + 0.5, c - 0.5, c, true)); }
+        assertEquals(BotRiskManager.Regime.TREND, m.regime("UP"), "ADX=" + m.adx("UP"));
+        assertEquals(BotRiskManager.Regime.RANGE, m.regime("FLAT"), "ADX=" + m.adx("FLAT"));
+        assertNull(m.regimeBlock("t", "UP"));
+        assertNotNull(m.regimeBlock("t", "FLAT"), "趨勢策略在盤整盤不進場");
+        assertNotNull(m.regimeBlock("r", "UP"), "均值回歸策略在趨勢盤不進場");
+        assertNull(m.regimeBlock("r", "FLAT"));
+    }
+
+    @Test
+    void volatilitySpikeBlocksEntries() {
+        StrategyPositionBook book = new StrategyPositionBook(); book.reconcile(List.of());
+        BotRiskManager m = new BotRiskManager(book, mock(NotifyClient.class));
+        m.bind(id -> Map.of("regimeFilter", 0.0), id -> id, id -> "ma", null);
+        for (int i = 0; i < 46; i++) m.onKline(bar("V", 100.2, 99.8, 100, true));          // TR 0.4%
+        for (int i = 0; i < 14; i++) m.onKline(bar("V", 102, 98, i % 2 == 0 ? 101 : 99, true)); // TR ~4%
+        assertTrue(m.volRatio("V") >= BotRiskManager.HIGH_VOL_RATIO, "ratio=" + m.volRatio("V"));
+        assertNotNull(m.regimeBlock("b", "V"));
     }
 }

@@ -23,6 +23,9 @@ import java.util.function.Function;
  *       暫停期間既有部位的停損/停利照樣執行，不會放著不管。</li>
  *   <li><b>冷卻</b>：出場後同一標的 N 根收盤 K 內不再進場，避免停損後馬上又被同一訊號拉進去。</li>
  * </ol>
+ *   <li><b>盤勢過濾</b>：每個標的用 ADX(14) 判斷趨勢盤 / 盤整盤，用「近 14 根 ATR% ÷ 60 根中位數」判斷是否異常高波動。
+ *       趨勢類策略（均線、突破、動量…）只在趨勢盤或中性盤進場；均值回歸類（RSI、布林、Z 分數、網格…）只在盤整或中性盤進場；
+ *       異常高波動時全部暫停進場。很多策略不是爛，是用錯盤勢。</li>
  * 參數放在各機器人的 params（可在策略頁「參數」調整，免重啟、不重新暖機）。
  */
 @Service
@@ -43,6 +46,20 @@ public class BotRiskManager implements StrategyContextImpl.BuyRouter {
         DEFAULTS.put("maxConsecLosses", 3.0);  // 連虧幾筆暫停
         DEFAULTS.put("maxLossUsdt", 3.0);      // 本次上線虧損上限（USDT）
         DEFAULTS.put("cooldownBars", 5.0);     // 出場後冷卻幾根收盤 K
+        DEFAULTS.put("regimeFilter", 1.0);     // 1 = 依盤勢過濾進場
+        DEFAULTS.put("blockHighVol", 1.0);     // 1 = 異常高波動時不進場
+    }
+
+    // ── 盤勢 ──
+    public enum Regime { TREND, RANGE, MIXED, UNKNOWN }
+    static final double ADX_TREND = 25, ADX_RANGE = 20, HIGH_VOL_RATIO = 2.5;
+    static final Set<String> TREND_TYPES = Set.of("ma", "ema", "wma", "tema", "macd", "trix", "adx", "supertrend", "sar",
+            "ichimoku", "donchian", "bollbreak", "keltner", "atr", "volbreak", "dualthrust", "momentum", "roc", "aroon", "heikin");
+    static final Set<String> MEANREV_TYPES = Set.of("rsi", "grid", "cci", "williams", "stochrsi", "boll", "kdj", "zscore", "vwap");
+    /** 策略家族：trend / meanrev / any */
+    public static String family(String type) {
+        String t = type == null ? "" : type.toLowerCase();
+        return TREND_TYPES.contains(t) ? "trend" : MEANREV_TYPES.contains(t) ? "meanrev" : "any";
     }
     public static boolean isRiskKey(String k) { return DEFAULTS.containsKey(k); }
 
@@ -50,6 +67,10 @@ public class BotRiskManager implements StrategyContextImpl.BuyRouter {
     private final NotifyClient notify;
     private volatile Function<String, Map<String, Object>> params = id -> Map.of();
     private volatile Function<String, String> names = id -> id;
+    private volatile Function<String, String> typeOf = id -> "ma";
+    private BanditAllocator bandit;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setBandit(BanditAllocator b) { this.bandit = b; }
     private final Map<String, Double> prices;
 
     // 每個標的的已收盤 K 歷史（ATR / 動能）
@@ -78,7 +99,11 @@ public class BotRiskManager implements StrategyContextImpl.BuyRouter {
     }
 
     void bind(Function<String, Map<String, Object>> params, Function<String, String> names, Map<String, Double> livePrices) {
-        this.params = params; this.names = names;
+        bind(params, names, id -> "ma", livePrices);
+    }
+    void bind(Function<String, Map<String, Object>> params, Function<String, String> names,
+              Function<String, String> typeOf, Map<String, Double> livePrices) {
+        this.params = params; this.names = names; this.typeOf = typeOf;
         if (livePrices != null && livePrices != this.prices) this.prices.putAll(livePrices);
     }
 
@@ -120,6 +145,78 @@ public class BotRiskManager implements StrategyContextImpl.BuyRouter {
         if (d == null || d.size() <= MOM_N || a <= 0) return 0;
         List<double[]> l = new ArrayList<>(d);
         return (l.get(l.size() - 1)[2] - l.get(l.size() - 1 - MOM_N)[2]) / a;
+    }
+
+    /** Wilder ADX(14)。資料不足回 -1。 */
+    public double adx(String symbol) {
+        Deque<double[]> d = bars.get(symbol);
+        int n = ATR_N;
+        if (d == null || d.size() < 2 * n + 1) return -1;
+        List<double[]> l = new ArrayList<>(d);
+        double tr = 0, pdm = 0, mdm = 0, adx = 0; int dxCount = 0;
+        for (int i = 1; i < l.size(); i++) {
+            double[] c = l.get(i), p = l.get(i - 1);
+            double t = Math.max(c[0] - c[1], Math.max(Math.abs(c[0] - p[2]), Math.abs(c[1] - p[2])));
+            double up = c[0] - p[0], dn = p[1] - c[1];
+            double pd = up > dn && up > 0 ? up : 0, md = dn > up && dn > 0 ? dn : 0;
+            if (i <= n) { tr += t; pdm += pd; mdm += md; if (i < n) continue; }
+            else { tr = tr - tr / n + t; pdm = pdm - pdm / n + pd; mdm = mdm - mdm / n + md; }
+            double pdi = tr > 0 ? 100 * pdm / tr : 0, mdi = tr > 0 ? 100 * mdm / tr : 0;
+            double dx = pdi + mdi > 0 ? 100 * Math.abs(pdi - mdi) / (pdi + mdi) : 0;
+            if (dxCount < n) { adx += dx; dxCount++; if (dxCount == n) adx /= n; }
+            else adx = (adx * (n - 1) + dx) / n;
+        }
+        return dxCount < n ? -1 : adx;
+    }
+
+    /** 近 14 根平均 TR% ÷ 整段 TR% 中位數。>2.5 視為異常高波動。資料不足回 0。 */
+    public double volRatio(String symbol) {
+        Deque<double[]> d = bars.get(symbol);
+        if (d == null || d.size() < 30) return 0;
+        List<double[]> l = new ArrayList<>(d);
+        List<Double> trp = new ArrayList<>();
+        for (int i = 1; i < l.size(); i++) {
+            double[] c = l.get(i), p = l.get(i - 1);
+            double t = Math.max(c[0] - c[1], Math.max(Math.abs(c[0] - p[2]), Math.abs(c[1] - p[2])));
+            trp.add(p[2] > 0 ? t / p[2] : 0);
+        }
+        List<Double> sorted = new ArrayList<>(trp); Collections.sort(sorted);
+        double med = sorted.get(sorted.size() / 2);
+        double recent = trp.subList(trp.size() - ATR_N, trp.size()).stream().mapToDouble(Double::doubleValue).average().orElse(0);
+        return med > 0 ? recent / med : 0;
+    }
+
+    public Regime regime(String symbol) {
+        double a = adx(symbol);
+        if (a < 0) return Regime.UNKNOWN;
+        return a >= ADX_TREND ? Regime.TREND : a <= ADX_RANGE ? Regime.RANGE : Regime.MIXED;
+    }
+
+    /** 給 UI：每個標的的盤勢。 */
+    public Map<String, Map<String, Object>> regimes() {
+        Map<String, Map<String, Object>> out = new TreeMap<>();
+        for (String s : bars.keySet()) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            double a = adx(s), v = volRatio(s);
+            m.put("regime", regime(s).name());
+            m.put("adx", a < 0 ? null : Math.round(a * 10) / 10.0);
+            m.put("volRatio", Math.round(v * 100) / 100.0);
+            m.put("highVol", v >= HIGH_VOL_RATIO);
+            out.put(s, m);
+        }
+        return out;
+    }
+
+    /** 盤勢不適合這個機器人進場時回原因，否則 null。 */
+    String regimeBlock(String id, String sym) {
+        if (p(id, "blockHighVol") > 0 && volRatio(sym) >= HIGH_VOL_RATIO)
+            return String.format("異常高波動（%.1f×），暫不進場", volRatio(sym));
+        if (p(id, "regimeFilter") <= 0) return null;
+        String fam = family(typeOf.apply(id));
+        Regime r = regime(sym);
+        if ("trend".equals(fam) && r == Regime.RANGE) return "盤整盤（ADX " + Math.round(adx(sym)) + "），趨勢策略不進場";
+        if ("meanrev".equals(fam) && r == Regime.TREND) return "趨勢盤（ADX " + Math.round(adx(sym)) + "），均值回歸策略不進場";
+        return null;
     }
 
     // ── 1. 出場 ──
@@ -192,6 +289,8 @@ public class BotRiskManager implements StrategyContextImpl.BuyRouter {
         if (until != null && closedCount.getOrDefault(sym, 0L) < until) {
             ctx.markOutcome("冷卻中（出場後 " + (long) p(id, "cooldownBars") + " 根內不進場）"); return true;
         }
+        String rb = regimeBlock(id, sym);
+        if (rb != null) { ctx.markOutcome(sym + " " + rb); return true; }
         buffer.computeIfAbsent(id, x -> Collections.synchronizedList(new ArrayList<>())).add(intent);
         ctx.markOutcome("排名中…");
         if (flushScheduled.add(id)) exec.schedule(() -> flush(id), RANK_WINDOW_MS, TimeUnit.MILLISECONDS);
@@ -225,8 +324,9 @@ public class BotRiskManager implements StrategyContextImpl.BuyRouter {
     }
 
     // ── 3. 機器人熔斷 ──
-    void onClose(String id, String sym, double pnl) {
+    void onClose(String id, String sym, double pnl, double entryNotional) {
         realized.merge(id, pnl, Double::sum);
+        if (bandit != null && entryNotional > 0) bandit.record(id, pnl / entryNotional);
         if (pnl < 0) consecLosses.merge(id, 1, Integer::sum); else consecLosses.put(id, 0);
         log.info("[{}] {} 平倉損益 {}，連虧 {}，本次累計 {}", id, sym, fmt(pnl), consecLosses.get(id), fmt(realized.get(id)));
         evaluate(id);

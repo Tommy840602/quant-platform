@@ -537,7 +537,9 @@ export default {
       "maxPositions": "同時持倉上限",
       "maxConsecLosses": "連虧幾筆暫停",
       "maxLossUsdt": "本次虧損上限 USDT",
-      "cooldownBars": "出場後冷卻（根）"
+      "cooldownBars": "出場後冷卻（根）",
+      "regimeFilter": "盤勢過濾",
+      "blockHighVol": "異常波動不進場"
     },
     "h": {
       "stopAtr": "進場價 − N×ATR；0=關",
@@ -546,7 +548,37 @@ export default {
       "maxPositions": "多個訊號只做排名前 N",
       "maxConsecLosses": "暫停進場，持倉停損照常；0=關",
       "maxLossUsdt": "已實現+未實現 ≤ −N 暫停；0=關",
-      "cooldownBars": "出場後同幣 N 根 K 內不再買"
+      "cooldownBars": "出場後同幣 N 根 K 內不再買",
+      "regimeFilter": "趨勢型只在趨勢/中性盤進場，均值回歸型只在盤整/中性盤",
+      "blockHighVol": "近 14 根波動 ≥ 2.5× 平常時暫停進場"
     }
+  },
+  "regime": {
+    "title": "盤勢（每個標的，1 分 K）",
+    "legend": "ADX ≥ 25 趨勢 · ≤ 20 盤整 · 波動 ≥ 2.5× 異常",
+    "TREND": "趨勢",
+    "RANGE": "盤整",
+    "MIXED": "中性",
+    "UNKNOWN": "資料不足",
+    "highVol": "異常波動",
+    "vol": "波動",
+    "fam": {
+      "trend": "趨勢型",
+      "meanrev": "均值回歸型"
+    }
+  },
+  "bandit": {
+    "title": "自動配資（Thompson Sampling）",
+    "rebalance": "立即重新配資",
+    "range": "倍率 ×{lo} ~ ×{hi}，每 10 分鐘",
+    "empty": "沒有運行中的機器人",
+    "bot": "機器人",
+    "trades": "來回",
+    "mean": "平均報酬",
+    "pBest": "是最好的機率",
+    "alloc": "配資",
+    "hint": "依每筆來回交易的報酬學習：越可能是最好的機器人分到越多資金（倍率 × 每單名目），表現差的降到下限繼續觀察。平均倍率 = 1，總曝險不變；下限保證單筆不低於 5 USDT。開啟後會覆蓋手動配資。",
+    "on": "已開啟自動配資",
+    "off": "已關閉自動配資"
   }
 }

@@ -537,7 +537,9 @@ export default {
       "maxPositions": "Max concurrent positions",
       "maxConsecLosses": "Pause after N losses",
       "maxLossUsdt": "Session loss limit USDT",
-      "cooldownBars": "Cooldown after exit (bars)"
+      "cooldownBars": "Cooldown after exit (bars)",
+      "regimeFilter": "Regime filter",
+      "blockHighVol": "Skip vol spikes"
     },
     "h": {
       "stopAtr": "entry − N×ATR; 0=off",
@@ -546,7 +548,37 @@ export default {
       "maxPositions": "only the top-N ranked signals",
       "maxConsecLosses": "pause entries, exits keep running; 0=off",
       "maxLossUsdt": "realized+unrealized ≤ −N pauses; 0=off",
-      "cooldownBars": "no re-entry on that coin for N bars"
+      "cooldownBars": "no re-entry on that coin for N bars",
+      "regimeFilter": "trend bots enter only in trend/mixed, mean-reversion only in range/mixed",
+      "blockHighVol": "pause entries when 14-bar vol ≥ 2.5× normal"
     }
+  },
+  "regime": {
+    "title": "Market regime (per symbol, 1m)",
+    "legend": "ADX ≥ 25 trend · ≤ 20 range · vol ≥ 2.5× abnormal",
+    "TREND": "Trend",
+    "RANGE": "Range",
+    "MIXED": "Mixed",
+    "UNKNOWN": "Not enough data",
+    "highVol": "Vol spike",
+    "vol": "Vol",
+    "fam": {
+      "trend": "Trend",
+      "meanrev": "Mean-rev"
+    }
+  },
+  "bandit": {
+    "title": "Auto allocation (Thompson Sampling)",
+    "rebalance": "Rebalance now",
+    "range": "×{lo} – ×{hi}, every 10 min",
+    "empty": "No running bots",
+    "bot": "Bot",
+    "trades": "Trades",
+    "mean": "Avg return",
+    "pBest": "P(best)",
+    "alloc": "Alloc",
+    "hint": "Learns from each round-trip return: bots more likely to be the best get more capital (multiplier × per-order notional); weak ones drop to the floor and keep exploring. Mean multiplier = 1, so total exposure is unchanged; the floor keeps each order ≥ 5 USDT. Overrides manual allocation while on.",
+    "on": "Auto allocation on",
+    "off": "Auto allocation off"
   }
 }
