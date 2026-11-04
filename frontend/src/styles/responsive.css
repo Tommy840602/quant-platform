@@ -1,0 +1,42 @@
+/* ===== 手機版（≤768px）：全站通用調整，個別頁面不用各自改 ===== */
+@media (max-width: 768px) {
+  .el-main { padding: 8px; }
+
+  /* 固定 span 的欄位一律改成整列堆疊；有寫 :xs 的維持原設定 */
+  .el-row { margin-left: 0 !important; margin-right: 0 !important; }
+  .el-row > .el-col:not([class*="el-col-xs-"]) {
+    max-width: 100% !important; flex: 0 0 100% !important; padding-left: 0 !important; padding-right: 0 !important;
+  }
+  .el-row > .el-col:not([class*="el-col-xs-"]) + .el-col:not([class*="el-col-xs-"]) { margin-top: 12px; }
+  .el-row > .el-col[class*="el-col-xs-"] { padding-left: 4px !important; padding-right: 4px !important; }
+
+  .el-card__header { padding: 10px 12px; }
+  .el-card__body { padding: 12px; }
+  .el-card__header > div { flex-wrap: wrap; gap: 6px; }
+
+  /* 表單：標籤放上面、輸入框吃滿 */
+  .el-form:not(.el-form--inline) .el-form-item { display: block; margin-bottom: 14px; }
+  .el-form:not(.el-form--inline) .el-form-item__label {
+    width: auto !important; justify-content: flex-start; text-align: left; height: auto; line-height: 1.5; padding-bottom: 4px;
+  }
+  .el-form:not(.el-form--inline) .el-form-item__content { margin-left: 0 !important; }
+  .el-form--inline .el-form-item { margin-right: 8px; }
+  .el-form .el-input, .el-form .el-select, .el-form .el-input-number { max-width: 100%; }
+
+  /* 表格、描述清單可左右滑，不撐破版面 */
+  .el-table { font-size: 12px; }
+  .el-descriptions__body { overflow-x: auto; }
+  .el-descriptions__table { min-width: 100%; }
+
+  /* 對話框 / 抽屜吃滿手機寬 */
+  .el-dialog { width: 94vw !important; margin-top: 6vh !important; }
+  .el-dialog__body { padding: 12px; }
+  .el-message-box { width: 90vw !important; }
+  .el-drawer:not(.nav-drawer) { width: 100% !important; }
+
+  .el-tabs__item { padding: 0 10px; }
+  .el-button + .el-button { margin-left: 6px; }
+
+  /* 通知不要蓋滿整個畫面 */
+  .el-notification { width: calc(100vw - 24px) !important; right: 12px !important; }
+}

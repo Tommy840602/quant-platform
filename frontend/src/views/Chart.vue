@@ -76,7 +76,11 @@
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import { createChart } from 'lightweight-charts'
+import { createChart as lwCreate } from 'lightweight-charts'
+import { observeWidth } from '@/utils/resize'
+const unobs = []
+// 每張圖跟著容器寬度走（手機轉向、側欄收合）
+function createChart(el, opts) { const c = lwCreate(el, opts); unobs.push(observeWidth(el, w => c.applyOptions({ width: w }))); return c }
 import { storeToRefs } from 'pinia'
 import { marketApi, orderApi, strategyApi } from '@/api'
 import { useRoute } from 'vue-router'
@@ -297,7 +301,7 @@ onMounted(() => {
   reload()
 })
 watch(() => theme.dark, () => applyTheme())
-onUnmounted(() => { [priceChart, volChart, macdChart, rsiChart, kdjChart, atrChart, cciChart, wrChart, obvChart, trixChart, rocChart, cmfChart].forEach(c => c && c.remove()) })
+onUnmounted(() => { unobs.forEach(f => f()); [priceChart, volChart, macdChart, rsiChart, kdjChart, atrChart, cciChart, wrChart, obvChart, trixChart, rocChart, cmfChart].forEach(c => c && c.remove()) })
 
 watch(lastPrice, (p) => {
   if (!p || !candle) return
