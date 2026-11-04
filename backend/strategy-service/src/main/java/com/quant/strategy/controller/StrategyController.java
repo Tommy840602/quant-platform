@@ -53,6 +53,14 @@ public class StrategyController {
     @PostMapping("/pipeline")
     public ApiResponse<Map<String, Object>> setPipeline(@RequestParam boolean auto) { return ApiResponse.ok(runner.setPipelineAuto(auto)); }
 
+    /** 決策日誌：GET /api/strategy/strategies/decisions?botId=&symbol=&from=&to=&acted=&limit= */
+    @GetMapping("/decisions")
+    public ApiResponse<List<Map<String, Object>>> decisions(@RequestParam(required = false) String botId, @RequestParam(required = false) String symbol,
+                                                            @RequestParam(required = false) Long from, @RequestParam(required = false) Long to,
+                                                            @RequestParam(required = false) Boolean acted, @RequestParam(defaultValue = "300") int limit) {
+        return ApiResponse.ok(runner.decisions(botId, symbol, from, to, acted, limit));
+    }
+
     /** 熔斷後恢復進場：POST /api/strategy/strategies/{id}/resume */
     @PostMapping("/{id}/resume")
     public ApiResponse<String> resume(@PathVariable String id) { return ApiResponse.ok(runner.resume(id)); }

@@ -9,7 +9,9 @@ export const authApi = {
 }
 export const marketApi = {
   klines: (symbol, interval = '1m', limit = 500) =>
-    http.get('/market/klines', { params: { symbol, interval, limit } })
+    http.get('/market/klines', { params: { symbol, interval, limit } }),
+  klinesRange: (symbol, interval, from, to, limit = 2000) =>
+    http.get('/market/klines/range', { params: { symbol, interval, from, to, limit } })
 }
 export const strategyApi = {
   list: () => http.get('/strategy/strategies'),
@@ -23,6 +25,7 @@ export const strategyApi = {
   setStage: (id, stage) => http.post(`/strategy/strategies/${id}/stage`, null, { params: { stage } }),
   pipeline: () => http.get('/strategy/strategies/pipeline'),
   setPipeline: (auto) => http.post('/strategy/strategies/pipeline', null, { params: { auto } }),
+  decisions: (params) => http.get('/strategy/strategies/decisions', { params }),
   resume: (id) => http.post(`/strategy/strategies/${id}/resume`),
   paramsAny: (id, body) => http.post(`/strategy/strategies/${id}/params-any`, body),
   create: (body) => http.post('/strategy/strategies', body),

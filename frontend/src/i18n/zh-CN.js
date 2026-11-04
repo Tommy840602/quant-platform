@@ -608,5 +608,19 @@ export default {
     "confirmPaper": "切到模拟盘：手上真钱仓位会先市价卖出，之后只模拟成交、不下单。",
     "confirmPilot": "切到真钱试行：每单只下币安最低 5.5 USDT。",
     "confirmLive": "切到正式运行：依每单名义 / 自动配资下单（真钱）。"
+  },
+  "decisions": {
+    "btn": "日志",
+    "title": "决策日志",
+    "allSymbols": "全部标的",
+    "actedOnly": "只看有动作",
+    "empty": "还没有决策记录（有信号才会记）",
+    "outcome": "结果",
+    "market": "当下盘势",
+    "onChart": "图上看",
+    "onChartToggle": "机器人决策",
+    "allBots": "全部机器人",
+    "prev": "上一个",
+    "next": "下一个"
   }
 }

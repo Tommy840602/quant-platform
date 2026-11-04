@@ -31,12 +31,30 @@
             <el-checkbox-button label="ROC">ROC</el-checkbox-button>
             <el-checkbox-button label="CMF">CMF</el-checkbox-button>
           </el-checkbox-group>
+          <el-checkbox v-model="showDec" @change="loadDecisions">{{ t('decisions.onChartToggle') }}</el-checkbox>
+          <el-select v-if="showDec" v-model="decBot" clearable :placeholder="t('decisions.allBots')" style="width:150px" @change="loadDecisions">
+            <el-option v-for="b in decBots" :key="b" :label="b" :value="b" />
+          </el-select>
           <el-button size="small" @click="reload">{{ t('chart.s5') }}</el-button>
         </div>
       </template>
       <div class="chart-wrap">
         <div class="chart-legend" v-html="legend"></div>
         <div ref="priceEl" style="height:340px"></div>
+      </div>
+      <div v-if="showDec && replayList.length" class="replay">
+        <el-button size="small" :disabled="cur <= 0" @click="step(-1)">◀ {{ t('decisions.prev') }}</el-button>
+        <div class="replay-body" v-if="curDec">
+          <b>{{ cur + 1 }}/{{ replayList.length }}</b>
+          <span>{{ locale.fmtTime(curDec.ts, { year: undefined }) }}</span>
+          <el-tag size="small" effect="plain">{{ curDec.botId }}</el-tag>
+          <span :style="{ color: curDec.side === 'BUY' ? '#26a69a' : '#ef5350', fontWeight: 600 }">{{ curDec.side }}</span>
+          <span>@{{ curDec.price ? +curDec.price.toPrecision(6) : '' }}</span>
+          <span :style="{ color: curDec.acted ? '#67c23a' : 'var(--el-text-color-secondary)' }">{{ curDec.outcome }}</span>
+          <span class="hint" v-if="curDec.detail?.regime">{{ t('regime.' + curDec.detail.regime) }}<template v-if="curDec.detail.adx != null"> · ADX {{ curDec.detail.adx }}</template> · {{ t('regime.vol') }} {{ curDec.detail.volRatio }}×</span>
+        </div>
+        <el-checkbox v-model="actedOnly" size="small" @change="cur = Math.max(0, replayList.length - 1); focus()">{{ t('decisions.actedOnly') }}</el-checkbox>
+        <el-button size="small" :disabled="cur >= replayList.length - 1" @click="step(1)">{{ t('decisions.next') }} ▶</el-button>
       </div>
       <div v-show="panes.includes('VOL')" ref="volEl" style="height:100px;margin-top:6px"></div>
       <div v-show="panes.includes('MACD')" ref="macdEl" style="height:110px;margin-top:6px"></div>
@@ -60,7 +78,9 @@ const { t } = useI18n()
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { createChart } from 'lightweight-charts'
 import { storeToRefs } from 'pinia'
-import { marketApi, orderApi } from '@/api'
+import { marketApi, orderApi, strategyApi } from '@/api'
+import { useRoute } from 'vue-router'
+import { useLocaleStore } from '@/store/locale'
 import { useMarketStore } from '@/store/market'
 import { SYMBOLS } from '@/config/symbols'
 import * as ind from '@/utils/indicators'
@@ -71,7 +91,39 @@ const theme = useThemeStore()
 const market = useMarketStore()
 const { prices } = storeToRefs(market)
 
-const symbol = ref('BTCUSDT'); const interval = ref('1m')
+const route = useRoute()
+const locale = useLocaleStore()
+const symbol = ref(typeof route.query.symbol === 'string' ? route.query.symbol : 'BTCUSDT'); const interval = ref('1m')
+// ── 機器人決策疊圖 + 回放 ──
+const IV = { '1m': 60, '5m': 300, '15m': 900, '1h': 3600, '4h': 14400, '1d': 86400 }
+const showDec = ref(true), decBot = ref(typeof route.query.bot === 'string' ? route.query.bot : ''), actedOnly = ref(false)
+const decisions = ref([]), cur = ref(0)
+let focusTs = route.query.t ? Number(route.query.t) : 0
+const decBots = computed(() => [...new Set(decisions.value.map(d => d.botId))])
+const replayList = computed(() => decisions.value.filter(d => !actedOnly.value || d.acted))
+const curDec = computed(() => replayList.value[cur.value])
+const barTime = ms => Math.floor(ms / 1000 / IV[interval.value]) * IV[interval.value]
+async function loadDecisions() {
+  if (!showDec.value || !raw.length) { decisions.value = []; markSignals(raw.map(k => Math.floor(k.openTime / 1000))); return }
+  const from = raw[0].openTime, to = Date.now()
+  try {
+    const rows = (await strategyApi.decisions({ symbol: symbol.value, botId: decBot.value || undefined, from, to, limit: 2000 })).data || []
+    decisions.value = rows.slice().sort((a, b) => a.ts - b.ts)
+  } catch { decisions.value = [] }
+  const list = replayList.value
+  if (focusTs) { let best = 0; list.forEach((d, i) => { if (Math.abs(d.ts - focusTs) < Math.abs(list[best].ts - focusTs)) best = i }); cur.value = best; focusTs = 0 }
+  else cur.value = Math.max(0, list.length - 1)
+  markSignals(raw.map(k => Math.floor(k.openTime / 1000)))
+  if (route.query.t) focus()
+}
+function step(d) { cur.value = Math.min(replayList.value.length - 1, Math.max(0, cur.value + d)); focus() }
+function focus() {
+  const d = curDec.value
+  if (!d || !priceChart) return
+  const tt = barTime(d.ts), span = IV[interval.value] * 60
+  try { priceChart.timeScale().setVisibleRange({ from: tt - span, to: tt + span / 2 }) } catch {}
+  markSignals(raw.map(k => Math.floor(k.openTime / 1000)))
+}
 const overlays = ref(['MA', 'BOLL'])
 const sigType = ref('ma')
 const legend = ref('')
@@ -91,11 +143,16 @@ const lastPrice = computed(() => prices.value[symbol.value])
 const line = (arr, t, color, w = 1) => arr.map((v, i) => v == null ? null : ({ time: t[i], value: v })).filter(Boolean)
 
 async function reload() {
-  const resp = await marketApi.klines(symbol.value, interval.value, 300)
+  let resp
+  const sec = IV[interval.value]
+  if (focusTs && Date.now() - focusTs > sec * 1000 * 250) {
+    resp = await marketApi.klinesRange(symbol.value, interval.value, focusTs - sec * 1000 * 200, focusTs + sec * 1000 * 100, 400)
+  } else resp = await marketApi.klines(symbol.value, interval.value, 300)
   raw = resp.data || []
   await nextTick()
   ensurePanes()
   draw()
+  loadDecisions()
 }
 
 function chartOpts() {
@@ -104,7 +161,11 @@ function chartOpts() {
     layout: { background: { type: 'solid', color: dark ? '#131722' : '#ffffff' }, textColor: dark ? '#d1d4dc' : '#333' },
     grid: { vertLines: { color: dark ? '#2a2e39' : '#f0f0f0' }, horzLines: { color: dark ? '#2a2e39' : '#f0f0f0' } },
     rightPriceScale: { borderColor: dark ? '#2a2e39' : '#e0e0e0' },
-    timeScale: { borderColor: dark ? '#2a2e39' : '#e0e0e0', timeVisible: true }
+    timeScale: { borderColor: dark ? '#2a2e39' : '#e0e0e0', timeVisible: true,
+      // 軸刻度與十字線時間跟著「地區與偏好」的時區（lightweight-charts 預設是 UTC）
+      tickMarkFormatter: (tt, type) => new Intl.DateTimeFormat(locale.lang, { timeZone: locale.tz, hour12: false,
+        ...(type >= 3 ? { hour: '2-digit', minute: '2-digit' } : type === 2 ? { month: '2-digit', day: '2-digit' } : { year: 'numeric', month: '2-digit' }) }).format(tt * 1000) },
+    localization: { timeFormatter: tt => locale.fmtTime(tt * 1000, { year: undefined }) }
   }
 }
 function applyTheme() {
@@ -127,9 +188,22 @@ function updateLegend(bar) {
 
 }
 
+function decisionMarkers() {
+  if (!showDec.value) return []
+  const focused = curDec.value
+  return decisions.value.filter(d => !actedOnly.value || d.acted).map(d => {
+    const isCur = focused && d === focused
+    if (!d.acted) return { time: barTime(d.ts), position: 'aboveBar', shape: 'circle', color: isCur ? '#ffd600' : '#78909c', text: isCur ? '▶' : '' }
+    const buy = d.side === 'BUY'
+    return { time: barTime(d.ts), position: buy ? 'belowBar' : 'aboveBar', shape: buy ? 'arrowUp' : 'arrowDown',
+      color: isCur ? '#ffd600' : buy ? '#2962ff' : '#ff6d00', text: (isCur ? '▶ ' : '') + d.botId }
+  })
+}
+
 function markSignals(times) {
   if (!candle) return
-  if (!sigType.value) { candle.setMarkers([]); return }
+  const dm = decisionMarkers()
+  if (!sigType.value) { candle.setMarkers(dm.sort((a, b) => a.time - b.time)); return }
   const sigs = signals(sigType.value, raw)
   const markers = sigs.map(x => ({
     time: times[x.i],
@@ -138,7 +212,7 @@ function markSignals(times) {
     shape: x.side === 'BUY' ? 'arrowUp' : 'arrowDown',
     text: x.side === 'BUY' ? t('chart.s7') : t('chart.s8')
   }))
-  candle.setMarkers(markers)
+  candle.setMarkers(markers.concat(dm).sort((a, b) => a.time - b.time))
 }
 
 function draw() {
@@ -215,6 +289,10 @@ onMounted(() => {
   priceChart.subscribeCrosshairMove(param => {
     const d = param.seriesData && param.seriesData.get(candle)
     updateLegend(d || null)
+    if (param.time && showDec.value) {
+      const hits = decisions.value.filter(x => barTime(x.ts) === param.time).slice(-3)
+      if (hits.length) legend.value += '<br>' + hits.map(x => `<span style="color:${x.acted ? '#67c23a' : '#90a4ae'}">[${x.botId}] ${x.side || ''} ${x.outcome.replace(/</g, '&lt;')}</span>`).join('<br>')
+    }
   })
   reload()
 })
@@ -227,4 +305,6 @@ watch(lastPrice, (p) => {
 })
 </script>
 <style scoped>
-.px{display:inline-flex;align-items:center;gap:6px}.hint{color:#999;font-size:12px;margin-top:8px}</style>
+.px{display:inline-flex;align-items:center;gap:6px}
+.replay{display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap;padding:6px 8px;border:1px solid var(--el-border-color-lighter);border-radius:6px}
+.replay-body{display:flex;align-items:center;gap:8px;flex:1;flex-wrap:wrap;font-size:13px}.hint{color:#999;font-size:12px;margin-top:8px}</style>

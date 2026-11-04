@@ -608,5 +608,19 @@ export default {
     "confirmPaper": "ペーパーへ：実弾ポジションは先に成行売却し、以降は模擬約定のみ。",
     "confirmPilot": "実弾試行へ：各注文は Binance 最低 5.5 USDT。",
     "confirmLive": "本番へ：1注文名目 / 自動配分で発注（実弾）。"
+  },
+  "decisions": {
+    "btn": "ログ",
+    "title": "判断ログ",
+    "allSymbols": "全銘柄",
+    "actedOnly": "実行のみ",
+    "empty": "まだ記録なし（シグナル時に記録）",
+    "outcome": "結果",
+    "market": "相場",
+    "onChart": "チャートで見る",
+    "onChartToggle": "ボット判断",
+    "allBots": "全ボット",
+    "prev": "前へ",
+    "next": "次へ"
   }
 }
