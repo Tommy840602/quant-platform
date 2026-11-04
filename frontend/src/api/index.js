@@ -26,6 +26,7 @@ export const strategyApi = {
   pipeline: () => http.get('/strategy/strategies/pipeline'),
   setPipeline: (auto) => http.post('/strategy/strategies/pipeline', null, { params: { auto } }),
   decisions: (params) => http.get('/strategy/strategies/decisions', { params }),
+  reconcile: (id, days = 30) => http.get(`/strategy/strategies/${id}/reconcile`, { params: { days } }),
   resume: (id) => http.post(`/strategy/strategies/${id}/resume`),
   paramsAny: (id, body) => http.post(`/strategy/strategies/${id}/params-any`, body),
   create: (body) => http.post('/strategy/strategies', body),
