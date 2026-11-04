@@ -44,11 +44,29 @@ public class SystemStatusController {
         SERVICES.put("notification-service", "/api/notify/actuator/health");
     }
 
+    /** market-data-service 每收到一筆行情就寫入的時間戳（epoch ms）。 */
+    static final String LAST_TICK_KEY = "md:last-tick";
+
     private final WebClient web;
     private final JwtAuthFilter jwt;
+    private final org.springframework.data.redis.core.ReactiveStringRedisTemplate redis;
 
-    public SystemStatusController(WebClient.Builder lbWebClientBuilder, JwtAuthFilter jwt) {
-        this.web = lbWebClientBuilder.build(); this.jwt = jwt;
+    public SystemStatusController(WebClient.Builder lbWebClientBuilder, JwtAuthFilter jwt,
+                                  org.springframework.data.redis.core.ReactiveStringRedisTemplate redis) {
+        this.web = lbWebClientBuilder.build(); this.jwt = jwt; this.redis = redis;
+    }
+
+    /** 所有服務探一次（看門狗也用）。 */
+    Mono<List<Map<String, Object>>> probeAll() {
+        return Flux.fromIterable(SERVICES.entrySet()).flatMap(e -> probe(e.getKey(), e.getValue())).collectList();
+    }
+
+    /** 最後一筆行情距今幾秒；從沒收到過回 -1。 */
+    Mono<Long> lastTickAgeSec() {
+        return redis.opsForValue().get(LAST_TICK_KEY)
+                .map(v -> Math.max(0, (System.currentTimeMillis() - Long.parseLong(v)) / 1000))
+                .defaultIfEmpty(-1L)
+                .onErrorReturn(-1L);
     }
 
     /** 給 nginx auth_request 用的輕量驗證：JWT 有效回 204，否則 401（/research 等不經 gateway 路由的端點靠它擋）。 */
@@ -62,10 +80,9 @@ public class SystemStatusController {
     public Mono<Map<String, Object>> status(ServerHttpRequest req) {
         if (!jwt.isAuthorized(req)) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         long t0 = System.currentTimeMillis();
-        return Flux.fromIterable(SERVICES.entrySet())
-                .flatMap(e -> probe(e.getKey(), e.getValue()))
-                .collectList()
-                .map(list -> {
+        return probeAll().zipWith(lastTickAgeSec())
+                .map(tuple -> {
+                    List<Map<String, Object>> list = tuple.getT1();
                     Map<String, Object> out = new LinkedHashMap<>();
                     out.put("code", 0); out.put("message", "ok");
                     Map<String, Object> data = new LinkedHashMap<>();
@@ -75,6 +92,7 @@ public class SystemStatusController {
                     data.put("services", sorted);
                     long up = list.stream().filter(m -> "UP".equals(m.get("status"))).count();
                     data.put("summary", Map.of("up", up, "total", list.size(), "elapsedMs", System.currentTimeMillis() - t0));
+                    data.put("marketData", Map.of("lastTickAgeSec", tuple.getT2()));
                     out.put("data", data);
                     return out;
                 });

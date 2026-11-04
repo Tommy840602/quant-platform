@@ -434,6 +434,9 @@ export default {
     "allSymbols": "全銘柄（20 ペア）"
   },
   "system": {
+    "mdLabel": "相場データ",
+    "mdAgo": "秒前",
+    "mdNone": "データなし",
     "s1": "サービス",
     "s2": "状態",
     "s3": "遅延 (ms)",

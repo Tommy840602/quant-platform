@@ -177,7 +177,7 @@ services:
     build: { context: ./backend, dockerfile: Dockerfile.prod }
     container_name: qp-api-gateway
     restart: unless-stopped
-    environment: { <<: *backend-env, SERVICE: api-gateway }
+    environment: { <<: *backend-env, SERVICE: api-gateway, HEARTBEAT_URL: "${HEARTBEAT_URL:-}" }
     <<: [*logging, *backend-deps]
     healthcheck:
       test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/actuator/health); [ \"$$code\" = 200 ] || [ \"$$code\" = 503 ]"]

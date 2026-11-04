@@ -6,6 +6,7 @@
           <template #header>
             <div style="display:flex;justify-content:space-between;align-items:center">
               <span>{{ t('system.s12') }} <el-tag :type="svcSummary.up === svcSummary.total ? 'success' : 'danger'" size="small">{{ svcSummary.up }} / {{ svcSummary.total }} UP</el-tag>
+                <el-tag v-if="mdAge !== null" :type="mdAge >= 0 && mdAge <= 120 ? 'success' : 'danger'" size="small" style="margin-left:6px">{{ t('system.mdLabel') }} {{ mdAge >= 0 ? mdAge + ' ' + t('system.mdAgo') : t('system.mdNone') }}</el-tag>
                 <span class="hint">{{ t('system.s13') }} {{ lastAt }}</span></span>
               <el-button size="small" :loading="loading" @click="refresh">{{ t('system.s14') }}</el-button>
             </div>
@@ -114,7 +115,7 @@ const locale = useLocaleStore()
 
 const tradeStore = useTradeStore(); const { cfg: trade } = storeToRefs(tradeStore)
 const effDry = computed(() => trade.value.effectiveDryRun ?? trade.value.dryRun)
-const services = ref([]); const svcSummary = ref({ up: 0, total: 0 })
+const services = ref([]); const svcSummary = ref({ up: 0, total: 0 }); const mdAge = ref(null)
 const uds = ref({}); const kl = ref({}); const risk = ref({}); const dd = ref({}); const bots = ref({ running: 0, total: 0, names: [] })
 const lag = ref({}); const alerts = ref({})
 const loading = ref(false); const lastAt = ref('—')
@@ -136,7 +137,7 @@ async function refresh() {
   loading.value = true
   const safe = async (fn, set) => { try { set((await fn()).data) } catch (e) { set(e?.response?.status ? { _err: e.response.status } : {}) } }
   await Promise.all([
-    safe(systemApi.status, d => { services.value = d?.services || []; svcSummary.value = d?.summary || { up: 0, total: 0 } }),
+    safe(systemApi.status, d => { services.value = d?.services || []; svcSummary.value = d?.summary || { up: 0, total: 0 }; mdAge.value = d?.marketData?.lastTickAgeSec ?? null }),
     safe(tradeConfigApi.uds, d => { uds.value = d || {} }),
     safe(systemApi.klines, d => { kl.value = d || {} }),
     safe(() => riskApi.status(), d => { risk.value = d || {} }),

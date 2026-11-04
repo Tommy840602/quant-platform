@@ -434,6 +434,9 @@ export default {
     "allSymbols": "全部標的（20 對）"
   },
   "system": {
+    "mdLabel": "行情",
+    "mdAgo": "秒前",
+    "mdNone": "尚無行情",
     "s1": "服務",
     "s2": "狀態",
     "s3": "延遲 (ms)",

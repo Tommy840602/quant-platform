@@ -80,6 +80,18 @@ docker compose -f docker-compose.prod.yml --profile monitoring stop prometheus g
 ```
 > CX43（16GB）建議平時關監控，把記憶體留給交易邏輯；要排查再臨時開。
 
+## 異常通知（看門狗）
+api-gateway 每 30 秒檢查一次，以下情況**持續 2 分鐘以上**就發 Slack（`SLACK_WEBHOOK_URL`），恢復時再發一則：
+- 任一後端服務 DOWN / 連不到（訊息會附上哪個元件壞：db、redis、kafka…）
+- 行情超過 2 分鐘沒進來（Binance 斷線；這段時間機器人不會進出場）
+
+「系統狀態」頁上方也會顯示行情最後更新是幾秒前。
+
+整台 Mac 睡著、Docker 掛掉時看門狗自己也停了，所以建議再加外部存活檢查：
+1. 到 healthchecks.io 免費建一個 check（Period 1 分鐘、Grace 5 分鐘），整合選 Slack。
+2. `.env` 填 `HEARTBEAT_URL=https://hc-ping.com/你的UUID`，重啟 api-gateway。
+gateway 每分鐘 ping 一次；超過 5 分鐘沒收到，healthchecks.io 就會通知你。
+
 ## 資料庫備份與還原
 `db-backup` 容器每天台北時間 03:00 把 TimescaleDB 備份到專案的 `./backups/`（`quant-日期-時間.dump`），保留 7 天；失敗會發 Slack。
 ```bash
