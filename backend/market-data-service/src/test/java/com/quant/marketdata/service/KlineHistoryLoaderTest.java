@@ -21,6 +21,7 @@ class KlineHistoryLoaderTest {
 
     private KlineHistoryLoader loader(int bars) {
         props.setStreams(List.of("btcusdt@kline_1m", "btcusdt@depth10@1000ms"));
+        props.setExtraIntervals(List.of());   // 這裡只測分頁，不要衍生週期
         KlineHistoryLoader l = new KlineHistoryLoader(props, backfill, repo, () -> NOW);
         ReflectionTestUtils.setField(l, "historyBars", bars);
         return l;
