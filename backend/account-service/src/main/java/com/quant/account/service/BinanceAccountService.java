@@ -56,14 +56,20 @@ public class BinanceAccountService {
     }
 
     /** 節流推 Slack（同類告警 10 分鐘內只發一次）。 */
+    private IpWatch ipWatch;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setIpWatch(@org.springframework.context.annotation.Lazy IpWatch w) { this.ipWatch = w; }
+
     private void alertAuth(String detail) {
         long now = System.currentTimeMillis();
         if (now - lastAuthAlert < 600_000) return;
         lastAuthAlert = now;
+        String ip = ipWatch == null ? null : ipWatch.current();
         try {
             notifyClient.send(Map.of("text",
                 ":lock: 幣安金鑰/IP 告警（帳戶查詢）｜ env=" + env + " ｜ " + detail
-                + " ｜ 多為 IP 白名單未涵蓋目前對外 IP，或金鑰權限/簽名問題，請至幣安 API 管理確認"));
+                + " ｜ 多為 IP 白名單未涵蓋目前對外 IP，或金鑰權限/簽名問題，請至幣安 API 管理確認"
+                + (ip == null ? "" : " ｜ 目前對外 IP：" + ip)));
         } catch (Exception ignore) {}
     }
 

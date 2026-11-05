@@ -66,6 +66,8 @@ export default {
     "trades": "成交"
   },
   "account": {
+    "pmGuardStop": "已停止合约开仓",
+    "pmGuardWarn": "保证金预警",
     "pmTitle": "统一账户（Portfolio Margin）",
     "pmEquity": "统一账户权益（计入总资产）",
     "pmMmrTip": "统一账户维持保证金率：越低越危险，接近 1 会被强制平仓",
@@ -253,6 +255,10 @@ export default {
     "s55": "下单 code={code} · {msg}"
   },
   "login": {
+    "ipNow": "平台当前的对外 IP：",
+    "ipCopy": "复制",
+    "ipCopied": "已复制，粘贴到币安 API 的 IP 白名单",
+    "ipHint": "币安 API 管理 → 编辑 → IP 访问限制 要填这个；IP 一变平台会发 Slack 通知",
     "keyOneTitle": "一把密钥：现货 + 合约共用",
     "keyOneBody": "合约交易需要在币安开通「统一账户」（Portfolio Margin），合约单走统一账户（papi.binance.com）。这把密钥要勾「允许现货及杠杆交易」＋「允许合约」，并设置 IP 白名单；「允许提现」不要勾。",
     "keyOneTest": "测试网没有统一账户：合约只能用 .env 的 BINANCE_FUTURES_API_KEY（testnet.binancefuture.com 另外申请）。",

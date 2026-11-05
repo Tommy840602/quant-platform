@@ -20,17 +20,27 @@ public class AccountController {
     private final BinanceAccountService binanceAccount;
     private final WalletService wallet;
     private final FuturesAccountService futures;
+    private final IpWatch ipWatch;
+    private final PmGuard pmGuard;
 
     public AccountController(PositionStore positions, EquityCurveService equity,
                             FundingService funding, SseHub sseHub, BinanceAccountService binanceAccount,
-                            WalletService wallet, FuturesAccountService futures) {
+                            WalletService wallet, FuturesAccountService futures, IpWatch ipWatch, PmGuard pmGuard) {
         this.positions = positions; this.equity = equity; this.funding = funding; this.sseHub = sseHub;
         this.binanceAccount = binanceAccount; this.wallet = wallet; this.futures = futures;
+        this.ipWatch = ipWatch; this.pmGuard = pmGuard;
     }
 
     @GetMapping("/balance")
     public ApiResponse<Map<String, Object>> balance(@RequestParam(defaultValue = "main") String account) {
-        return ApiResponse.ok(wallet.balance());   // 現貨 + 合約
+        Map<String, Object> b = new java.util.LinkedHashMap<>(wallet.balance());   // 現貨 + 合約
+        if (b.get("futures") instanceof Map<?, ?> f && Boolean.TRUE.equals(f.get("pm"))) {
+            Map<String, Object> fm = new java.util.LinkedHashMap<>();
+            f.forEach((k, v) -> fm.put(String.valueOf(k), v));
+            fm.put("guard", pmGuard.status());
+            b.put("futures", fm);
+        }
+        return ApiResponse.ok(b);
     }
 
     @GetMapping("/positions")
@@ -72,6 +82,9 @@ public class AccountController {
     private Map<String, Object> configStatus() {
         Map<String, Object> m = new java.util.LinkedHashMap<>(binanceAccount.configStatus());
         m.put("futuresKeySet", futures.keySet()); m.put("futuresEnabled", futures.enabled());
+        m.put("futuresPm", futures.pm());
+        m.put("publicIp", ipWatch.current());
+        m.put("pmGuard", pmGuard.status());
         return m;
     }
 

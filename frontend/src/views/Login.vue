@@ -46,6 +46,11 @@
         {{ t('login.s19') }}<b>{{ status.acc?.env }}</b> keySet={{ status.acc?.keySet }} {{ t('login.futShortSt') }}={{ status.ord?.futuresPm ? t('login.pmOn') : (status.ord?.futuresKeySet ? 'fapi' : '—') }} {{ t('login.s20') }}<b>{{ status.ord?.env }}</b> dryRun={{ status.ord?.dryRun }}
         <span v-if="status.ord?.mainnet">{{ t('login.s21') }} {{ status.ord?.armed ? t('login.s31') + Math.floor((status.ord.armRemainingSec || 0) / 60) + t('login.s32') : t('login.s33') }}</span>
       </div>
+      <div v-if="status?.acc?.publicIp" class="status" style="margin-top:6px">
+        {{ t('login.ipNow') }} <b>{{ status.acc.publicIp }}</b>
+        <el-button link type="primary" size="small" @click="copyIp">{{ t('login.ipCopy') }}</el-button>
+        <div class="hint" style="margin-top:2px">{{ t('login.ipHint') }}</div>
+      </div>
       <p class="hint">{{ t('login.s22') }}</p>
     </el-card>
   </div>
@@ -108,6 +113,10 @@ async function apply() {
   } finally { loading.value = false }
 }
 
+function copyIp() {
+  const ip = (status.value?.acc?.publicIp || '').split(' / ').join('\n')
+  navigator.clipboard?.writeText(ip).then(() => ElMessage.success(t('login.ipCopied'))).catch(() => {})
+}
 onMounted(loadStatus)
 </script>
 

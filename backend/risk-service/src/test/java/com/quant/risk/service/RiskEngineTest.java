@@ -152,6 +152,19 @@ class RiskEngineTest {
     }
 
     @Test
+    void pmGuardBlocksFuturesOpeningsOnly() {
+        kv.put("risk:pm-guard", "uniMMR 1.10 低於停止線 1.20");
+        Map<String, Object> open = intent("SELL", 1, null); open.put("market", "USDT_M");
+        RiskEngine.RiskDecision d = engine.evaluate(open);
+        assertFalse(d.approved()); assertTrue(d.reason().contains("統一帳戶風險保護"), d.reason());
+        Map<String, Object> cover = intent("BUY", 1, null); cover.put("market", "USDT_M"); cover.put("reduceOnly", true);
+        assertTrue(engine.evaluate(cover).approved(), "平倉照常");
+        assertTrue(engine.evaluate(buy(1)).approved(), "現貨錢包不受統一帳戶保證金影響");
+        kv.remove("risk:pm-guard");
+        assertTrue(engine.evaluate(open).approved());
+    }
+
+    @Test
     void killSwitchFirst() {
         when(kill.isOn()).thenReturn(true); when(kill.reason()).thenReturn("dd");
         assertFalse(engine.evaluate(buy(1)).approved());
