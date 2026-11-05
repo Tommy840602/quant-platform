@@ -82,6 +82,9 @@ binance:
   # 統一帳戶（Portfolio Margin）：合約改走 papi.binance.com（只有正式網）；連線設定頁可切換
   futures-pm: ${BINANCE_FUTURES_PM:true}
   mainnet-pm-rest-url: ${BINANCE_MAINNET_PM_REST:https://papi.binance.com}
+  mainnet-pm-ws-url: ${BINANCE_MAINNET_PM_WS:wss://fstream.binance.com/pm}
+  # 統一帳戶模式下現貨單也走統一帳戶（/papi/v1/margin/order，不借幣）
+  spot-via-pm: ${BINANCE_SPOT_VIA_PM:true}
   ws-base-url: ${BINANCE_WS:wss://stream.testnet.binance.vision}
   api-key: ${BINANCE_API_KEY:}        # 空 = 不送真實單；填入 testnet 金鑰並設 trading.dry-run=false 才會下單
   api-secret: ${BINANCE_API_SECRET:}

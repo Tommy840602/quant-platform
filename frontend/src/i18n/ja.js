@@ -66,6 +66,7 @@ export default {
     "trades": "約定"
   },
   "account": {
+    "pmTag": "統合",
     "pmGuardStop": "先物の新規建て停止中",
     "pmGuardWarn": "証拠金警告",
     "pmTitle": "ポートフォリオマージン口座",
@@ -261,7 +262,7 @@ export default {
     "ipCopied": "コピーしました。Binance API の IP 制限に貼り付けてください",
     "ipHint": "Binance API 管理 → 編集 → IP アクセス制限 に入力。IP が変わると Slack で通知",
     "keyOneTitle": "1 つのキーで現物＋先物",
-    "keyOneBody": "先物取引には Binance の「統合口座（ポートフォリオマージン）」が必要で、先物注文は papi.binance.com を使います。このキーで「現物・マージン取引」と「先物」を有効にし、IP 制限を設定してください。出金は有効にしないでください。",
+    "keyOneBody": "先物取引には Binance の「統合口座（ポートフォリオマージン）」が必要で、先物注文は papi.binance.com を使います。このキーで「現物・マージン取引」と「先物」を有効にし、IP 制限を設定してください。出金は有効にしないでください。（現物注文も統合口座経由、資金は一か所に集約）",
     "keyOneTest": "テストネットには統合口座がありません：先物は .env の BINANCE_FUTURES_API_KEY（testnet.binancefuture.com で別途発行）を使用。",
     "futShortSt": "先物",
     "pmLabel": "先物口座タイプ",

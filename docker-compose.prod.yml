@@ -8,6 +8,9 @@ x-logging: &logging
     driver: json-file
     options: { max-size: "10m", max-file: "3" }
 
+# JVM 記憶體（Docker 只分到 ~8GB 時很重要）：每支服務各自的 heap 上限（HEAP_STRATEGY / HEAP_BACKTEST … 可在 .env 覆寫），
+# 共用旗標 JVM_FLAGS：SerialGC、只用 C1 編譯（省 code cache 與編譯執行緒）、限制 metaspace / 執行緒堆疊 / direct memory。
+# 以前每支 -Xmx512m、RSS 約 420~470MB；現在約 230~330MB，9 支合計省 1.2~1.5GB。
 # 後端微服務共用：等基礎設施 healthy 才啟動；JVM + Nacos 註冊約 60-90 秒，start_period 內失敗不算
 # 後端探針是 liveness（actuator 有回應 200/503 都算活）：Spring health 任一元件 DOWN 就回 503，
 # Nacos/Kafka 抖一下整排 unhealthy 沒意義；真正的元件狀態看 /actuator/health 內容
@@ -51,6 +54,7 @@ x-backend-env: &backend-env
   BINANCE_MAINNET_FUTURES_API_SECRET: ${BINANCE_MAINNET_FUTURES_API_SECRET:-}
   # 正式網合約走統一帳戶（Portfolio Margin），跟現貨同一把金鑰；要用一般合約帳戶才設 false
   BINANCE_FUTURES_PM: ${BINANCE_FUTURES_PM:-true}
+  BINANCE_SPOT_VIA_PM: ${BINANCE_SPOT_VIA_PM:-true}
   PM_MMR_WARN: ${PM_MMR_WARN:-1.5}
   PM_MMR_STOP: ${PM_MMR_STOP:-1.2}
   TRADING_DRY_RUN: ${TRADING_DRY_RUN:-true}
@@ -127,6 +131,8 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      # 單機 broker、流量很小：heap 384m 足夠（預設 1g）
+      KAFKA_HEAP_OPTS: ${KAFKA_HEAP:--Xmx384m -Xms384m}
 
   nacos:
     # slim 版有原生 arm64（Apple Silicon 不再走 amd64 模擬，啟動從 1-2 分鐘降到十幾秒）；內容同 v2.3.2
@@ -186,7 +192,7 @@ services:
     build: { context: ./backend, dockerfile: Dockerfile.prod }
     container_name: qp-api-gateway
     restart: unless-stopped
-    environment: { <<: *backend-env, SERVICE: api-gateway, HEARTBEAT_URL: "${HEARTBEAT_URL:-}" }
+    environment: { <<: *backend-env, SERVICE: api-gateway, JAVA_OPTS: "-Xmx${HEAP_API:-256m} ${JVM_FLAGS:--Xms64m -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:MaxMetaspaceSize=160m -XX:ReservedCodeCacheSize=48m -XX:MaxDirectMemorySize=64m -Xss512k -Djava.net.preferIPv4Stack=true}", HEARTBEAT_URL: "${HEARTBEAT_URL:-}" }
     <<: [*logging, *backend-deps]
     healthcheck:
       test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/actuator/health/liveness); [ \"$$code\" = 200 ] || [ \"$$code\" = 503 ]"]
@@ -199,7 +205,7 @@ services:
     image: quant-backend:latest
     container_name: qp-market-data-service
     restart: unless-stopped
-    environment: { <<: *backend-env, SERVICE: market-data-service }
+    environment: { <<: *backend-env, SERVICE: market-data-service, JAVA_OPTS: "-Xmx${HEAP_MARKET:-320m} ${JVM_FLAGS:--Xms64m -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:MaxMetaspaceSize=160m -XX:ReservedCodeCacheSize=48m -XX:MaxDirectMemorySize=64m -Xss512k -Djava.net.preferIPv4Stack=true}" }
     <<: [*logging, *backend-deps]
     healthcheck:
       test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8082/api/market/actuator/health/liveness); [ \"$$code\" = 200 ] || [ \"$$code\" = 503 ]"]
@@ -212,7 +218,7 @@ services:
     image: quant-backend:latest
     container_name: qp-strategy-service
     restart: unless-stopped
-    environment: { <<: *backend-env, SERVICE: strategy-service }
+    environment: { <<: *backend-env, SERVICE: strategy-service, JAVA_OPTS: "-Xmx${HEAP_STRATEGY:-384m} ${JVM_FLAGS:--Xms64m -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:MaxMetaspaceSize=160m -XX:ReservedCodeCacheSize=48m -XX:MaxDirectMemorySize=64m -Xss512k -Djava.net.preferIPv4Stack=true}" }
     <<: [*logging, *backend-deps]
     healthcheck:
       test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8083/api/strategy/actuator/health/liveness); [ \"$$code\" = 200 ] || [ \"$$code\" = 503 ]"]
@@ -225,7 +231,7 @@ services:
     image: quant-backend:latest
     container_name: qp-order-execution-service
     restart: unless-stopped
-    environment: { <<: *backend-env, SERVICE: order-execution-service }
+    environment: { <<: *backend-env, SERVICE: order-execution-service, JAVA_OPTS: "-Xmx${HEAP_ORDER:-256m} ${JVM_FLAGS:--Xms64m -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:MaxMetaspaceSize=160m -XX:ReservedCodeCacheSize=48m -XX:MaxDirectMemorySize=64m -Xss512k -Djava.net.preferIPv4Stack=true}" }
     volumes:
       - ./secrets:/run/secrets:ro     # Ed25519 pem 放這裡（git 已忽略 *.pem）
     <<: [*logging, *backend-deps]
@@ -240,7 +246,7 @@ services:
     image: quant-backend:latest
     container_name: qp-risk-service
     restart: unless-stopped
-    environment: { <<: *backend-env, SERVICE: risk-service }
+    environment: { <<: *backend-env, SERVICE: risk-service, JAVA_OPTS: "-Xmx${HEAP_RISK:-192m} ${JVM_FLAGS:--Xms64m -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:MaxMetaspaceSize=160m -XX:ReservedCodeCacheSize=48m -XX:MaxDirectMemorySize=64m -Xss512k -Djava.net.preferIPv4Stack=true}" }
     <<: [*logging, *backend-deps]
     healthcheck:
       test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8085/api/risk/actuator/health/liveness); [ \"$$code\" = 200 ] || [ \"$$code\" = 503 ]"]
@@ -253,7 +259,7 @@ services:
     image: quant-backend:latest
     container_name: qp-account-service
     restart: unless-stopped
-    environment: { <<: *backend-env, SERVICE: account-service }
+    environment: { <<: *backend-env, SERVICE: account-service, JAVA_OPTS: "-Xmx${HEAP_ACCOUNT:-256m} ${JVM_FLAGS:--Xms64m -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:MaxMetaspaceSize=160m -XX:ReservedCodeCacheSize=48m -XX:MaxDirectMemorySize=64m -Xss512k -Djava.net.preferIPv4Stack=true}" }
     <<: [*logging, *backend-deps]
     healthcheck:
       test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8096/api/account/actuator/health/liveness); [ \"$$code\" = 200 ] || [ \"$$code\" = 503 ]"]
@@ -266,7 +272,7 @@ services:
     image: quant-backend:latest
     container_name: qp-auth-service
     restart: unless-stopped
-    environment: { <<: *backend-env, SERVICE: auth-service }
+    environment: { <<: *backend-env, SERVICE: auth-service, JAVA_OPTS: "-Xmx${HEAP_AUTH:-160m} ${JVM_FLAGS:--Xms64m -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:MaxMetaspaceSize=160m -XX:ReservedCodeCacheSize=48m -XX:MaxDirectMemorySize=64m -Xss512k -Djava.net.preferIPv4Stack=true}" }
     <<: [*logging, *backend-deps]
     healthcheck:
       test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/api/auth/actuator/health/liveness); [ \"$$code\" = 200 ] || [ \"$$code\" = 503 ]"]
@@ -279,7 +285,7 @@ services:
     image: quant-backend:latest
     container_name: qp-backtest-service
     restart: unless-stopped
-    environment: { <<: *backend-env, SERVICE: backtest-service }
+    environment: { <<: *backend-env, SERVICE: backtest-service, JAVA_OPTS: "-Xmx${HEAP_BACKTEST:-384m} ${JVM_FLAGS:--Xms64m -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:MaxMetaspaceSize=160m -XX:ReservedCodeCacheSize=48m -XX:MaxDirectMemorySize=64m -Xss512k -Djava.net.preferIPv4Stack=true}" }
     <<: [*logging, *backend-deps]
     healthcheck:
       test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8087/api/backtest/actuator/health/liveness); [ \"$$code\" = 200 ] || [ \"$$code\" = 503 ]"]
@@ -292,7 +298,7 @@ services:
     image: quant-backend:latest
     container_name: qp-notification-service
     restart: unless-stopped
-    environment: { <<: *backend-env, SERVICE: notification-service }
+    environment: { <<: *backend-env, SERVICE: notification-service, JAVA_OPTS: "-Xmx${HEAP_NOTIFICATION:-160m} ${JVM_FLAGS:--Xms64m -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:MaxMetaspaceSize=160m -XX:ReservedCodeCacheSize=48m -XX:MaxDirectMemorySize=64m -Xss512k -Djava.net.preferIPv4Stack=true}" }
     <<: [*logging, *backend-deps]
     healthcheck:
       test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8098/api/notify/actuator/health/liveness); [ \"$$code\" = 200 ] || [ \"$$code\" = 503 ]"]

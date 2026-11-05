@@ -103,7 +103,10 @@ public class BinanceOrderGateway {
     /** 統一帳戶（Portfolio Margin）：合約單改走 papi（只有正式網有）。開關存 Redis trading:futures-pm，預設看 BINANCE_FUTURES_PM。 */
     @Value("${binance.mainnet-pm-rest-url:https://papi.binance.com}") private String papiUrl;
     @Value("${binance.futures-pm:true}") private boolean pmDefault;
-    static final String FUT_PM_KEY = "trading:futures-pm";   // .env 的測試網合約金鑰（切回 testnet 用）
+    static final String FUT_PM_KEY = "trading:futures-pm";
+    @Value("${binance.mainnet-pm-ws-url:wss://fstream.binance.com/pm}") private String papiWsUrl;
+    /** 統一帳戶模式下現貨也走統一帳戶的槓桿下單（/papi/v1/margin/order，不借幣）：資金集中在統一帳戶。 */
+    @Value("${binance.spot-via-pm:true}") private boolean spotViaPmDefault;   // .env 的測試網合約金鑰（切回 testnet 用）
     @Value("${binance.recv-window:5000}") private long recvWindow;
     // 環境切換：testnet(預設,安全) / mainnet(真錢)
     @Value("${binance.env:testnet}") private String env;
@@ -177,7 +180,7 @@ public class BinanceOrderGateway {
     /** 對時：啟動時一次、之後每 5 分鐘；失敗只記 log，簽名退回本機時間（-1021 時會再即時對一次）。 */
     @org.springframework.scheduling.annotation.Scheduled(initialDelay = 300_000, fixedDelay = 300_000)
     public void syncClock() {
-        for (String base : new String[]{spotUrl, futUrl, futuresPm() ? papiUrl : null}) {
+        for (String base : new String[]{spotUrl, futUrl, futuresPm() || spotViaPm() ? papiUrl : null}) {
             if (base == null || base.isBlank()) continue;
             try {
                 long off = clock.sync(base);
@@ -262,7 +265,7 @@ public class BinanceOrderGateway {
         m.put("env", env); m.put("dryRun", dryRun); m.put("spotUrl", spotUrl);
         m.put("keySet", !spotKey.isBlank() && !spotSecret.isBlank());
         m.put("futuresEnabled", futuresEnabled()); m.put("futuresKeySet", futuresKeySet());
-        m.put("futuresPm", futuresPm()); m.put("futuresUrl", futTradeBase());
+        m.put("futuresPm", futuresPm()); m.put("futuresUrl", futTradeBase()); m.put("spotViaPm", spotViaPm());
         m.put("mainnet", "mainnet".equalsIgnoreCase(env));
         m.put("clockOffsetMs", clock.offset(spotUrl));
         m.put("clockSyncedAt", clock.syncedAt(spotUrl));
@@ -358,6 +361,13 @@ public class BinanceOrderGateway {
     }
     /** 合約「交易」端點：統一帳戶走 papi /papi/v1/um/*，一般合約帳戶走 fapi。 */
     private String futTradeBase() { return futuresPm() ? papiUrl : futUrl; }
+    /** 現貨單是否改走統一帳戶（統一帳戶模式 + 開關）。 */
+    public boolean spotViaPm() { return futuresPm() && spotViaPmDefault; }
+    private String spotTradeBase() { return spotViaPm() ? papiUrl : spotUrl; }
+    private String spotOrderPath() { return spotViaPm() ? "/papi/v1/margin/order" : "/api/v3/order"; }
+    /** 統一帳戶成交推送：listenKey 走 papi、WS 走 fstream /pm。 */
+    public String pmRestUrl() { return papiUrl; }
+    public String pmWsUrl()   { return papiWsUrl; }
     private String futPath(String op) { return futuresPm() ? "/papi/v1/um/" + op : "/fapi/v1/" + op; }
     private String key(boolean futures) { return futures ? futKey : spotKey; }
     private String secret(boolean futures) { return futures ? futSecret : spotSecret; }
@@ -405,7 +415,13 @@ public class BinanceOrderGateway {
         p.put("newOrderRespType", "RESULT");
         return intent.isFutures()
                 ? signed("POST", futTradeBase(), futPath("order"), p, true, "下單")
-                : signed("POST", spotUrl, "/api/v3/order", p, false, "下單");
+                : signed("POST", spotTradeBase(), spotOrderPath(), withMarginSide(p), false, "下單");
+    }
+
+    /** 統一帳戶槓桿下單：明確不借幣（NO_SIDE_EFFECT）—— 只用帳上有的資產，跟現貨行為一致。 */
+    private Map<String, String> withMarginSide(Map<String, String> p) {
+        if (spotViaPm()) p.put("sideEffectType", "NO_SIDE_EFFECT");
+        return p;
     }
 
     // ---------- 查單 ----------
@@ -414,8 +430,8 @@ public class BinanceOrderGateway {
         Map<String, String> p = new LinkedHashMap<>();
         p.put("symbol", symbol);
         p.put("origClientOrderId", clientOrderId);
-        String base = futures ? futTradeBase() : spotUrl;
-        String path = futures ? futPath("order") : "/api/v3/order";
+        String base = futures ? futTradeBase() : spotTradeBase();
+        String path = futures ? futPath("order") : spotOrderPath();
         return signed("GET", base, path, p, futures, "查單");
     }
 
@@ -425,8 +441,8 @@ public class BinanceOrderGateway {
         Map<String, String> p = new LinkedHashMap<>();
         p.put("symbol", symbol);
         p.put("origClientOrderId", clientOrderId);
-        String base = futures ? futTradeBase() : spotUrl;
-        String path = futures ? futPath("order") : "/api/v3/order";
+        String base = futures ? futTradeBase() : spotTradeBase();
+        String path = futures ? futPath("order") : spotOrderPath();
         return signed("DELETE", base, path, p, futures, "撤單");
     }
 
@@ -446,6 +462,7 @@ public class BinanceOrderGateway {
                            double price, double stopPrice, double stopLimitPrice, String listClientOrderId) {
         if (isDryRun()) return "{\"symbol\":\"" + symbol + "\",\"listClientOrderId\":\"" + listClientOrderId
                 + "\",\"listOrderStatus\":\"EXECUTING\",\"dryRun\":true}";
+        if (spotViaPm()) throw new ExchangeRejectedException(400, -1, "統一帳戶模式下不支援 OCO（現貨單走統一帳戶槓桿下單）；請改用條件單");
         double[] f = filters.filters(spotUrl, symbol, false);
         if (f == null || (f[0] == 0 && f[1] == 0 && f[3] == 0))
             throw new IllegalStateException("取不到 " + symbol + " 的交易規則，拒絕送 OCO");

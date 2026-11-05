@@ -15,7 +15,13 @@ for jar in backend/*/target/*-1.0.0-SNAPSHOT.jar; do
   [ "$name" = "common" ] && continue
   log="/tmp/boot-$name.log"
   echo "::group::boot $name"
-  timeout 150 java -Xmx384m -jar "$jar" $COMMON > "$log" 2>&1 &
+  # 跟 docker-compose.prod.yml 一樣的 heap / JVM 旗標：開機就 OOM / Metaspace 不夠會在這裡抓到
+  case "$name" in
+    auth-service|notification-service) heap=160m ;; risk-service) heap=192m ;;
+    market-data-service) heap=320m ;; strategy-service|backtest-service) heap=384m ;; *) heap=256m ;;
+  esac
+  timeout 150 java -Xmx$heap -Xms64m -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:MaxMetaspaceSize=160m \
+    -XX:ReservedCodeCacheSize=48m -XX:MaxDirectMemorySize=64m -Xss512k -jar "$jar" $COMMON > "$log" 2>&1 &
   pid=$!
   ok=0
   for i in $(seq 1 150); do
