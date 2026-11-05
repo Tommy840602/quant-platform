@@ -347,7 +347,7 @@ async function loadLog() {
 }
 function toChart(row) { router.push({ path: '/chart', query: { symbol: row.symbol, t: row.ts, bot: row.botId } }) }
 // ── 晉升管線 ──
-const STAGE_TYPE = { PAPER: 'info', PILOT: 'warning', LIVE: 'success' }
+const STAGE_TYPE = { DRAINING: 'warning', PAPER: 'info', PILOT: 'warning', LIVE: 'success' }
 const pipeline = ref({ auto: true })
 async function loadPipeline() { try { pipeline.value = (await strategyApi.pipeline()).data || pipeline.value } catch {} }
 async function togglePipeline(on) { try { pipeline.value = (await strategyApi.setPipeline(on)).data } catch { pipeline.value.auto = !on } }

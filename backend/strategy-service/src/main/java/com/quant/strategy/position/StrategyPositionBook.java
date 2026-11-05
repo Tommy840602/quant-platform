@@ -67,6 +67,8 @@ public class StrategyPositionBook {
         return pending.getOrDefault(strategyId, Set.of()).contains(symbol);
     }
     public boolean isReconciled() { return reconciled; }
+    /** 這個策略還有任何在途單（任一標的）。 */
+    public boolean hasPending(String strategyId) { return !pending.getOrDefault(strategyId, Set.of()).isEmpty(); }
     public Map<String, Double> snapshot(String strategyId) { return Map.copyOf(positions.getOrDefault(strategyId, Map.of())); }
     public double avgCost(String strategyId, String symbol) { return avgCost.getOrDefault(strategyId, Map.of()).getOrDefault(symbol, 0.0); }
     /** 有部位或有未結單的標的數（同時持倉上限用） */

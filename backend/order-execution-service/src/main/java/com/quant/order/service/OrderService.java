@@ -744,6 +744,13 @@ public class OrderService {
     }
     static final class ZoneIdHolder { static final java.time.ZoneId ZONE = java.time.ZoneId.of("Asia/Taipei"); }
 
+    public Map<String, Object> local(String clientOrderId) {
+        return orders.findByClientOrderId(clientOrderId)
+                .<Map<String, Object>>map(o -> Map.of("exists", true, "status", String.valueOf(o.getStatus()),
+                        "filledQty", o.getFilledQty() == null ? 0.0 : o.getFilledQty()))
+                .orElse(Map.of("exists", false));
+    }
+
     /** 當日統計：今日成交筆數 + 今日已實現盈虧（FIFO 沖銷，僅計今日平倉的 round-trip）。 */
     public ApiResponse<Map<String, Object>> dailyStats() {
         var today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Taipei"));

@@ -701,7 +701,7 @@ export default {
   },
   "pipeline": {
     "auto": "自动晋升 / 降级",
-    "st": {
+    "st": { "DRAINING": "清仓中",
       "PAPER": "模拟盘",
       "PILOT": "真钱试行",
       "LIVE": "正式运行"

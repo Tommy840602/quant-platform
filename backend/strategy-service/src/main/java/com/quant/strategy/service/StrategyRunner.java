@@ -156,7 +156,12 @@ public class StrategyRunner {
                 pausedMap.keySet().stream().filter(running::contains).count());
     }
 
-    /** 設定階段。降到 PAPER 前先把真錢部位市價出清（否則切成模擬後沒人管）；離開 PAPER 丟掉模擬部位。 */
+    /**
+     * 設定階段。review #6：降到 PAPER 不能「送了平倉單就立刻切」——平倉單可能 pending 被略過、被拒或只部分成交，
+     * 切成模擬後 position() 讀的是模擬部位，真實持倉就沒人管了。改成先進 DRAINING：
+     * 停止新訊號（風控出場照常）→ 對所有真實持倉送平倉 → 每 15 秒確認，零持倉且零在途單才真正切到 PAPER；
+     * 平倉失敗就持續重試並維持真實持倉管理。
+     */
     public synchronized String setStage(String id, String to, String why) {
         if (!factories.containsKey(id)) return "no such strategy: " + id;
         to = to == null ? "" : to.toUpperCase();
@@ -164,9 +169,24 @@ public class StrategyRunner {
         String from = stageOf(id);
         if (from.equals(to)) return "stage unchanged: " + to;
         StrategyContextImpl c = contexts.get(id);
-        if ("PAPER".equals(to) && c != null) for (var e : c.snapshot().entrySet()) if (Math.abs(e.getValue()) > 1e-12) c.exit(e.getKey(), "降級模擬盤");
+        if ("PAPER".equals(to) && !"PAPER".equals(from) && c != null && hasLiveExposure(c)) {
+            stage.put(id, DRAINING); stageSince.put(id, System.currentTimeMillis()); drainReason.put(id, why);
+            if (repo != null) try { repo.setStage(id, DRAINING); } catch (Exception e) { log.warn("持久化失敗: {}", e.getMessage()); }
+            drainOnce(id, c);
+            log.warn("[{}] 降級模擬盤前先出清真實持倉（DRAINING）：{}", id, why);
+            notify(":hourglass: [" + names.getOrDefault(id, id) + "] 準備降級模擬盤：先平掉真實持倉，確認零持倉後才切換（" + why + "）");
+            return "stage: " + id + " " + from + " -> DRAINING（平倉確認後切 PAPER）";
+        }
+        return finishStage(id, from, to, why);
+    }
+
+    static final String DRAINING = "DRAINING";
+    private final Map<String, String> drainReason = new ConcurrentHashMap<>();
+
+    private String finishStage(String id, String from, String to, String why) {
+        StrategyContextImpl c = contexts.get(id);
         if ("PAPER".equals(from) && shadow != null) shadow.clearPaper(id);
-        stage.put(id, to); stageSince.put(id, System.currentTimeMillis());
+        stage.put(id, to); stageSince.put(id, System.currentTimeMillis()); drainReason.remove(id);
         if (repo != null) try { repo.setStage(id, to); } catch (Exception e) { log.warn("持久化失敗: {}", e.getMessage()); }
         if (c != null) c.setAllocation(1.0);
         if (risk != null) risk.reset(id);
@@ -176,7 +196,34 @@ public class StrategyRunner {
         notify((up ? ":arrow_up: 晉升 " : ":arrow_down: 降級 ") + "[" + names.getOrDefault(id, id) + "] " + label(from) + " → " + label(to) + "（" + why + "）");
         return "stage: " + id + " " + from + " -> " + to;
     }
-    static String label(String st) { return switch (st) { case "PAPER" -> "模擬盤"; case "PILOT" -> "真錢試行"; default -> "正式運行"; }; }
+
+    /** 真實持倉或在途單還在。 */
+    static boolean hasLiveExposure(StrategyContextImpl c) {
+        if (c.anyPending()) return true;
+        for (var v : c.liveSnapshot().values()) if (Math.abs(v) > 1e-12) return true;
+        return false;
+    }
+
+    private void drainOnce(String id, StrategyContextImpl c) {
+        for (var e : c.liveSnapshot().entrySet())
+            if (Math.abs(e.getValue()) > 1e-12 && !c.pending(e.getKey())) c.exit(e.getKey(), "降級模擬盤：出清真實持倉");
+    }
+
+    /** 每 15 秒推進 DRAINING：還有持倉就（沒在途時）再送一次平倉；零持倉、零在途 → 切 PAPER。 */
+    @Scheduled(initialDelay = 15_000, fixedDelay = 15_000)
+    public void drainTick() {
+        for (String id : new java.util.ArrayList<>(stage.keySet())) {
+            if (!DRAINING.equals(stage.get(id))) continue;
+            StrategyContextImpl c = contexts.get(id);
+            if (c == null) continue;
+            synchronized (this) {
+                if (hasLiveExposure(c)) { drainOnce(id, c); continue; }
+                finishStage(id, "LIVE", "PAPER", drainReason.getOrDefault(id, "降級") + "（真實持倉已確認出清）");
+            }
+        }
+    }
+
+    static String label(String st) { return switch (st) { case "PAPER" -> "模擬盤"; case "PILOT" -> "真錢試行"; case DRAINING -> "出清中"; default -> "正式運行"; }; }
 
     /** 每 10 分鐘評估關卡（自動模式）。 */
     @Scheduled(initialDelay = 180_000, fixedDelay = 600_000)
@@ -499,6 +546,7 @@ public class StrategyRunner {
                 if (risk != null) try { risk.checkExits(id, k, contexts.get(id)); }
                                   catch (Exception e) { log.warn("[{}] 出場檢查失敗 {}: {}", id, sym, e.getMessage()); }
             }
+            if (DRAINING.equals(stageOf(id))) continue;             // 出清中：不再產生新訊號（風控出場上面已跑）
             if (!iv.equals(intervalOf(id))) continue;               // 策略只吃自己週期的 K 線
             long[] st = barStats.computeIfAbsent(id, x -> new long[3]);
             st[0]++; if (k.closed()) st[1]++; st[2] = System.currentTimeMillis();

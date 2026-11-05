@@ -701,7 +701,7 @@ export default {
   },
   "pipeline": {
     "auto": "Auto promote / demote",
-    "st": {
+    "st": { "DRAINING": "Draining",
       "PAPER": "Paper",
       "PILOT": "Pilot (live, min size)",
       "LIVE": "Live"
