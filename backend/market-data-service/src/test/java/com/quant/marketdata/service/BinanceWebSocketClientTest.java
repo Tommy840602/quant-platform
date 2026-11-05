@@ -51,4 +51,24 @@ class BinanceWebSocketClientTest {
         ws.backfillGaps();
         verifyNoInteractions(backfill);
     }
+
+    @Test
+    void failoverRotatesThroughConfiguredBases() {
+        props.setWsBaseUrl("wss://data-stream.binance.vision/, wss://stream.binance.com:9443");
+        BinanceWebSocketClient ws = new BinanceWebSocketClient(props, svc, backfill);
+        assertEquals("wss://data-stream.binance.vision", ws.currentBase());
+        ws.failover();
+        assertEquals("wss://stream.binance.com:9443", ws.currentBase());
+        ws.failover();
+        assertEquals("wss://data-stream.binance.vision", ws.currentBase());
+    }
+
+    @Test
+    void singleBaseStaysPut() {
+        props.setWsBaseUrl("wss://stream.testnet.binance.vision");
+        BinanceWebSocketClient ws = new BinanceWebSocketClient(props, svc, backfill);
+        ws.failover();
+        assertEquals("wss://stream.testnet.binance.vision", ws.currentBase());
+        assertEquals(List.of("wss://data-stream.binance.vision"), BinanceWebSocketClient.bases(" , "));
+    }
 }

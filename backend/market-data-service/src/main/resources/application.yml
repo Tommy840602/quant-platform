@@ -45,8 +45,9 @@ management:
 binance:
   history-bars: ${KLINE_HISTORY_BARS:2000}     # 啟動暖機每條串流回補到現在的根數（1m → 約 33 小時）
   history-enabled: ${KLINE_HISTORY_ENABLED:true}
-  ws-base-url: ${MARKET_WS:wss://stream.binance.com:9443}
-  rest-base-url: ${MARKET_REST:https://api.binance.com}
+  # 逗號分隔多個，連不上自動輪替；data-stream.binance.vision 是幣安「純行情」專用網域，部分網路會擋 stream.binance.com
+  ws-base-url: ${MARKET_WS:wss://data-stream.binance.vision,wss://stream.binance.com:9443,wss://stream.binance.com:443}
+  rest-base-url: ${MARKET_REST:https://data-api.binance.vision}   # 純行情 REST（klines），與 api.binance.com 資料相同
   # 機器人可選週期：下方每條 @kline_1m 自動多訂這些週期（逗號分隔；空字串 = 只訂 1m）
   extra-intervals: ${MARKET_EXTRA_INTERVALS:5m,15m,1h}
   streams:

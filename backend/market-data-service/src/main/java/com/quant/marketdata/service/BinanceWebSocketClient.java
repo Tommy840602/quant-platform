@@ -47,6 +47,10 @@ public class BinanceWebSocketClient extends TextWebSocketHandler {
     private volatile WebSocketSession session;
     private volatile long lastMessageAt = 0;
     private volatile long disconnectedAt = 0;
+    /** 目前用第幾個 WS base（ws-base-url 可用逗號列多個，連不上就輪下一個）。 */
+    private volatile int urlIdx = 0;
+    /** 這次連線有沒有真的收到訊息；沒收到就斷 = 這個 host 可能被擋，下次換下一個。 */
+    private volatile boolean gotMessage = false;
 
     /** 每個 "SYMBOL|interval" 最後一根「已收盤」K 線的 openTime；重連補抓從這之後開始。 */
     private final Map<String, Long> lastClosedOpenTime = new ConcurrentHashMap<>();
@@ -61,19 +65,36 @@ public class BinanceWebSocketClient extends TextWebSocketHandler {
     public void connect() {
         reconnectPending.set(false);
         String streams = String.join("/", props.getStreams());
-        String url = props.getWsBaseUrl() + "/stream?streams=" + streams;
+        String base = currentBase();
+        String url = base + "/stream?streams=" + streams;
+        gotMessage = false;
         try {
             new StandardWebSocketClient()
                     .execute(this, new WebSocketHttpHeaders(), URI.create(url))
-                    .whenComplete((s, ex) -> { if (ex != null) { log.warn("WS connect error: {}", ex.getMessage()); scheduleReconnect(); } });
-        } catch (Exception e) { log.error("WS connect failed: {}", e.getMessage()); scheduleReconnect(); }
+                    .whenComplete((s, ex) -> { if (ex != null) { log.warn("WS connect error ({}): {}", base, ex.getMessage()); failover(); scheduleReconnect(); } });
+        } catch (Exception e) { log.error("WS connect failed ({}): {}", base, e.getMessage()); failover(); scheduleReconnect(); }
+    }
+
+    static List<String> bases(String cfg) {
+        List<String> out = new java.util.ArrayList<>();
+        for (String b : (cfg == null ? "" : cfg).split(",")) { b = b.trim(); if (!b.isEmpty()) out.add(b.replaceAll("/+$", "")); }
+        if (out.isEmpty()) out.add("wss://data-stream.binance.vision");
+        return out;
+    }
+
+    String currentBase() { List<String> b = bases(props.getWsBaseUrl()); return b.get(Math.floorMod(urlIdx, b.size())); }
+
+    /** 換下一個 WS host（只有一個就原地重試）。 */
+    void failover() {
+        List<String> b = bases(props.getWsBaseUrl());
+        if (b.size() > 1) { urlIdx = Math.floorMod(urlIdx + 1, b.size()); log.warn("行情 WS 改用備援：{}", currentBase()); }
     }
 
     @Override public void afterConnectionEstablished(WebSocketSession s) {
         this.session = s;
         this.retry = 0;
         this.lastMessageAt = System.currentTimeMillis();
-        log.info("Binance WS connected: {}", s.getId());
+        log.info("Binance WS connected: {} ({})", s.getId(), currentBase());
         // 在 onOpen 內同步補抓：容器在 onOpen 回傳前不會派送訊息，補的舊 K 線一定先於即時 K 線
         backfillGaps();
     }
@@ -104,6 +125,7 @@ public class BinanceWebSocketClient extends TextWebSocketHandler {
     @Override
     protected void handleTextMessage(WebSocketSession s, TextMessage message) {
         lastMessageAt = System.currentTimeMillis();
+        gotMessage = true;
         try {
             JsonNode root = mapper.readTree(message.getPayload());
             String stream = root.path("stream").asText("");
@@ -132,6 +154,7 @@ public class BinanceWebSocketClient extends TextWebSocketHandler {
         session = null;
         disconnectedAt = System.currentTimeMillis();
         log.warn("Binance WS closed: {} — reconnect", status);
+        if (!gotMessage) failover();   // 連上卻一則都沒收到就被關 → 多半被擋，換下一個
         scheduleReconnect();
     }
 
