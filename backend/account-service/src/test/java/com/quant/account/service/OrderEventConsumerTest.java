@@ -13,6 +13,17 @@ import static org.mockito.Mockito.*;
 
 class OrderEventConsumerTest {
 
+    /** 假 JdbcTemplate：processed_events 用記憶體 Set（避免 Mockito 對 varargs 的比對差異）。 */
+    static final class FakeJdbc extends JdbcTemplate {
+        final java.util.Set<String> seen = new java.util.HashSet<>();
+        boolean fail;
+        @Override public int update(String sql, Object... args) {
+            if (fail) throw new RuntimeException("db down");
+            if (sql.startsWith("INSERT INTO processed_events")) return seen.add(args[0] + "|" + args[1]) ? 1 : 0;
+            return 1;
+        }
+    }
+
     static OrderEvent ev(String id, String market, String mode) {
         return new OrderEvent("c1", "x", "BTCUSDT", OrderSide.BUY, OrderStatus.FILLED, 0.01, 50000, 0, "main", id,
                 "mainnet", market, mode);
@@ -20,8 +31,7 @@ class OrderEventConsumerTest {
 
     @Test
     void duplicateEventIsSkippedByDbClaim() {
-        JdbcTemplate jdbc = mock(JdbcTemplate.class);
-        when(jdbc.update(startsWith("INSERT INTO processed_events"), any(), any())).thenReturn(1, 0);
+        FakeJdbc jdbc = new FakeJdbc();
         PositionStore pos = mock(PositionStore.class);
         when(pos.onFilled(any(), any(), any(), any(), any(), any(), anyDouble(), anyDouble())).thenReturn(new PositionEntity());
         CashLedger cash = mock(CashLedger.class);
@@ -34,8 +44,7 @@ class OrderEventConsumerTest {
 
     @Test
     void futuresFillTouchesOnlyFuturesPositionNotCash() {
-        JdbcTemplate jdbc = mock(JdbcTemplate.class);
-        when(jdbc.update(startsWith("INSERT INTO processed_events"), any(), any())).thenReturn(1);
+        FakeJdbc jdbc = new FakeJdbc();
         PositionStore pos = mock(PositionStore.class);
         when(pos.onFilled(any(), any(), any(), any(), any(), any(), anyDouble(), anyDouble())).thenReturn(new PositionEntity());
         CashLedger cash = mock(CashLedger.class);
@@ -46,8 +55,7 @@ class OrderEventConsumerTest {
 
     @Test
     void dbFailurePropagatesSoKafkaRedelivers() {
-        JdbcTemplate jdbc = mock(JdbcTemplate.class);
-        when(jdbc.update(startsWith("INSERT INTO processed_events"), any(), any())).thenThrow(new RuntimeException("db down"));
+        FakeJdbc jdbc = new FakeJdbc(); jdbc.fail = true;
         OrderEventConsumer c = new OrderEventConsumer(mock(PositionStore.class), mock(CashLedger.class), jdbc);
         assertThrows(RuntimeException.class, () -> c.onOrderEvent(ev("e3", "SPOT", "DRY")), "不可吞掉：要讓 transaction 回滾、Kafka 重送");
     }
