@@ -233,6 +233,7 @@
 </template>
 
 <script setup>
+import { notionalOf } from '@/utils/notional'
 import { useI18n } from 'vue-i18n'
 import { useFmt } from '@/composables/useFmt'
 const { t } = useI18n()
@@ -282,7 +283,7 @@ function spark(id) {
 const router = useRouter()
 const market = useMarketStore()
 const orderNotional = ref(0)
-async function loadNotional() { try { orderNotional.value = Number((await strategyApi.getOrderNotional()).data) || 0 } catch {} }
+async function loadNotional() { try { orderNotional.value = notionalOf((await strategyApi.getOrderNotional()).data) } catch {} }
 const sizingText = p => p.kind === 'notional'
   ? t('sizing.notional', { n: p.notional, min: MIN_NOTIONAL })
   : t('sizing.fixed', { qty: p.qty, sym: p.symbol, v: p.value < 0.01 ? p.value.toFixed(4) : p.value.toFixed(2), min: MIN_NOTIONAL })

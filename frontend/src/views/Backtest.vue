@@ -101,6 +101,7 @@
 </template>
 
 <script setup>
+import { notionalOf } from '@/utils/notional'
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
@@ -150,7 +151,7 @@ const notionalPct = computed(() => liveNotional.value > 0 && liveEquity.value > 
 const lastCosts = ref(null), lastRisk = ref(null)
 async function loadParity() {
   try { bots.value = (await strategyApi.list()).data || [] } catch {}
-  try { liveNotional.value = Number((await strategyApi.getOrderNotional()).data) || 0 } catch {}
+  try { liveNotional.value = notionalOf((await strategyApi.getOrderNotional()).data) } catch {}
   try { liveEquity.value = Number((await accountApi.balance()).data?.totalUsdt) || 0 } catch {}
 }
 function parityBody() {
