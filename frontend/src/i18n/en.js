@@ -123,6 +123,7 @@ export default {
     "s34": "Value("
   },
   "backtest": {
+    "fundingLine": "Funding {paid} USDT ({n} settlements; negative = received)",
     "mkSpot": "Spot (long only)",
     "mkFut": "Futures (long/short)",
     "lsLine": "Long {l} trips {lp} USDT · Short {s} trips {sp} USDT",

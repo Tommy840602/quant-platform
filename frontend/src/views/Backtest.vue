@@ -39,6 +39,7 @@
         </span>
         <template v-if="lastRisk && lastRisk.applied">
           <span>{{ t('parity.trips', { n: lastRisk.roundTrips, w: lastRisk.winRate ?? '—' }) }}</span>
+          <span v-if="lastRisk.fundingPaid != null">{{ t('backtest.fundingLine', { paid: lastRisk.fundingPaid, n: lastRisk.fundingEvents }) }}</span>
           <span v-if="result?.shorts">{{ t('backtest.lsLine', { l: lastRisk.longTrips ?? 0, lp: lastRisk.longPnl ?? 0, s: lastRisk.shortTrips ?? 0, sp: lastRisk.shortPnl ?? 0 }) }}</span>
           <span v-if="Object.keys(lastRisk.exits || {}).length">{{ t('parity.exits') }}：<template v-for="(n, k) in lastRisk.exits" :key="k">{{ k }} {{ n }}　</template></span>
           <span v-if="Object.keys(lastRisk.blocked || {}).length" style="color:#e6a23c">{{ t('parity.blocked') }}：<template v-for="(n, k) in lastRisk.blocked" :key="k">{{ k }} {{ n }}　</template></span>

@@ -108,6 +108,21 @@ public class BacktestContext implements StrategyContext {
         return t;
     }
 
+    private double fundingPaid = 0; private int fundingEvents = 0;
+    /**
+     * 資金費結算：付出金額 = 部位 × 價格 × 費率（多單 + 費率正 → 付；空單 + 費率正 → 收）。
+     * @return 這次付出（負數 = 收到）
+     */
+    public double applyFunding(String sym, double rate) {
+        double pos = positions.getOrDefault(sym, 0.0), px = prices.getOrDefault(sym, 0.0);
+        if (Math.abs(pos) <= 1e-12 || px <= 0) return 0;
+        double amt = pos * px * rate;
+        cash -= amt; fundingPaid += amt; fundingEvents++;
+        return amt;
+    }
+    public double fundingPaid() { return fundingPaid; }
+    public int fundingEvents() { return fundingEvents; }
+
     /** 目前持倉的進場成交價（含滑價）；空手回 0。 */
     public double entry(String symbol) { return entryPx.getOrDefault(symbol, 0.0); }
     public double fee() { return fee; }

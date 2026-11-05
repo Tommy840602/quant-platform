@@ -123,6 +123,7 @@ export default {
     "s34": "估值("
   },
   "backtest": {
+    "fundingLine": "资金费 {paid} USDT（结算 {n} 次；负数 = 收到）",
     "mkSpot": "现货（只做多）",
     "mkFut": "合约（多空）",
     "lsLine": "多单 {l} 笔 {lp} USDT · 空单 {s} 笔 {sp} USDT",

@@ -23,7 +23,10 @@ public class BacktestController {
 
     private final BarSource bars;
     private final com.quant.backtest.service.CostModel costs;
-    public BacktestController(BarSource bars, com.quant.backtest.service.CostModel costs) { this.bars = bars; this.costs = costs; }
+    private final com.quant.backtest.service.FundingHistory fundingHistory;
+    public BacktestController(BarSource bars, com.quant.backtest.service.CostModel costs, com.quant.backtest.service.FundingHistory fundingHistory) {
+        this.bars = bars; this.costs = costs; this.fundingHistory = fundingHistory;
+    }
 
     @PostMapping("/run")
     public ApiResponse<Map<String, Object>> run(@RequestBody Req req) {
@@ -49,7 +52,11 @@ public class BacktestController {
                 : new BacktestEngine.RiskSpec(type, req.risk, req.notionalPct, req.liveEquity);
         boolean allowShort = futures && com.quant.common.risk.RiskRules.param(req.risk == null ? Map.of() : req.risk, "allowShort") > 0;
         var twin = allowShort ? StrategyFactory.build(req.type, "backtest-short", params) : null;   // 空單分身：同參數、吃倒數價格
-        var result = engine.run(data.bars(), strategy, twin, spec);
+        // 合約回測扣資金費（每 8 小時；用正式網歷史費率）。funding=false 可關
+        java.util.NavigableMap<Long, Double> funding = null;
+        if (futures && !Boolean.FALSE.equals(req.funding) && !data.bars().isEmpty())
+            funding = fundingHistory.range(symbol, data.bars().get(0).openTime(), data.bars().get(data.bars().size() - 1).closeTime());
+        var result = engine.run(data.bars(), strategy, twin, spec, funding);
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("symbol", symbol); out.put("interval", interval);
@@ -80,6 +87,8 @@ public class BacktestController {
     public static class Req {
         /** SPOT（預設，只做多）| USDT_M（U 本位合約 1 倍，risk.allowShort=1 時也做空） */
         public String market;
+        /** 合約回測是否扣資金費（預設 true） */
+        public Boolean funding;
         public String symbol;
         public String interval;
         public int bars;

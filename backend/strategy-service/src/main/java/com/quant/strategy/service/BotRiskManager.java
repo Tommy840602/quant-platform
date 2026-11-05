@@ -88,6 +88,16 @@ public class BotRiskManager implements StrategyContextImpl.BuyRouter {
         Thread t = new Thread(r, "bot-risk"); t.setDaemon(true); return t;
     });
 
+    /** 最新資金費率（account-service FundingService 每分鐘寫入 Redis funding:SYMBOL）。 */
+    private org.springframework.data.redis.core.StringRedisTemplate redis;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setRedis(org.springframework.data.redis.core.StringRedisTemplate r) { this.redis = r; }
+    Double fundingRate(String sym) {
+        if (redis == null) return null;
+        try { String v = redis.opsForValue().get("funding:" + sym); return v == null ? null : Double.parseDouble(v); }
+        catch (Exception e) { return null; }
+    }
+
     @org.springframework.beans.factory.annotation.Autowired
     public BotRiskManager(StrategyPositionBook book, NotifyClient notify) {
         this(book, notify, new ConcurrentHashMap<>());
@@ -271,6 +281,11 @@ public class BotRiskManager implements StrategyContextImpl.BuyRouter {
         }
         String rb = regimeBlock(id, sym);
         if (rb != null) { ctx.decide(sym, intent.side(), rb); return true; }
+        if (ctx.futures()) {   // route 只在空手開倉時呼叫
+            Double fr = fundingRate(sym);
+            String fb = fr == null ? null : RiskRules.fundingBlock(intent.side() == com.quant.common.enums.OrderSide.BUY, fr, pm(id));
+            if (fb != null) { ctx.decide(sym, intent.side(), fb); return true; }
+        }
         buffer.computeIfAbsent(id, x -> Collections.synchronizedList(new ArrayList<>())).add(intent);
         ctx.markOutcome("排名中…");
         if (flushScheduled.add(id)) exec.schedule(() -> flush(id), RANK_WINDOW_MS, TimeUnit.MILLISECONDS);

@@ -123,6 +123,7 @@ export default {
     "s34": "估值("
   },
   "backtest": {
+    "fundingLine": "資金費 {paid} USDT（結算 {n} 次；負數 = 收到）",
     "mkSpot": "現貨（只做多）",
     "mkFut": "合約（多空）",
     "lsLine": "多單 {l} 筆 {lp} USDT · 空單 {s} 筆 {sp} USDT",
