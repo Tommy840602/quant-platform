@@ -76,6 +76,16 @@ public class SystemStatusController {
                 : org.springframework.http.ResponseEntity.status(HttpStatus.UNAUTHORIZED).build());
     }
 
+    /** 稽核紀錄（最近 N 筆敏感操作）：GET /api/system/audit?limit=200，需要 RISK_OVERRIDE（ADMIN）。 */
+    @GetMapping("/api/system/audit")
+    public Mono<Map<String, Object>> audit(ServerHttpRequest req, @org.springframework.web.bind.annotation.RequestParam(defaultValue = "200") int limit) {
+        if (!jwt.isAuthorized(req)) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
+        if (!jwt.hasPermission(req, com.quant.gateway.filter.Permissions.RISK)) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        return redis.opsForList().range("audit:log", 0, Math.max(1, Math.min(limit, 2000)) - 1).collectList()
+                .map(l -> Map.<String, Object>of("code", 0, "message", "ok", "data", l))
+                .onErrorReturn(Map.of("code", 0, "message", "ok", "data", List.of()));
+    }
+
     @GetMapping("/api/system/status")
     public Mono<Map<String, Object>> status(ServerHttpRequest req) {
         if (!jwt.isAuthorized(req)) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);

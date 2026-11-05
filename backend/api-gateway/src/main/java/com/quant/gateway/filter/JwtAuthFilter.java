@@ -69,6 +69,13 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
 
         try {
             Claims claims = Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload();
+            // review #9：有身分不代表可以改設定 —— 敏感操作要有對應權限，並留稽核紀錄
+            String need = Permissions.required(request.getMethod() == null ? null : request.getMethod().name(), path);
+            if (need != null) {
+                boolean ok = Permissions.has(claims.get("roles"), need);
+                audit(exchange, claims.getSubject(), String.valueOf(claims.get("roles")), need, ok);
+                if (!ok) return forbidden(exchange, need);
+            }
             ServerHttpRequest mutated = request.mutate()
                     .headers(h -> { h.remove("X-User-Id"); h.remove("X-User-Roles"); })   // 不信任外部帶入的身分標頭
                     .header("X-User-Id", claims.getSubject())
@@ -89,6 +96,15 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
         catch (Exception e) { return false; }
     }
 
+    /** gateway 自己的端點用：token 是否帶有某權限。JWT 關閉時一律 true。 */
+    public boolean hasPermission(ServerHttpRequest req, String perm) {
+        if (!jwtEnabled) return true;
+        String token = bearer(req);
+        if (token == null) return false;
+        try { return Permissions.has(Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload().get("roles"), perm); }
+        catch (Exception e) { return false; }
+    }
+
     /** 與 common 的 JwtSecretPolicy 同規則（gateway 是 WebFlux，不引 common 以免帶進 servlet 依賴）。 */
     static void assertStrongSecret(String secret) {
         String s = secret == null ? "" : secret.trim();
@@ -106,6 +122,35 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
         String auth = req.getHeaders().getFirst("Authorization");
         return auth != null && auth.startsWith("Bearer ") ? auth.substring(7) : null;
     }
+
+    private Mono<Void> forbidden(ServerWebExchange exchange, String need) {
+        var res = exchange.getResponse();
+        res.setStatusCode(HttpStatus.FORBIDDEN);
+        res.getHeaders().setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+        byte[] body = ("{\"code\":403,\"message\":\"權限不足：需要 " + need + "\"}").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        return res.writeWith(Mono.just(res.bufferFactory().wrap(body)));
+    }
+
+    // ── 稽核紀錄：誰、何時、從哪、做了什麼敏感操作、准不准（Redis audit:log 保留最近 2000 筆 + log）──
+    private org.springframework.data.redis.core.ReactiveStringRedisTemplate redis;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setRedis(org.springframework.data.redis.core.ReactiveStringRedisTemplate r) { this.redis = r; }
+    static final String AUDIT_KEY = "audit:log";
+
+    void audit(ServerWebExchange ex, String user, String roles, String perm, boolean allowed) {
+        var req = ex.getRequest();
+        String ip = req.getHeaders().getFirst("CF-Connecting-IP");
+        if (ip == null) ip = req.getHeaders().getFirst("X-Real-IP");
+        if (ip == null && req.getRemoteAddress() != null) ip = req.getRemoteAddress().getAddress().getHostAddress();
+        String line = String.format("{\"ts\":%d,\"user\":\"%s\",\"roles\":\"%s\",\"perm\":\"%s\",\"method\":\"%s\",\"path\":\"%s\",\"query\":\"%s\",\"ip\":\"%s\",\"allowed\":%s}",
+                System.currentTimeMillis(), esc(user), esc(roles), perm, req.getMethod(), esc(req.getURI().getPath()),
+                esc(req.getURI().getRawQuery() == null ? "" : req.getURI().getRawQuery()), esc(ip), allowed);
+        if (allowed) log.info("[稽核] {}", line); else log.warn("[稽核] 拒絕 {}", line);
+        if (redis != null)
+            redis.opsForList().leftPush(AUDIT_KEY, line).then(redis.opsForList().trim(AUDIT_KEY, 0, 1999))
+                    .subscribe(x -> {}, e -> log.debug("稽核寫入 Redis 失敗: {}", e.getMessage()));
+    }
+    private static String esc(String s) { return s == null ? "" : s.replace("\\", "\\\\").replace("\"", "\\\""); }
 
     private Mono<Void> unauthorized(ServerWebExchange exchange) {
         exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
