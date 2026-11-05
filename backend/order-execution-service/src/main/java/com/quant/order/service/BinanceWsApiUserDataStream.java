@@ -204,9 +204,9 @@ public class BinanceWsApiUserDataStream extends TextWebSocketHandler {
         OrderSide side = "SELL".equals(e.path("S").asText()) ? OrderSide.SELL : OrderSide.BUY;
         // t = tradeId（每筆成交唯一）；非成交事件用 X+E 區分
         String eventId = "uds|" + clientOrderId + "|" + e.path("t").asLong(-1) + "|" + e.path("X").asText() + "|" + e.path("E").asLong(0);
-        kafka.send(Topics.ORDER_EVENTS, symbol, new OrderEvent(
+        kafka.send(Topics.ORDER_EVENTS, symbol, OrderEvents.enrich(new OrderEvent(
                 clientOrderId, e.path("i").asText(), symbol, side, status,
-                lastQty > 0 ? lastQty : 0, lastPx, System.currentTimeMillis(), account, eventId));
+                lastQty > 0 ? lastQty : 0, lastPx, System.currentTimeMillis(), account, eventId), orders));
         log.info("UDS(WS API) 成交回報 {} {} l={} @ {}", symbol, status, lastQty, lastPx);
     }
 

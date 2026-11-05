@@ -94,9 +94,12 @@ public class EquityCurveService {
             } catch (Exception ignore) {}
         }
         equitySource = "策略權益";
-        double eq = cash.get("main");
+        // 沒有真實帳戶時才走這裡 = 通常是 Dry-Run：用目前環境、模擬模式、現貨的現金帳與部位
+        String env = binanceAccount.env();
+        double eq = cash.get("main", env, "DRY");
         for (PositionEntity p : positions.findAll()) {
             if (p.getQuantity() == null || p.getQuantity() == 0) continue;
+            if (!env.equals(p.getEnv()) || !"DRY".equals(p.getExecutionMode()) || !"SPOT".equals(p.getMarket())) continue;
             String px = redis.opsForValue().get("price:" + p.getSymbol());
             if (px != null) eq += p.getQuantity() * Double.parseDouble(px);
         }

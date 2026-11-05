@@ -7,13 +7,11 @@ import com.quant.order.entity.OrderEntity;
 import com.quant.order.repository.OrderRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
-import java.util.concurrent.TimeUnit;
 
 /**
  * 訂閱 order.events 將成交/撤單等狀態寫回訂單表（見架構文件 §9）。
@@ -28,13 +26,13 @@ import java.util.concurrent.TimeUnit;
 public class OrderDbUpdater {
 
     private static final Logger log = LoggerFactory.getLogger(OrderDbUpdater.class);
-    private static final long DEDUPE_TTL_HOURS = 48;
 
     private final OrderRepository orders;
-    private final StringRedisTemplate redis;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbc;
+    static final String CONSUMER = "order-execution-db";
 
-    public OrderDbUpdater(OrderRepository orders, StringRedisTemplate redis) {
-        this.orders = orders; this.redis = redis;
+    public OrderDbUpdater(OrderRepository orders, org.springframework.jdbc.core.JdbcTemplate jdbc) {
+        this.orders = orders; this.jdbc = jdbc;
     }
 
     @KafkaListener(topics = Topics.ORDER_EVENTS, groupId = "order-execution-db")
@@ -74,16 +72,19 @@ public class OrderDbUpdater {
         });
     }
 
-    /** 以 Redis SETNX 宣告這個事件已處理。Redis 不可用時放行（寧可重算也不要丟事件）。 */
+    /**
+     * 去重寫在 processed_events，與訂單更新同一筆 DB transaction：更新失敗 → 去重紀錄一起回滾 → Kafka 重送時會再處理。
+     * （以前 Redis SETNX 先宣告、DB 後寫，中間掛掉就永遠漏記；Redis 不可用時放行又可能重複加總。）
+     */
     private boolean claim(OrderEvent e) {
         String id = e.eventId() != null ? e.eventId()
                 : OrderEvent.eventId(e.clientOrderId(), e.status(), e.filledQty(), e.timestamp());
-        try {
-            Boolean first = redis.opsForValue().setIfAbsent("evt:oms:" + id, "1", DEDUPE_TTL_HOURS, TimeUnit.HOURS);
-            return !Boolean.FALSE.equals(first);
-        } catch (Exception ex) {
-            log.warn("去重 Redis 不可用，放行事件 {}: {}", id, ex.getMessage());
-            return true;
-        }
+        return jdbc.update("INSERT INTO processed_events (consumer, event_id) VALUES (?, ?) ON CONFLICT DO NOTHING", CONSUMER, id) == 1;
+    }
+
+    @org.springframework.scheduling.annotation.Scheduled(cron = "0 23 4 * * *", zone = "Asia/Taipei")
+    public void purge() {
+        try { jdbc.update("DELETE FROM processed_events WHERE consumer = ? AND processed_at < now() - interval '14 days'", CONSUMER); }
+        catch (Exception ex) { log.warn("清理 processed_events 失敗: {}", ex.getMessage()); }
     }
 }
