@@ -53,6 +53,7 @@ public class BinanceWsApiUserDataStream extends TextWebSocketHandler {
     @Value("${binance.user-data-stream-enabled:false}") private boolean enabled;
     @Value("${binance.ws-api-url:wss://ws-api.testnet.binance.vision/ws-api/v3}") private String wsApiUrl;
     @Value("${binance.mainnet-ws-api-url:wss://ws-api.binance.com:443/ws-api/v3}") private String wsApiMainnetUrl;
+    @Value("${binance.demo-ws-api-url:wss://demo-ws-api.binance.com/ws-api/v3}") private String wsApiDemoUrl;
     @Value("${binance.ed25519-api-key:}") private String apiKey;
     @Value("${binance.ed25519-key-path:}") private String keyPath;
 
@@ -106,6 +107,7 @@ public class BinanceWsApiUserDataStream extends TextWebSocketHandler {
     public synchronized void startIfNeeded(String by) {
         if (!started.compareAndSet(false, true)) return;
         if ("mainnet".equalsIgnoreCase(gateway.currentEnv())) wsApiUrl = wsApiMainnetUrl;
+        if ("demo".equalsIgnoreCase(gateway.currentEnv())) wsApiUrl = wsApiDemoUrl;
         registry.expect(UdsRegistry.SPOT);
         scheduler.execute(this::connect);
         log.info("現貨 WS API UDS 啟動中（{}）… env={} url={}", by, gateway.currentEnv(), wsApiUrl);

@@ -83,11 +83,19 @@ public class BinanceAccountService {
     @Value("${binance.mainnet-api-key:}") private String mainnetApiKey;
     @Value("${binance.mainnet-api-secret:}") private String mainnetApiSecret;
     private String testnetRestUrl;   // 保留測試網位址以便切回
+    @Value("${binance.demo-rest-url:https://demo-api.binance.com}") private String demoRestUrl;
+    @Value("${binance.demo-api-key:}") private String demoKey;
+    @Value("${binance.demo-api-secret:}") private String demoSecret;
+    private String envKey = "", envSecret = "";   // .env 測試網金鑰
 
     @PostConstruct
     void resolveEnv() {
         testnetRestUrl = restUrl;   // 記住原始 testnet 位址
-        if ("mainnet".equalsIgnoreCase(env)) {
+        envKey = apiKey == null ? "" : apiKey; envSecret = apiSecret == null ? "" : apiSecret;
+        if ("demo".equalsIgnoreCase(env)) {
+            useEnv("demo");
+            log.info("BINANCE_ENV=demo ｜ 幣安模擬交易 REST={}（模擬資金）", restUrl);
+        } else if ("mainnet".equalsIgnoreCase(env)) {
             restUrl = mainnetRestUrl;
             if (!mainnetApiKey.isBlank()) apiKey = mainnetApiKey;
             if (!mainnetApiSecret.isBlank()) apiSecret = mainnetApiSecret;
@@ -103,7 +111,7 @@ public class BinanceAccountService {
         String before = env;
         if (newEnv != null && !newEnv.isBlank()) {
             env = newEnv.trim().toLowerCase();
-            restUrl = "mainnet".equals(env) ? mainnetRestUrl : testnetRestUrl;
+            if (!env.equalsIgnoreCase(before)) useEnv(env);
         }
         if (newKey != null && !newKey.isBlank()) apiKey = newKey.trim();
         if (newSecret != null && !newSecret.isBlank()) apiSecret = newSecret.trim();
@@ -111,10 +119,20 @@ public class BinanceAccountService {
         return !env.equalsIgnoreCase(before);
     }
 
+    /** 換環境：網址 + 該環境 .env 的金鑰（頁面貼的新金鑰會在 applyConfig 後面覆蓋）。 */
+    private void useEnv(String e) {
+        switch (e) {
+            case "mainnet" -> { restUrl = mainnetRestUrl;
+                if (!mainnetApiKey.isBlank()) apiKey = mainnetApiKey; if (!mainnetApiSecret.isBlank()) apiSecret = mainnetApiSecret; }
+            case "demo" -> { restUrl = demoRestUrl; apiKey = demoKey == null ? "" : demoKey; apiSecret = demoSecret == null ? "" : demoSecret; }
+            default -> { restUrl = testnetRestUrl; apiKey = envKey; apiSecret = envSecret; }
+        }
+    }
+
     /** 目前連線狀態（不外洩金鑰內容）。 */
     public Map<String, Object> configStatus() {
         return Map.of("env", env, "restUrl", restUrl, "keySet", live(),
-                "mainnet", "mainnet".equalsIgnoreCase(env));
+                "mainnet", "mainnet".equalsIgnoreCase(env), "demo", "demo".equalsIgnoreCase(env));
     }
     @Value("${account.min-asset-value:1.0}") private double minValue;   // 估值門檻(USDT)
     @Value("${account.max-assets:50}") private int maxAssets;

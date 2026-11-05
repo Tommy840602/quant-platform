@@ -87,10 +87,14 @@ public class FuturesAccountService {
     public boolean keySet() { return !key().isBlank() && !secret().isBlank(); }
 
     private boolean mainnet() { return "mainnet".equalsIgnoreCase(spot.env()); }
-    private String url()    { return mainnet() ? mainUrl : testUrl; }
+    @Value("${binance.demo-futures-rest-url:https://demo-fapi.binance.com}") String demoUrl;
+    private boolean demo() { return "demo".equalsIgnoreCase(spot.env()); }
+    private String url()    { return demo() ? demoUrl : mainnet() ? mainUrl : testUrl; }
     private String key()    { String[] u = uiKeys.get(spot.env()); if (u != null && !u[0].isBlank()) return u[0];
+                              if (demo()) return spot.currentKey();
                               String k = mainnet() ? (mainKey != null && !mainKey.isBlank() ? mainKey : spot.currentKey()) : testKey;       return k == null ? "" : k.trim(); }
     private String secret() { String[] u = uiKeys.get(spot.env()); if (u != null && !u[1].isBlank()) return u[1];
+                              if (demo()) return spot.currentSecret();
                               String k = mainnet() ? (mainSecret != null && !mainSecret.isBlank() ? mainSecret : spot.currentSecret()) : testSecret; return k == null ? "" : k.trim(); }
 
     /**
