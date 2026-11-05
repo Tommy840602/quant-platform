@@ -65,14 +65,21 @@ public class BinanceFuturesUserDataStream extends TextWebSocketHandler {
         this.kafka = kafka; this.orders = orders; this.gateway = gateway; this.registry = registry; this.orderService = orderService;
     }
 
+    private volatile boolean pm = false;
+    private String restBase() { return pm ? gateway.pmRestUrl() : gateway.futuresRestUrl(); }
+    private String keyPath()  { return pm ? "/papi/v1/listenKey" : "/fapi/v1/listenKey"; }
+    private String wsBase()   { return pm ? gateway.pmWsUrl() : gateway.futuresWsUrl(); }
     private final java.util.concurrent.atomic.AtomicBoolean started = new java.util.concurrent.atomic.AtomicBoolean(false);
 
     @PostConstruct
     public void init() {
-        if (!enabled) {
+        if (!enabled && gateway.futuresPm()) {
+            log.info("統一帳戶模式：自動啟用統一帳戶成交推送（BINANCE_FUTURES_UDS_ENABLED 不用另外設）");
+        } else if (!enabled) {
             log.info("合約 UDS 未啟用（BINANCE_FUTURES_UDS_ENABLED=false）；合約成交以下單回應(RESULT)解析 + 對帳排程補記");
             return;
         }
+        if (!enabled && gateway.futuresApiKey().isBlank()) { log.warn("統一帳戶模式但未設定金鑰，成交推送先不啟動"); return; }
         if (gateway.futuresApiKey().isBlank())
             throw new IllegalStateException("BINANCE_FUTURES_UDS_ENABLED=true 但未設定合約 API 金鑰（BINANCE_FUTURES_API_KEY"
                     + ("mainnet".equalsIgnoreCase(gateway.currentEnv()) ? " / BINANCE_MAINNET_FUTURES_API_KEY" : "")
@@ -86,20 +93,18 @@ public class BinanceFuturesUserDataStream extends TextWebSocketHandler {
 
     @org.springframework.context.event.EventListener
     public void onModeChanged(TradingModeChangedEvent e) {
-        if (!enabled || e.effectiveDryRun() || gateway.futuresApiKey().isBlank()) return;
+        if ((!enabled && !gateway.futuresPm()) || e.effectiveDryRun() || gateway.futuresApiKey().isBlank()) return;
         startIfNeeded(e.by());
     }
 
     public synchronized void startIfNeeded(String by) {
-        if (gateway.futuresPm()) {   // 統一帳戶的成交回報走 papi listenKey，這裡沒接 → 不連，改靠下單回應 + 對帳排程
-            log.info("統一帳戶模式：合約 UDS 不啟動，成交以下單回應 + 對帳排程（約 30 秒）補記");
-            return;
-        }
         if (!started.compareAndSet(false, true)) return;
+        pm = gateway.futuresPm();   // 統一帳戶：listenKey 走 papi、WS 走 fstream/pm，UM 與槓桿（現貨）成交都從這條來
+        if (pm && gateway.spotViaPm()) registry.expect(UdsRegistry.SPOT);
         registry.expect(UdsRegistry.FUTURES);
         scheduler.execute(this::start);
         scheduler.scheduleAtFixedRate(this::keepAlive, 30, 30, TimeUnit.MINUTES);
-        log.info("合約 UDS 啟動中（{}）… env={} ws={}", by, gateway.currentEnv(), gateway.futuresWsUrl());
+        log.info("{} UDS 啟動中（{}）… env={} ws={}", pm ? "統一帳戶" : "合約", by, gateway.currentEnv(), wsBase());
     }
 
     private void start() {
@@ -108,7 +113,7 @@ public class BinanceFuturesUserDataStream extends TextWebSocketHandler {
             if (key == null) { reconnect("listenKey 申請失敗"); return; }
             listenKey = key;
             new StandardWebSocketClient()
-                    .execute(this, new WebSocketHttpHeaders(), URI.create(gateway.futuresWsUrl() + "/ws/" + listenKey))
+                    .execute(this, new WebSocketHttpHeaders(), URI.create(wsBase() + "/ws/" + listenKey))
                     .whenComplete((s, ex) -> { if (ex != null) reconnect("WS 連線失敗: " + ex.getMessage()); });
         } catch (Exception e) {
             reconnect("啟動例外: " + e.getMessage());
@@ -117,7 +122,7 @@ public class BinanceFuturesUserDataStream extends TextWebSocketHandler {
 
     private String createListenKey() throws Exception {
         HttpRequest req = HttpRequest.newBuilder()
-                .uri(URI.create(gateway.futuresRestUrl() + "/fapi/v1/listenKey"))
+                .uri(URI.create(restBase() + keyPath()))
                 .header("X-MBX-APIKEY", gateway.futuresApiKey())
                 .POST(HttpRequest.BodyPublishers.noBody())
                 .timeout(Duration.ofSeconds(10)).build();
@@ -133,7 +138,7 @@ public class BinanceFuturesUserDataStream extends TextWebSocketHandler {
         if (listenKey == null) return;
         try {
             HttpRequest req = HttpRequest.newBuilder()
-                    .uri(URI.create(gateway.futuresRestUrl() + "/fapi/v1/listenKey"))
+                    .uri(URI.create(restBase() + keyPath()))
                     .header("X-MBX-APIKEY", gateway.futuresApiKey())
                     .PUT(HttpRequest.BodyPublishers.noBody())
                     .timeout(Duration.ofSeconds(10)).build();
@@ -147,6 +152,7 @@ public class BinanceFuturesUserDataStream extends TextWebSocketHandler {
         this.session = s;
         backoffSec = 5;
         registry.markConnected(UdsRegistry.FUTURES);
+        if (pm && gateway.spotViaPm()) registry.markConnected(UdsRegistry.SPOT);
         // 補回斷線期間的成交：對所有未完成合約單回查一次（增量發布，已記過的不重複）
         try { orderService.reconcileOpenOrders(true); } catch (Exception e) { log.warn("合約開單對帳失敗: {}", e.getMessage()); }
     }
@@ -160,6 +166,12 @@ public class BinanceFuturesUserDataStream extends TextWebSocketHandler {
                 log.warn("合約 listenKey 已過期，重新申請並重連");
                 closeQuietly();
                 return;   // afterConnectionClosed 會排程重連（start() 會重新申請 key）
+            }
+            if (pm && "executionReport".equals(type)) {   // 統一帳戶的槓桿（現貨）單
+                registry.onEvent(UdsRegistry.SPOT);
+                OrderEvent ev = toMarginEvent(e, orders);
+                if (ev != null) { kafka.send(Topics.ORDER_EVENTS, ev.symbol(), ev); log.info("UDS(統一帳戶現貨) 回報 {} {} l={} @ {}", ev.symbol(), ev.status(), ev.filledQty(), ev.avgPrice()); }
+                return;
             }
             if (!"ORDER_TRADE_UPDATE".equals(type)) return;
             registry.onEvent(UdsRegistry.FUTURES);
@@ -195,6 +207,19 @@ public class BinanceFuturesUserDataStream extends TextWebSocketHandler {
                 lastQty > 0 ? lastQty : 0, lastPx, System.currentTimeMillis(), account, eventId);
     }
 
+    /** 統一帳戶槓桿單 executionReport（欄位與現貨 executionReport 相同，在根層）。 */
+    static OrderEvent toMarginEvent(JsonNode e, OrderRepository orders) {
+        String symbol = e.path("s").asText(), cid = e.path("c").asText();
+        if (symbol.isBlank() || cid.isBlank()) return null;
+        OrderSide side = "SELL".equals(e.path("S").asText()) ? OrderSide.SELL : OrderSide.BUY;
+        double lastQty = e.path("l").asDouble(0), lastPx = e.path("L").asDouble(0);
+        String account = orders == null ? "main" : orders.findByClientOrderId(cid)
+                .map(r -> r.getAccount() == null ? "main" : r.getAccount()).orElse("main");
+        String eventId = "uds-pm|" + cid + "|" + e.path("t").asLong(-1) + "|" + e.path("X").asText() + "|" + e.path("E").asLong(0);
+        return new OrderEvent(cid, e.path("i").asText(null), symbol, side, mapStatus(e.path("X").asText()),
+                lastQty > 0 ? lastQty : 0, lastPx, System.currentTimeMillis(), account, eventId);
+    }
+
     static OrderStatus mapStatus(String x) {
         return switch (x) {
             case "PARTIALLY_FILLED" -> OrderStatus.PARTIALLY_FILLED;
@@ -225,6 +250,7 @@ public class BinanceFuturesUserDataStream extends TextWebSocketHandler {
 
     private void reconnect(String reason) {
         registry.markDisconnected(UdsRegistry.FUTURES, reason);
+        if (pm && gateway.spotViaPm()) registry.markDisconnected(UdsRegistry.SPOT, reason);
         int delay = backoffSec;
         backoffSec = Math.min(backoffSec * 2, 60);
         log.warn("合約 UDS {} — {}s 後重連", reason, delay);
