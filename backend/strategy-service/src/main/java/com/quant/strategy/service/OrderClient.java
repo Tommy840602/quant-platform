@@ -14,6 +14,15 @@ public interface OrderClient {
     @PostMapping("/orders/leverage")
     ApiResponse<String> leverage(@RequestParam("symbol") String symbol, @RequestParam("leverage") int leverage);
 
+    /** 交易所端的訂單（含 executedQty / status）。 */
+    @GetMapping("/orders/{clientOrderId}")
+    ApiResponse<String> query(@PathVariable("clientOrderId") String clientOrderId, @RequestParam("symbol") String symbol,
+                              @RequestParam("market") String market);
+
+    /** OMS 本地有沒有這張單。 */
+    @GetMapping("/orders/local/{clientOrderId}")
+    ApiResponse<java.util.Map<String, Object>> local(@PathVariable("clientOrderId") String clientOrderId);
+
     @DeleteMapping("/orders/{clientOrderId}")
     ApiResponse<String> cancel(@PathVariable("clientOrderId") String clientOrderId, @RequestParam("symbol") String symbol,
                                @RequestParam("market") String market);

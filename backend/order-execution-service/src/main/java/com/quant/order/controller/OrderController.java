@@ -103,6 +103,12 @@ public class OrderController {
         return orderService.attribution();
     }
 
+    /** OMS 本地紀錄：GET /api/order/orders/local/{clientOrderId} → {exists, status, filledQty}（策略確認「OMS 到底有沒有收到」用） */
+    @GetMapping("/local/{clientOrderId}")
+    public ApiResponse<Map<String, Object>> local(@PathVariable String clientOrderId) {
+        return ApiResponse.ok(orderService.local(clientOrderId));
+    }
+
     /** 查單：GET /api/order/orders/{clientOrderId}?symbol=BTCUSDT&market=SPOT */
     @GetMapping("/{clientOrderId}")
     public ApiResponse<String> query(@PathVariable String clientOrderId,

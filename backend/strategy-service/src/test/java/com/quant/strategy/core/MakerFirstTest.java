@@ -41,6 +41,8 @@ class MakerFirstTest {
         OrderClient oms = mock(OrderClient.class);
         when(oms.submit(any())).thenReturn(ApiResponse.ok("{}"));
         when(oms.cancel(anyString(), anyString(), anyString())).thenReturn(ApiResponse.ok("{}"));
+        // 交易所：撤單完成時累計成交 0.04（本地成交回報即使還沒到，也以這個數字為準）
+        when(oms.query(anyString(), anyString(), anyString())).thenReturn(ApiResponse.ok("{\"status\":\"CANCELED\",\"executedQty\":\"0.04\"}"));
         StrategyPositionBook book = new StrategyPositionBook(); book.reconcile(List.of());
         StrategyContextImpl ctx = new StrategyContextImpl("b", oms, Map.of("X", 100.0), () -> 10, book);
         ctx.setExecution(exec(99.9, 100.1));
@@ -64,6 +66,47 @@ class MakerFirstTest {
         assertEquals(OrderType.MARKET, mkt.type());
         assertEquals(0.06, mkt.quantity(), 1e-12, "只補沒成交的 0.06");
         assertTrue(book.isPending("b", "X"), "市價單在途 → 仍 pending");
+    }
+
+    @Test
+    void lateLocalFillReportDoesNotCauseOverbuy() throws Exception {
+        OrderClient oms = mock(OrderClient.class);
+        when(oms.submit(any())).thenReturn(ApiResponse.ok("{}"));
+        when(oms.cancel(anyString(), anyString(), anyString())).thenReturn(ApiResponse.ok("{}"));
+        // 本地完全沒收到成交回報，但交易所說其實成交了 0.09 → 只補 0.01（不足最低名目就不補）
+        when(oms.query(anyString(), anyString(), anyString())).thenReturn(ApiResponse.ok("{\"status\":\"CANCELED\",\"executedQty\":\"0.09\"}"));
+        StrategyPositionBook book = new StrategyPositionBook(); book.reconcile(List.of());
+        StrategyContextImpl ctx = new StrategyContextImpl("b", oms, Map.of("X", 100.0), () -> 10, book);
+        ctx.setExecution(exec(99.9, 100.1));
+        ctx.submit(buy());
+        Thread.sleep(2800);
+        verify(oms, times(1)).submit(any());   // 0.01 × 100 = 1 USDT < 最低名目 → 不補
+    }
+
+    @Test
+    void unconfirmedCancelNeverRefills() throws Exception {
+        OrderClient oms = mock(OrderClient.class);
+        when(oms.submit(any())).thenReturn(ApiResponse.ok("{}"));
+        when(oms.cancel(anyString(), anyString(), anyString())).thenReturn(ApiResponse.ok("{}"));
+        when(oms.query(anyString(), anyString(), anyString())).thenReturn(ApiResponse.ok("{\"status\":\"NEW\"}"));
+        StrategyPositionBook book = new StrategyPositionBook(); book.reconcile(List.of());
+        StrategyContextImpl ctx = new StrategyContextImpl("b", oms, Map.of("X", 100.0), () -> 10, book);
+        ctx.setExecution(exec(99.9, 100.1));
+        ctx.submit(buy());
+        Thread.sleep(4000);
+        verify(oms, times(1)).submit(any());   // 確認不到終態：不補單
+    }
+
+    @Test
+    void timeoutKeepsOrderPendingSoNoDuplicate() {
+        OrderClient oms = mock(OrderClient.class);
+        when(oms.submit(any())).thenThrow(new RuntimeException("Read timed out"));
+        StrategyPositionBook book = new StrategyPositionBook(); book.reconcile(List.of());
+        StrategyContextImpl ctx = new StrategyContextImpl("b", oms, Map.of("X", 100.0), () -> 10, book);
+        ctx.submit(buy());
+        assertTrue(book.isPending("b", "X"), "逾時 = 狀態不明，維持在途");
+        ctx.submit(buy());
+        verify(oms, times(1)).submit(any());   // 第二次訊號被「仍有未結單」擋下
     }
 
     @Test

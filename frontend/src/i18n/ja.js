@@ -703,7 +703,7 @@ export default {
   },
   "pipeline": {
     "auto": "自動昇格 / 降格",
-    "st": {
+    "st": { "DRAINING": "決済中",
       "PAPER": "ペーパー",
       "PILOT": "実弾試行",
       "LIVE": "本番"

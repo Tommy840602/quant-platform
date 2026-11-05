@@ -80,6 +80,7 @@ public class StrategyContextImpl implements StrategyContext {
     public void setExecution(Execution e) { this.exec = e; }
     public String strategyId() { return strategyId; }
     /** SPOT（只做多）| USDT_M（U 本位合約，可做空） */
+    private static final com.fasterxml.jackson.databind.ObjectMapper JSON = new com.fasterxml.jackson.databind.ObjectMapper();
     private volatile String market = "SPOT";
     public void setMarket(String m) { this.market = "USDT_M".equalsIgnoreCase(m) ? "USDT_M" : "SPOT"; }
     public String market() { return market; }
@@ -194,21 +195,48 @@ public class StrategyContextImpl implements StrategyContext {
         try { var r = orderClient.cancel(cid, sym, lim.market() == null ? "SPOT" : lim.market()); cancelled = r != null && r.code() == 0; }
         catch (Exception e) { cancelled = false; log.warn("[{}] 撤限價單失敗 {}: {}", strategyId, cid, e.getMessage()); }
         if (!cancelled) { decide(sym, lim.side(), "限價 " + waitSec + " 秒未成交，撤單失敗（可能剛成交），等成交回報"); return; }
-        // 等撤單 / 部分成交的回報進來再算剩多少
-        MAKER.schedule(() -> {
-            double filled = book.filled(cid); book.forgetFilled(cid);
-            double px = price(sym);
-            double held = position(sym);
-            boolean closing = (lim.side() == OrderSide.SELL && held > 1e-12) || (lim.side() == OrderSide.BUY && held < -1e-12);
-            double rem = closing ? Math.abs(held) : intended - filled;
-            if (rem <= 0 || px <= 0 || rem * px < MIN_ORDER_USDT) {
-                decide(sym, lim.side(), String.format("限價成交 %s / %s，剩餘不足最低名目，不補市價", fmt(filled), fmt(intended)));
+        // review #7：不再「等 1.5 秒再看本地成交量」——Kafka / UDS 慢一點就會低估成交、補買過量。
+        // 改成向交易所查這張單，等到終態（CANCELED / FILLED / EXPIRED）拿交易所的累計成交量（executedQty）算剩多少。
+        confirmAndRefill(lim, intended, waitSec, 0);
+    }
+
+    static final int CONFIRM_TRIES = 8;
+    void confirmAndRefill(OrderIntent lim, double intended, long waitSec, int attempt) {
+        String cid = lim.clientOrderId(), sym = lim.symbol();
+        Double executed = null; String st = null;
+        try {
+            var r = orderClient.query(cid, sym, lim.market() == null ? "SPOT" : lim.market());
+            if (r != null && r.code() == 0 && r.data() != null) {
+                var n = JSON.readTree(r.data());
+                st = n.path("status").asText("");
+                if (n.path("dryRun").asBoolean(false)) executed = book.filled(cid);          // Dry-Run 沒有交易所數字：用本地
+                else if (n.has("executedQty")) executed = n.path("executedQty").asDouble(0);
+            }
+        } catch (Exception e) { log.debug("[{}] 查撤單結果失敗 {}: {}", strategyId, cid, e.getMessage()); }
+        boolean terminal = st != null && (st.equals("CANCELED") || st.equals("FILLED") || st.equals("EXPIRED") || st.equals("REJECTED"));
+        if (!terminal || executed == null) {
+            if (attempt + 1 >= CONFIRM_TRIES) {
+                decide(sym, lim.side(), "撤單後 " + CONFIRM_TRIES + " 次都確認不到交易所的最終成交量，不補市價（避免超買）");
                 return;
             }
-            OrderIntent mkt = new OrderIntent(java.util.UUID.randomUUID().toString(), strategyId, sym, lim.side(),
-                    com.quant.common.enums.OrderType.MARKET, null, rem, lim.reduceOnly(), lim.market(), lim.account());
-            send(mkt, rem, "限價 " + waitSec + " 秒成交 " + fmt(filled) + " → 剩餘改市價 · ");
-        }, 1500, java.util.concurrent.TimeUnit.MILLISECONDS);
+            MAKER.schedule(() -> confirmAndRefill(lim, intended, waitSec, attempt + 1), 1, java.util.concurrent.TimeUnit.SECONDS);
+            return;
+        }
+        book.forgetFilled(cid);
+        double filled = executed;
+        double px = price(sym);
+        double held = position(sym);
+        boolean closing = (lim.side() == OrderSide.SELL && held > 1e-12) || (lim.side() == OrderSide.BUY && held < -1e-12);
+        // 開倉：剩多少 = 原本要買的 − 交易所確認成交（不受本地回報延遲影響，不會補買過量）
+        // 平倉：以目前部位為準（本地回報若還沒到，部位看起來偏大；但合約 reduceOnly / 現貨餘額會擋住超賣）
+        double rem = closing ? Math.abs(held) : intended - filled;
+        if (rem <= 0 || px <= 0 || rem * px < MIN_ORDER_USDT) {
+            decide(sym, lim.side(), String.format("限價成交 %s / %s（交易所確認），剩餘不足最低名目，不補市價", fmt(filled), fmt(intended)));
+            return;
+        }
+        OrderIntent mkt = new OrderIntent(java.util.UUID.randomUUID().toString(), strategyId, sym, lim.side(),
+                com.quant.common.enums.OrderType.MARKET, null, rem, lim.reduceOnly(), lim.market(), lim.account());
+        send(mkt, rem, "限價 " + waitSec + " 秒成交 " + fmt(filled) + "（交易所確認）→ 剩餘改市價 · ");
     }
 
     /** 送 OMS；回 true = OMS 已接受。 */
@@ -227,18 +255,19 @@ public class StrategyContextImpl implements StrategyContext {
             }
             log.info("[{}] {} 合約槓桿設為 {}x", strategyId, scaled.symbol(), lev);
         }
+        // review #7：送出「前」就登記在途。以前 HTTP 回來才登記，逾時（OMS 其實收到了）時 catch 又解除 → 下一根 K 線重複送單
+        book.onSubmitted(scaled.clientOrderId(), strategyId, scaled.symbol());
         try {
             var resp = orderClient.submit(scaled);
             if (resp == null || resp.code() != 0) {
                 // OMS 同步拒絕（風控 / filter / 餘額）或 202 對帳中：都不是成交
-                book.onSubmitFailed(scaled.clientOrderId());
                 if (resp != null && resp.code() == 202) {
-                    // 狀態不明：OMS 會對帳並發終結事件；在那之前視為 pending
-                    book.onSubmitted(scaled.clientOrderId(), strategyId, scaled.symbol());
+                    // 狀態不明：OMS 會對帳並發終結事件；在那之前視為 pending（已登記）
                     log.warn("[{}] 下單狀態不明 {} {}：等待 OMS 對帳", strategyId, scaled.symbol(), scaled.clientOrderId());
                     decide(scaled.symbol(), scaled.side(), tag + "狀態不明，等待對帳");
                     return false;
                 } else {
+                    book.onSubmitFailed(scaled.clientOrderId());   // OMS 明確拒絕 = 確定沒送出
                     String m = resp == null ? "null" : resp.message();
                     log.warn("[{}] 下單被拒 {} {} qty={}: {}", strategyId, scaled.symbol(), scaled.side(), qty, m);
                     decide(scaled.symbol(), scaled.side(), tag + "被拒：" + m);
@@ -246,22 +275,43 @@ public class StrategyContextImpl implements StrategyContext {
                 }
                 return false;
             }
-            book.onSubmitted(scaled.clientOrderId(), strategyId, scaled.symbol());
             decide(scaled.symbol(), scaled.side(), tag + "已送單 " + fmt(qty));
             log.info("[{}] 已送單 {} {} {} qty={} (名目{} 配置x{})，等待成交事件", strategyId, scaled.symbol(),
                     scaled.side(), scaled.type(), qty, notional > 0 ? notional : "-", allocation);
             return true;
         } catch (Exception e) {
-            book.onSubmitFailed(scaled.clientOrderId());
-            log.warn("[{}] 下單呼叫失敗（OMS 不可達）: {}", strategyId, e.getMessage());
-            decide(scaled.symbol(), scaled.side(), tag + "OMS 不可達：" + e.getMessage());
-            if (x != null) x.onLiveReject(strategyId, scaled, "OMS 不可達");
+            // 逾時 / 斷線：OMS 可能已收單 → 維持在途（UNKNOWN），30 秒後問 OMS 本地有沒有這張單再決定
+            log.warn("[{}] 下單呼叫失敗（狀態不明，維持在途並回查）: {}", strategyId, e.getMessage());
+            decide(scaled.symbol(), scaled.side(), tag + "OMS 回應失敗，狀態不明（不重送，回查中）：" + e.getMessage());
+            MAKER.schedule(() -> verifyUnknown(scaled, x, 0), 30, java.util.concurrent.TimeUnit.SECONDS);
             return false;
         }
     }
 
+    /** 送單狀態不明：OMS 有這張單 → 等它的終結事件；確定沒有 → 解除在途；查不到 OMS → 稍後再查（最多 10 次）。 */
+    void verifyUnknown(OrderIntent scaled, Execution x, int attempt) {
+        String cid = scaled.clientOrderId();
+        if (!book.isInflight(cid)) return;   // 已收到終結事件
+        try {
+            var r = orderClient.local(cid);
+            if (r != null && r.code() == 0 && r.data() != null) {
+                if (Boolean.TRUE.equals(r.data().get("exists"))) { log.info("[{}] 狀態不明的 {} OMS 有收到（{}），等成交 / 終結事件", strategyId, cid, r.data().get("status")); return; }
+                book.onSubmitFailed(cid);
+                decide(scaled.symbol(), scaled.side(), "回查：OMS 沒有收到這張單，解除在途");
+                if (x != null) x.onLiveReject(strategyId, scaled, "OMS 未收到");
+                return;
+            }
+        } catch (Exception e) { log.debug("[{}] 回查 {} 失敗: {}", strategyId, cid, e.getMessage()); }
+        if (attempt + 1 < 10) MAKER.schedule(() -> verifyUnknown(scaled, x, attempt + 1), 30, java.util.concurrent.TimeUnit.SECONDS);
+        else decide(scaled.symbol(), scaled.side(), "回查 10 次 OMS 都不可達，維持在途；請檢查 order-execution-service");
+    }
+
     private boolean isPending(String symbol) { return !isPaper() && book.isPending(strategyId, symbol); }
     public boolean pending(String symbol) { return isPending(symbol); }
+    /** 任一標的有在途真實單。 */
+    public boolean anyPending() { return book.hasPending(strategyId); }
+    /** 真實（OMS）部位快照，不受目前階段影響——出清時要看真實的。 */
+    public Map<String, Double> liveSnapshot() { return book.snapshot(strategyId); }
 
     @Override public double position(String symbol) {
         Execution x = exec;
