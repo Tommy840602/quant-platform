@@ -67,6 +67,7 @@ export default {
     "trades": "Fills"
   },
   "account": {
+    "posDims": "Market / mode",
     "pmTag": "PM",
     "pmGuardStop": "Futures openings halted",
     "pmGuardWarn": "Margin warning",
