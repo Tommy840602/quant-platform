@@ -67,6 +67,7 @@ export default {
     "trades": "成交"
   },
   "account": {
+    "invalidTitle": "帳戶查詢失敗：目前權益無效，回撤判斷暫停、停止開倉（平倉照常）",
     "posDims": "市場 / 模式",
     "pmTag": "統一",
     "pmGuardStop": "已停止合約開倉",

@@ -48,11 +48,16 @@ public class RiskLimits {
     public int    maxDailyOrders()       { return (int) d("maxDailyOrders", maxDailyOrders); }
     /** 正式網沒設每日名目上限時不給「不限」，預設 1000 USDT（測試網仍 0 = 不限）。 */
     public double maxDailyNotional()     {
-        double def = maxDailyNotional > 0 ? maxDailyNotional : ("mainnet".equalsIgnoreCase(env) ? mainnetDefaultDailyNotional : 0);
+        double def = maxDailyNotional > 0 ? maxDailyNotional : (mainnet() ? mainnetDefaultDailyNotional : 0);
         return d("maxDailyNotional", def);
     }
     public double maxPriceDeviationPct() { return d("maxPriceDeviationPct", maxPriceDeviationPct); }
     public boolean failClosed()          { return b("failClosed", failClosed); }
+    /** 目前是否正式網（跟著連線設定頁切換：order 服務寫入 Redis trading:env，沒有就看 BINANCE_ENV）。 */
+    public boolean mainnet() {
+        try { String v = redis.opsForValue().get("trading:env"); if (v != null) return "mainnet".equalsIgnoreCase(v); } catch (Exception ignore) {}
+        return "mainnet".equalsIgnoreCase(env);
+    }
     public double maxFuturesLeverage()   { return d("maxFuturesLeverage", maxFuturesLeverage); }
 
     public Map<String, Object> snapshot() {

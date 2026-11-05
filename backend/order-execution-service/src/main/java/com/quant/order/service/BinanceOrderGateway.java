@@ -185,6 +185,7 @@ public class BinanceOrderGateway {
         } else {
             log.info("BINANCE_ENV=testnet ｜ 測試網下單 spot={}（安全）", spotUrl);
         }
+        publishEnv();
         syncClock();
     }
 
@@ -231,6 +232,7 @@ public class BinanceOrderGateway {
             String before = env;
             env = newEnv.trim().toLowerCase();
             if (!env.equalsIgnoreCase(before)) useEnv(env);   // 網址 + 該環境 .env 的金鑰一起換（頁面貼的新金鑰在下面覆蓋）
+            publishEnv();
             syncClock();
         }
         if (newDryRun != null) {
@@ -279,6 +281,8 @@ public class BinanceOrderGateway {
         }
     }
     public boolean isDemo() { return "demo".equalsIgnoreCase(env); }
+    /** 讓風控等服務知道目前環境（正式網的示意餘額不可放行）。 */
+    private void publishEnv() { try { redis.opsForValue().set("trading:env", env); } catch (Exception ignore) {} }
 
     /** 合約交易總開關（Redis trading:futures-enabled；沒設過 = 開，維持舊行為）。 */
     static final String FUT_ENABLED_KEY = "trading:futures-enabled";
