@@ -67,6 +67,7 @@ export default {
     "trades": "約定"
   },
   "account": {
+    "invalidTitle": "口座照会に失敗：資産が無効のため、ドローダウン判定を停止し新規建てを停止（決済は可）",
     "pmTag": "統合",
     "pmGuardStop": "先物の新規建て停止中",
     "pmGuardWarn": "証拠金警告",

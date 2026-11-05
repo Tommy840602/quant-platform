@@ -153,8 +153,8 @@ public class BinanceAccountService {
     }
 
     public Map<String, Object> balance() {
-        if (!live()) return Map.of("asset", "USDT", "free", 10000.0, "locked", 0.0,
-                "real", false, "env", env, "mainnet", false, "totalUsdt", 10000.0, "balances", List.of());
+        // 沒設金鑰：示意餘額（placeholder），風控 / 回撤一律不拿它當真
+        if (!live()) return placeholderOrError(true, "未設定 API 金鑰");
         try {
             Map<String, Double> px = prices();   // SYMBOL -> price（正式網公開行情估值）
             HttpResponse<String> resp = signedAccountGet();
@@ -167,6 +167,7 @@ public class BinanceAccountService {
 
             JsonNode acc = mapper.readTree(resp.body());
             double usdtFree = 0, usdtLocked = 0, totalUsdt = 0;
+            List<String> missing = new ArrayList<>();
             List<Map<String, Object>> assets = new ArrayList<>();
             for (JsonNode b : acc.path("balances")) {
                 double free = b.path("free").asDouble(), locked = b.path("locked").asDouble();
@@ -174,6 +175,7 @@ public class BinanceAccountService {
                 if (qty <= 0) continue;
                 String asset = b.get("asset").asText();
                 double price = STABLES.contains(asset) ? 1.0 : px.getOrDefault(asset + "USDT", 0.0);
+                if (price <= 0) missing.add(asset);   // 有持幣卻沒報價：總額會被低估
                 double value = qty * price;
                 totalUsdt += value;
                 if ("USDT".equals(asset)) { usdtFree = free; usdtLocked = locked; }
@@ -195,12 +197,17 @@ public class BinanceAccountService {
             ok.put("asset", "USDT"); ok.put("free", usdtFree); ok.put("locked", usdtLocked);
             ok.put("real", true); ok.put("env", env); ok.put("mainnet", "mainnet".equalsIgnoreCase(env));
             ok.put("totalUsdt", round(totalUsdt)); ok.put("assetCount", assets.size()); ok.put("balances", assets);
+            ok.put("source", "exchange"); ok.put("asOf", System.currentTimeMillis());
+            // 估值缺價：小額雜幣（< 1 顆的粉塵）很常見，只有缺價的幣真的有量才算資料不完整
+            List<String> material = missing.stream().filter(a -> !a.startsWith("LD")).toList();
+            ok.put("valid", !px.isEmpty());
+            if (px.isEmpty()) { ok.put("partial", true); ok.put("partialReason", "行情估值失敗（拿不到報價）"); }
+            else if (!material.isEmpty()) ok.put("unpricedAssets", material);
             return ok;
         } catch (Exception e) {
-            log.warn("查真實餘額失敗,回退示意: {}", e.getMessage());
+            log.warn("查真實餘額失敗（回 valid=false，不再回退 10000 示意資金）: {}", e.getMessage());
             if (isAuthOrIpError(e.getMessage())) alertAuth(e.getMessage());
-            return Map.of("asset", "USDT", "free", 10000.0, "locked", 0.0,
-                    "real", false, "env", env, "mainnet", false, "totalUsdt", 10000.0, "balances", List.of());
+            return placeholderOrError(false, e.getMessage());
         }
     }
 
@@ -210,6 +217,23 @@ public class BinanceAccountService {
     Map<String, Double> prices() {
         if (System.currentTimeMillis() - priceAt > 10_000 || priceCache.isEmpty()) { priceCache = allPrices(); priceAt = System.currentTimeMillis(); }
         return priceCache;
+    }
+
+    /**
+     * review #4：以前查詢失敗也回 real=false、totalUsdt=10000，回撤服務拿它跟真實峰值比 → 例如峰值 10000、
+     * 權益 63 → −99.37% 誤熔斷；風控也可能把 10000 當可承受風險。現在：
+     *  - 沒設金鑰：placeholder=true、valid=false（開發 / 測試網用；仍給 10000 示意值讓畫面有東西看）
+     *  - 查詢失敗：valid=false、totalUsdt=0、附錯誤；下游一律不更新峰值、不開倉
+     */
+    private Map<String, Object> placeholderOrError(boolean placeholder, String why) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("asset", "USDT"); m.put("free", placeholder ? 10000.0 : 0.0); m.put("locked", 0.0);
+        m.put("real", false); m.put("valid", false); m.put("placeholder", placeholder);
+        m.put("source", placeholder ? "placeholder" : "error"); m.put("error", why);
+        m.put("env", env); m.put("mainnet", "mainnet".equalsIgnoreCase(env));
+        m.put("totalUsdt", placeholder ? 10000.0 : 0.0); m.put("balances", List.of());
+        m.put("asOf", System.currentTimeMillis());
+        return m;
     }
 
     private Map<String, Double> allPrices() {

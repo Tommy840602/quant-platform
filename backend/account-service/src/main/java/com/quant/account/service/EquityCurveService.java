@@ -49,6 +49,21 @@ public class EquityCurveService {
 
     // 峰值 / 熔斷狀態持久化在 Redis（AOF），重啟不歸零；記憶體只是快取
     private volatile double peak = 0;
+    /** 峰值依「環境 + 權益來源」隔離：真實帳戶與策略權益（示意）的數字不能互比，切 env 也不能。 */
+    private volatile String sourceKey = "real";
+    private volatile String peakKey = null;
+    String peakKey() { return K_PEAK + ":" + binanceAccount.env() + ":" + sourceKey; }
+    /** 換了來源 / 環境：載入那個維度自己的峰值（沒有就從現在開始）。 */
+    private void switchPeakIfNeeded(double eq) {
+        String k = peakKey();
+        if (k.equals(peakKey)) return;
+        String v = null;
+        try { v = redis.opsForValue().get(k); } catch (Exception ignore) {}
+        peak = v == null ? eq : Double.parseDouble(v);
+        if (v == null) persist(k, String.valueOf(peak));
+        log.info("回撤峰值維度 {} → {}（peak={}）", peakKey, k, peak);
+        peakKey = k; warned = false;
+    }
     private volatile double lastEquity = 0;
     private volatile double lastDrawdown = 0;
     private volatile boolean tripped = false;
@@ -86,7 +101,13 @@ public class EquityCurveService {
         if (preferRealEquity) {
             try {
                 Map<String, Object> bal = wallet.balance();
+                // review #4：有金鑰卻查詢失敗（valid=false、不是 placeholder）→ 這次快照無效，不能退回策略權益跟真實峰值比
+                if (Boolean.FALSE.equals(bal.get("valid")) && !Boolean.TRUE.equals(bal.get("placeholder"))) {
+                    partial = true; equitySource = "真實帳戶（查詢失敗）"; sourceKey = "real";
+                    return 0;
+                }
                 if (Boolean.TRUE.equals(bal.get("real")) && bal.get("totalUsdt") instanceof Number n) {
+                    sourceKey = "real";
                     partial = Boolean.TRUE.equals(bal.get("partial"));
                     equitySource = bal.get("futures") != null ? "真實帳戶（現貨+合約）" : partial ? "真實帳戶（合約查詢失敗，僅現貨）" : "真實帳戶";
                     return n.doubleValue();
@@ -94,6 +115,7 @@ public class EquityCurveService {
             } catch (Exception ignore) {}
         }
         equitySource = "策略權益";
+        sourceKey = "strategy";
         double eq = cash.get("main");
         for (PositionEntity p : positions.findAll()) {
             if (p.getQuantity() == null || p.getQuantity() == 0) continue;
@@ -121,7 +143,8 @@ public class EquityCurveService {
 
             // 回撤監控（峰值持久化）
             lastEquity = pt.getEquity();
-            if (eq > peak) { peak = eq; persist(K_PEAK, String.valueOf(peak)); }
+            switchPeakIfNeeded(eq);
+            if (eq > peak) { peak = eq; persist(peakKey, String.valueOf(peak)); }
             lastDrawdown = peak > 0 ? (eq / peak - 1) : 0;
             // 預警：先於熔斷提醒（每次跌破只提醒一次，回到門檻內重置）
             if (!warned && !tripped && lastDrawdown <= -warnDrawdown && lastDrawdown > -maxDrawdown) {
@@ -169,8 +192,8 @@ public class EquityCurveService {
     public void rebaseForEnvSwitch(String newEnv) {
         double eq = computeEquity();
         boolean wasTripped = tripped;
-        peak = eq; warned = false; tripped = false;
-        persist(K_PEAK, String.valueOf(peak));
+        peakKey = peakKey(); peak = eq; warned = false; tripped = false;
+        persist(peakKey, String.valueOf(peak));
         persist(K_TRIPPED, "0");
         try { redis.delete(K_PENDING_TRIP); } catch (Exception ignore) {}
         if (wasTripped) {
@@ -183,8 +206,10 @@ public class EquityCurveService {
 
     public void resetBreaker() {
         tripped = false; warned = false;
-        peak = computeEquity();
-        persist(K_PEAK, String.valueOf(peak));
+        double eq = computeEquity();
+        if (partial) throw new IllegalStateException("帳戶權益目前無效（查詢失敗 / 不完整），先不要重置峰值");
+        peakKey = peakKey(); peak = eq;
+        persist(peakKey, String.valueOf(peak));
         persist(K_TRIPPED, "0");
         try { redis.delete(K_PENDING_TRIP); } catch (Exception ignore) {}
         try { riskClient.killSwitch(false, "manual reset"); }
