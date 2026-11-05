@@ -22,8 +22,9 @@ class RiskEngineTest {
     StringRedisTemplate redis = mock(StringRedisTemplate.class);
     @SuppressWarnings("unchecked") ValueOperations<String, String> ops = mock(ValueOperations.class);
     AccountClient account = mock(AccountClient.class);
-    Map<String, String> kv = new HashMap<>();   // 假 Redis
+    Map<String, String> kv = new java.util.concurrent.ConcurrentHashMap<>();   // 假 Redis
     RiskEngine engine;
+    RiskStore.Memory store = new RiskStore.Memory();
 
     @BeforeEach
     void setUp() {
@@ -43,7 +44,7 @@ class RiskEngineTest {
         when(limits.failClosed()).thenReturn(true);
         kv.put("price:BTCUSDT", "100");
         balance(10000, 2000);
-        engine = new RiskEngine(kill, limits, redis, account, () -> LocalDate.of(2026, 10, 31));
+        engine = new RiskEngine(kill, limits, redis, account, () -> LocalDate.of(2026, 10, 31), store);
     }
 
     private void balance(double total, double btcValue) {
@@ -61,15 +62,16 @@ class RiskEngineTest {
     @Test
     void normalBuyApprovedAndCounted() {
         assertTrue(engine.evaluate(buy(1)).approved());
-        assertEquals("1", kv.get("risk:orders:main:2026-10-31"));
-        assertEquals(100.0, Double.parseDouble(kv.get("risk:notional:main:2026-10-31")), 1e-9);
+        assertEquals(1.0, store.get("risk:orders:main:2026-10-31"), 1e-9);
+        assertEquals(100.0, store.get("risk:notional:main:2026-10-31"), 1e-9);
     }
 
     @Test
     void dailyOrderCountCap() {
-        for (int i = 0; i < 3; i++) assertTrue(engine.evaluate(intent("SELL", 1, null)).approved());
-        RiskEngine.RiskDecision d = engine.evaluate(intent("SELL", 1, null));
+        for (int i = 0; i < 3; i++) assertTrue(engine.evaluate(buy(1)).approved());
+        RiskEngine.RiskDecision d = engine.evaluate(buy(1));
         assertFalse(d.approved()); assertTrue(d.reason().contains("次數"));
+        assertTrue(engine.evaluate(intent("SELL", 1, null)).approved(), "減倉不受次數上限（停損一定要能出場）");
     }
 
     @Test
@@ -165,10 +167,74 @@ class RiskEngineTest {
     }
 
     @Test
-    void killSwitchFirst() {
+    void killSwitchBlocksOpeningsButAllowsVerifiedExits() {
         when(kill.isOn()).thenReturn(true); when(kill.reason()).thenReturn("dd");
         assertFalse(engine.evaluate(buy(1)).approved());
-        verifyNoInteractions(account);
+        Map<String, Object> shortOpen = intent("SELL", 1, null); shortOpen.put("market", "USDT_M");
+        assertFalse(engine.evaluate(shortOpen).approved(), "合約做空是開倉");
+        Map<String, Object> cover = intent("BUY", 1, null); cover.put("market", "USDT_M"); cover.put("reduceOnly", true);
+        assertTrue(engine.evaluate(cover).approved(), "熔斷中合約 reduceOnly 平倉放行");
+        // 現貨 SELL 要帳上真的有：持有 0.02 BTC
+        when(account.balance()).thenReturn(ApiResponse.ok(Map.of("totalUsdt", 10000.0, "balances",
+                List.of(Map.of("asset", "BTC", "free", 0.02, "valueUsdt", 2000.0)))));
+        assertTrue(engine.evaluate(intent("SELL", 0.02, null)).approved(), "平掉持有的現貨");
+        RiskEngine.RiskDecision d = engine.evaluate(intent("SELL", 0.5, null));
+        assertFalse(d.approved(), "超過持有量的 SELL 不是平倉"); assertTrue(d.reason().contains("只允許平倉"), d.reason());
+    }
+
+    @Test
+    void killSwitchSpotSellWithoutAccountDataIsBlocked() {
+        when(kill.isOn()).thenReturn(true);
+        when(account.balance()).thenThrow(new RuntimeException("down"));
+        assertFalse(engine.evaluate(intent("SELL", 0.01, null)).approved());
+    }
+
+    @Test
+    void concurrentBuysCannotOverrunDailyCap() throws Exception {
+        when(limits.maxDailyOrders()).thenReturn(5);
+        when(limits.maxPositionPct()).thenReturn(0.0);
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(16);
+        var ok = new java.util.concurrent.atomic.AtomicInteger();
+        var tasks = new java.util.ArrayList<java.util.concurrent.Callable<Void>>();
+        for (int i = 0; i < 40; i++) tasks.add(() -> { if (engine.evaluate(buy(0.01)).approved()) ok.incrementAndGet(); return null; });
+        pool.invokeAll(tasks); pool.shutdown();
+        assertEquals(5, ok.get(), "上限 5 筆：並發 40 筆只能過 5 筆");
+    }
+
+    @Test
+    void pendingReservationsCountTowardConcentration() {
+        // 權益 10000、持幣 2000、上限 50% → 剩 3000 額度；連續兩筆 2000 的買單（第一筆尚未成交）第二筆要擋
+        assertTrue(engine.evaluate(buy(20)).approved());
+        RiskEngine.RiskDecision d = engine.evaluate(buy(20));
+        assertFalse(d.approved(), "在途 2000 + 本單 2000 > 剩餘 3000"); assertTrue(d.reason().contains("在途"), d.reason());
+    }
+
+    @Test
+    void placeholderBalanceRejectedOnMainnetButAllowedOnTestnet() {
+        when(account.balance()).thenReturn(ApiResponse.ok(Map.of("totalUsdt", 10000.0, "real", false, "valid", false, "placeholder", true, "balances", List.of())));
+        when(limits.mainnet()).thenReturn(false);
+        assertTrue(engine.evaluate(buy(1)).approved(), "測試網沒金鑰：示意餘額可以 Dry-Run");
+        when(limits.mainnet()).thenReturn(true);
+        RiskEngine.RiskDecision d = engine.evaluate(buy(1));
+        assertFalse(d.approved(), "正式網拿示意餘額算風控 = 錯"); assertTrue(d.reason().contains("無效"), d.reason());
+    }
+
+    @Test
+    void failedBalanceQueryIsNotTreatedAsRealEquity() {
+        when(account.balance()).thenReturn(ApiResponse.ok(Map.of("totalUsdt", 0.0, "real", false, "valid", false, "placeholder", false, "balances", List.of())));
+        assertFalse(engine.evaluate(buy(1)).approved());
+    }
+
+    @Test
+    void redisStoreFailureBlocksOpeningsNotExits() {
+        RiskStore broken = new RiskStore.Memory() {
+            @Override public synchronized Result reserve(String a, String b, String c, int d, double e, double f, String g, long h, long i, String j, double k) {
+                throw new IllegalStateException("redis down");
+            }
+        };
+        RiskEngine eng = new RiskEngine(kill, limits, redis, account, () -> LocalDate.of(2026, 10, 31), broken);
+        assertFalse(eng.evaluate(buy(1)).approved());
+        assertTrue(eng.evaluate(intent("SELL", 1, null)).approved());
     }
 
     @Test

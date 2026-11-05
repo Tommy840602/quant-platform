@@ -32,6 +32,8 @@
       </el-descriptions>
     </el-card>
 
+    <el-alert v-if="balance && balance.valid === false && !balance.placeholder" type="error" :closable="false" show-icon style="margin-top:16px"
+              :title="t('account.invalidTitle')" :description="balance.error" />
     <el-alert v-if="balance?.partial" type="warning" :closable="false" show-icon style="margin-top:16px"
               :title="t('account.futPartial')" :description="balance.futuresError" />
     <el-card v-if="balance?.futures" style="margin-top:16px">

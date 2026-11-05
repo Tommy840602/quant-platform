@@ -67,6 +67,7 @@ export default {
     "trades": "成交"
   },
   "account": {
+    "invalidTitle": "账户查询失败：当前权益无效，回撤判断暂停、停止开仓（平仓照常）",
     "posDims": "市场 / 模式",
     "pmTag": "统一",
     "pmGuardStop": "已停止合约开仓",
