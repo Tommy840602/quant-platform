@@ -88,7 +88,6 @@ public class BotRiskManager implements StrategyContextImpl.BuyRouter {
         Thread t = new Thread(r, "bot-risk"); t.setDaemon(true); return t;
     });
 
-    @org.springframework.beans.factory.annotation.Autowired
     /** 最新資金費率（account-service FundingService 每分鐘寫入 Redis funding:SYMBOL）。 */
     private org.springframework.data.redis.core.StringRedisTemplate redis;
     @org.springframework.beans.factory.annotation.Autowired(required = false)
@@ -99,6 +98,7 @@ public class BotRiskManager implements StrategyContextImpl.BuyRouter {
         catch (Exception e) { return null; }
     }
 
+    @org.springframework.beans.factory.annotation.Autowired
     public BotRiskManager(StrategyPositionBook book, NotifyClient notify) {
         this(book, notify, new ConcurrentHashMap<>());
     }

@@ -114,7 +114,7 @@ class BotRiskManagerTest {
     /** Spring 只認一個建構子：多個時必須有 @Autowired，否則開機失敗（No default constructor found）。 */
     @Test
     void springConstructorIsUnambiguous() {
-        var ctors = BotRiskManager.class.getConstructors();
+        var ctors = BotRiskManager.class.getDeclaredConstructors();   // Spring 看的是「所有」建構子，不只 public
         long autowired = java.util.Arrays.stream(BotRiskManager.class.getDeclaredConstructors())
                 .filter(c -> c.isAnnotationPresent(org.springframework.beans.factory.annotation.Autowired.class)).count();
         assertTrue(ctors.length == 1 || autowired == 1);
