@@ -38,7 +38,7 @@ x-backend-env: &backend-env
   ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
   BINANCE_ENV: ${BINANCE_ENV:-testnet}
   BINANCE_REST: ${BINANCE_REST:-https://testnet.binance.vision}
-  MARKET_REST: ${MARKET_REST:-https://api.binance.com}
+  MARKET_REST: ${MARKET_REST:-https://data-api.binance.vision}
   BINANCE_API_KEY: ${BINANCE_API_KEY:-}
   BINANCE_API_SECRET: ${BINANCE_API_SECRET:-}
   BINANCE_MAINNET_REST: ${BINANCE_MAINNET_REST:-https://api.binance.com}
