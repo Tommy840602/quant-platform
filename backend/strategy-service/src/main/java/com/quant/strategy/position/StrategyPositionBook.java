@@ -89,8 +89,13 @@ public class StrategyPositionBook {
         pending.computeIfAbsent(strategyId, k -> ConcurrentHashMap.newKeySet()).add(symbol);
     }
 
-    /** OMS 同步拒絕（code!=0）或呼叫失敗：什麼都沒發生。 */
-    public void onSubmitFailed(String clientOrderId) { inflight.remove(clientOrderId); }
+    /** OMS 同步拒絕（code!=0）或確認 OMS 沒收到：什麼都沒發生 → 解除在途（同標的沒有其他在途單才清 pending）。 */
+    public void onSubmitFailed(String clientOrderId) {
+        String[] k = inflight.remove(clientOrderId);
+        if (k == null) return;
+        boolean other = inflight.values().stream().anyMatch(v -> v[0].equals(k[0]) && v[1].equals(k[1]));
+        if (!other) { Set<String> p = pending.get(k[0]); if (p != null) p.remove(k[1]); }
+    }
 
     /** @return true 若事件屬於本實例已知的單（否則呼叫端可考慮觸發對帳） */
     public boolean onEvent(OrderEvent e) {
