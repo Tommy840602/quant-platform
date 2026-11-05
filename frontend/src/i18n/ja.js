@@ -253,6 +253,10 @@ export default {
     "s55": "発注 code={code} · {msg}"
   },
   "login": {
+    "keyOneTitle": "1 つのキーで現物＋先物",
+    "keyOneBody": "先物取引には Binance の「統合口座（ポートフォリオマージン）」が必要で、先物注文は papi.binance.com を使います。このキーで「現物・マージン取引」と「先物」を有効にし、IP 制限を設定してください。出金は有効にしないでください。",
+    "keyOneTest": "テストネットには統合口座がありません：先物は .env の BINANCE_FUTURES_API_KEY（testnet.binancefuture.com で別途発行）を使用。",
+    "futShortSt": "先物",
     "pmLabel": "先物口座タイプ",
     "pmOff": "通常の先物口座",
     "pmOn": "ポートフォリオマージン",

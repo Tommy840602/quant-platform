@@ -49,7 +49,8 @@ x-backend-env: &backend-env
   BINANCE_MAINNET_FUTURES_WS: ${BINANCE_MAINNET_FUTURES_WS:-wss://fstream.binance.com}
   BINANCE_MAINNET_FUTURES_API_KEY: ${BINANCE_MAINNET_FUTURES_API_KEY:-}
   BINANCE_MAINNET_FUTURES_API_SECRET: ${BINANCE_MAINNET_FUTURES_API_SECRET:-}
-  BINANCE_FUTURES_PM: ${BINANCE_FUTURES_PM:-false}
+  # 正式網合約走統一帳戶（Portfolio Margin），跟現貨同一把金鑰；要用一般合約帳戶才設 false
+  BINANCE_FUTURES_PM: ${BINANCE_FUTURES_PM:-true}
   TRADING_DRY_RUN: ${TRADING_DRY_RUN:-true}
   SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
   # ---- User Data Stream（即時成交回報）。以前 compose 沒傳 Ed25519 變數，UDS_ENABLED=true 也靜默不啟動 ----

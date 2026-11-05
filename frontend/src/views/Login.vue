@@ -18,30 +18,10 @@
         <el-form-item label="API Secret">
           <el-input v-model="cfg.apiSecret" type="password" :placeholder="t('login.s2')" show-password clearable />
         </el-form-item>
-
-        <el-divider content-position="left">{{ t('login.futTitle') }}</el-divider>
-        <el-form-item>
-          <el-checkbox v-model="cfg.futuresEnabled">{{ t('login.futEnable') }}</el-checkbox>
-          <el-tag v-if="status?.ord" :type="status.ord.futuresKeySet ? 'success' : 'info'" size="small" style="margin-left:8px">
-            {{ status.ord.futuresKeySet ? t('login.futKeyOk') : t('login.futKeyNone') }}</el-tag>
-        </el-form-item>
-        <template v-if="cfg.futuresEnabled">
-          <el-form-item v-if="cfg.env === 'mainnet'" :label="t('login.pmLabel')">
-            <el-radio-group v-model="cfg.futuresPm">
-              <el-radio-button :value="false">{{ t('login.pmOff') }}</el-radio-button>
-              <el-radio-button :value="true">{{ t('login.pmOn') }}</el-radio-button>
-            </el-radio-group>
-            <div class="hint" style="margin-top:4px">{{ cfg.futuresPm ? t('login.pmHintOn') : t('login.pmHintOff') }}</div>
-          </el-form-item>
-          <el-form-item :label="t('login.futKey')">
-            <el-input v-model="cfg.futuresApiKey" :placeholder="t('login.futKeyPh')" clearable />
-          </el-form-item>
-          <el-form-item :label="t('login.futSecret')">
-            <el-input v-model="cfg.futuresApiSecret" type="password" :placeholder="t('login.futKeyPh')" show-password clearable />
-          </el-form-item>
-          <div class="hint" style="margin:-8px 0 12px">{{ cfg.env === 'mainnet' ? t('login.futHintMain') : t('login.futHintTest') }}</div>
-        </template>
-        <div v-else class="hint" style="margin:-8px 0 12px">{{ t('login.futOffHint') }}</div>
+        <el-alert type="info" :closable="false" show-icon style="margin:-6px 0 14px" :title="t('login.keyOneTitle')">
+          <div style="line-height:1.6">{{ t('login.keyOneBody') }}</div>
+          <div v-if="cfg.env === 'testnet'" style="line-height:1.6;margin-top:4px">{{ t('login.keyOneTest') }}</div>
+        </el-alert>
 
         <el-form-item :label="t('login.s3')">
           <el-switch v-model="cfg.dryRun" :active-text="t('login.s4')" :inactive-text="t('login.s5')" inline-prompt
@@ -63,7 +43,7 @@
       </el-form>
 
       <div v-if="status" class="status">
-        {{ t('login.s19') }}<b>{{ status.acc?.env }}</b> keySet={{ status.acc?.keySet }} futures={{ status.ord?.futuresEnabled ? (status.ord?.futuresKeySet ? 'on' : 'on/no-key') : 'off' }} {{ t('login.s20') }}<b>{{ status.ord?.env }}</b> dryRun={{ status.ord?.dryRun }}
+        {{ t('login.s19') }}<b>{{ status.acc?.env }}</b> keySet={{ status.acc?.keySet }} {{ t('login.futShortSt') }}={{ status.ord?.futuresPm ? t('login.pmOn') : (status.ord?.futuresKeySet ? 'fapi' : '—') }} {{ t('login.s20') }}<b>{{ status.ord?.env }}</b> dryRun={{ status.ord?.dryRun }}
         <span v-if="status.ord?.mainnet">{{ t('login.s21') }} {{ status.ord?.armed ? t('login.s31') + Math.floor((status.ord.armRemainingSec || 0) / 60) + t('login.s32') : t('login.s33') }}</span>
       </div>
       <p class="hint">{{ t('login.s22') }}</p>
@@ -87,7 +67,6 @@ const status = ref(null)
 const cfg = reactive({
   env: localStorage.getItem('qp-env') || 'testnet',
   apiKey: '', apiSecret: '',
-  futuresEnabled: true, futuresPm: false, futuresApiKey: '', futuresApiSecret: '',
   dryRun: (localStorage.getItem('qp-dryrun') ?? 'true') === 'true'
 })
 
@@ -97,8 +76,6 @@ async function loadStatus() {
     status.value = { acc: acc.data, ord: ord.data }
     if (acc.data?.env) cfg.env = acc.data.env
     if (typeof ord.data?.dryRun === 'boolean') cfg.dryRun = ord.data.dryRun
-    if (typeof ord.data?.futuresEnabled === 'boolean') cfg.futuresEnabled = ord.data.futuresEnabled
-    if (typeof ord.data?.futuresPm === 'boolean') cfg.futuresPm = ord.data.futuresPm
   } catch { status.value = null }
 }
 
@@ -116,10 +93,12 @@ async function apply() {
   }
   loading.value = true
   try {
+    // 一把金鑰：正式網現貨 + 合約（統一帳戶）共用
+    const main = cfg.env === 'mainnet'
     const body = { env: cfg.env, apiKey: cfg.apiKey, apiSecret: cfg.apiSecret,
-      futuresApiKey: cfg.futuresEnabled ? cfg.futuresApiKey : '', futuresApiSecret: cfg.futuresEnabled ? cfg.futuresApiSecret : '' }
+      futuresApiKey: main ? cfg.apiKey : '', futuresApiSecret: main ? cfg.apiSecret : '' }
     await accountApi.setConfig(body)
-    await tradeStore.save({ ...body, dryRun: cfg.dryRun, futuresEnabled: cfg.futuresEnabled, futuresPm: cfg.env === 'mainnet' && cfg.futuresPm })   // 寫進共用 store，右上角 / 帳戶頁立即同步
+    await tradeStore.save({ ...body, dryRun: cfg.dryRun, ...(main ? { futuresPm: true } : {}) })   // 寫進共用 store，右上角 / 帳戶頁立即同步
     localStorage.setItem('qp-env', cfg.env)
     localStorage.setItem('qp-dryrun', String(cfg.dryRun))
     ElMessage.success(t('login.s29'))
@@ -139,5 +118,4 @@ onMounted(loadStatus)
 .sub { text-align: center; color: var(--el-text-color-secondary); margin: 0 0 20px; font-size: 13px; }
 .status { font-size: 12px; color: var(--el-text-color-regular); margin-top: 12px; padding: 8px; background: var(--el-fill-color-light); border-radius: 4px; }
 .hint { color: var(--el-text-color-placeholder); font-size: 11px; margin-top: 12px; }
-.login-card :deep(.el-divider__text) { background: var(--el-bg-color-overlay); }
 </style>

@@ -102,7 +102,7 @@ public class BinanceOrderGateway {
     private String envFutKey = "", envFutSecret = "";
     /** 統一帳戶（Portfolio Margin）：合約單改走 papi（只有正式網有）。開關存 Redis trading:futures-pm，預設看 BINANCE_FUTURES_PM。 */
     @Value("${binance.mainnet-pm-rest-url:https://papi.binance.com}") private String papiUrl;
-    @Value("${binance.futures-pm:false}") private boolean pmDefault;
+    @Value("${binance.futures-pm:true}") private boolean pmDefault;
     static final String FUT_PM_KEY = "trading:futures-pm";   // .env 的測試網合約金鑰（切回 testnet 用）
     @Value("${binance.recv-window:5000}") private long recvWindow;
     // 環境切換：testnet(預設,安全) / mainnet(真錢)
@@ -159,8 +159,9 @@ public class BinanceOrderGateway {
             spotUrl = spotMainnetUrl;  futUrl = futMainnetUrl;  futWsUrl = futMainnetWsUrl;
             if (!spotMainnetKey.isBlank())    spotKey = spotMainnetKey;
             if (!spotMainnetSecret.isBlank()) spotSecret = spotMainnetSecret;
-            if (!futMainnetKey.isBlank())     futKey = futMainnetKey;
-            if (!futMainnetSecret.isBlank())  futSecret = futMainnetSecret;
+            // 正式網合約 = 統一帳戶，跟現貨同一把金鑰；只有另外設了 MAINNET_FUTURES 金鑰才分開
+            futKey = !futMainnetKey.isBlank() ? futMainnetKey : spotKey;
+            futSecret = !futMainnetSecret.isBlank() ? futMainnetSecret : spotSecret;
             log.warn("⚠️ BINANCE_ENV=mainnet ｜【正式網真錢下單】spot={} fut={} ｜ dry-run={} ｜ 唯有 dry-run=false 才會真送單",
                     spotUrl, futUrl, dryRun);
             if (!dryRun) {
@@ -235,6 +236,10 @@ public class BinanceOrderGateway {
         if (newSecret != null && !newSecret.isBlank()) { spotSecret = newSecret.trim(); }
         if (newFutKey != null && !newFutKey.isBlank())       { futKey = newFutKey.trim(); }
         if (newFutSecret != null && !newFutSecret.isBlank()) { futSecret = newFutSecret.trim(); }
+        // 正式網：沒有另外指定合約金鑰 → 合約（統一帳戶）沿用現貨那把
+        if (isMainnet() && (newFutKey == null || newFutKey.isBlank()) && (futMainnetKey == null || futMainnetKey.isBlank())) {
+            futKey = spotKey; futSecret = spotSecret;
+        }
         if (futuresEnabled != null) {
             try { redis.opsForValue().set(FUT_ENABLED_KEY, futuresEnabled ? "1" : "0"); }
             catch (Exception e) { log.warn("寫入合約開關失敗: {}", e.getMessage()); }

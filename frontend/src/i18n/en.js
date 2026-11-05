@@ -253,6 +253,10 @@ export default {
     "s55": "Order code={code} · {msg}"
   },
   "login": {
+    "keyOneTitle": "One key for spot + futures",
+    "keyOneBody": "Futures trading requires a Binance Portfolio Margin (unified) account; futures orders go through papi.binance.com. Enable Spot & Margin Trading + Futures on this key and set an IP whitelist; never enable withdrawals.",
+    "keyOneTest": "Testnet has no Portfolio Margin: futures use BINANCE_FUTURES_API_KEY from .env (issued separately at testnet.binancefuture.com).",
+    "futShortSt": "futures",
     "pmLabel": "Futures account type",
     "pmOff": "Standard futures",
     "pmOn": "Portfolio Margin",

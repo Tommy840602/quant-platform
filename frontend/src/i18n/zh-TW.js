@@ -253,6 +253,10 @@ export default {
     "s55": "下單 code={code} · {msg}"
   },
   "login": {
+    "keyOneTitle": "一把金鑰：現貨 + 合約共用",
+    "keyOneBody": "合約交易需要在幣安開通「統一帳戶」（Portfolio Margin），合約單走統一帳戶（papi.binance.com）。這把金鑰要勾「允許現貨及槓桿交易」＋「允許合約」，並設定 IP 白名單；「允許提現」不要勾。",
+    "keyOneTest": "測試網沒有統一帳戶：合約只能用 .env 的 BINANCE_FUTURES_API_KEY（testnet.binancefuture.com 另外申請）。",
+    "futShortSt": "合約",
     "pmLabel": "合約帳戶類型",
     "pmOff": "一般合約帳戶",
     "pmOn": "統一帳戶",
