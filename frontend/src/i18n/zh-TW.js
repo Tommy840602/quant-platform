@@ -66,6 +66,7 @@ export default {
     "trades": "成交"
   },
   "account": {
+    "pmTag": "統一",
     "pmGuardStop": "已停止合約開倉",
     "pmGuardWarn": "保證金預警",
     "pmTitle": "統一帳戶（Portfolio Margin）",
@@ -260,7 +261,7 @@ export default {
     "ipCopied": "已複製，貼到幣安 API 的 IP 白名單",
     "ipHint": "幣安 API 管理 → 編輯 → IP 存取限制 要填這個；IP 一變平台會發 Slack 通知",
     "keyOneTitle": "一把金鑰：現貨 + 合約共用",
-    "keyOneBody": "合約交易需要在幣安開通「統一帳戶」（Portfolio Margin），合約單走統一帳戶（papi.binance.com）。這把金鑰要勾「允許現貨及槓桿交易」＋「允許合約」，並設定 IP 白名單；「允許提現」不要勾。",
+    "keyOneBody": "合約交易需要在幣安開通「統一帳戶」（Portfolio Margin），合約單走統一帳戶（papi.binance.com）。這把金鑰要勾「允許現貨及槓桿交易」＋「允許合約」，並設定 IP 白名單；「允許提現」不要勾。（現貨單也走統一帳戶，資金集中在一處）",
     "keyOneTest": "測試網沒有統一帳戶：合約只能用 .env 的 BINANCE_FUTURES_API_KEY（testnet.binancefuture.com 另外申請）。",
     "futShortSt": "合約",
     "pmLabel": "合約帳戶類型",

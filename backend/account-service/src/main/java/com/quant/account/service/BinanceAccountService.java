@@ -25,6 +25,7 @@ import java.util.*;
 public class BinanceAccountService {
 
     private static final Logger log = LoggerFactory.getLogger(BinanceAccountService.class);
+    static final Set<String> STABLE_SET = Set.of("USDT", "USDC", "TUSD", "FDUSD", "BUSD", "DAI", "USD", "USDP", "FRAX");
     private static final Set<String> STABLES = Set.of("USDT", "USDC", "TUSD", "FDUSD", "BUSD", "DAI", "USD", "USDP", "FRAX");
     private final ObjectMapper mapper = new ObjectMapper();
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
@@ -137,7 +138,7 @@ public class BinanceAccountService {
         if (!live()) return Map.of("asset", "USDT", "free", 10000.0, "locked", 0.0,
                 "real", false, "env", env, "mainnet", false, "totalUsdt", 10000.0, "balances", List.of());
         try {
-            Map<String, Double> px = allPrices();   // SYMBOL -> price（正式網公開行情估值）
+            Map<String, Double> px = prices();   // SYMBOL -> price（正式網公開行情估值）
             HttpResponse<String> resp = signedAccountGet();
             if (resp.statusCode() != 200 && com.quant.common.binance.BinanceClock.isTimestampError(0, resp.body())) {
                 // -1021：重新對時後再試一次
@@ -183,6 +184,14 @@ public class BinanceAccountService {
             return Map.of("asset", "USDT", "free", 10000.0, "locked", 0.0,
                     "real", false, "env", env, "mainnet", false, "totalUsdt", 10000.0, "balances", List.of());
         }
+    }
+
+    private volatile Map<String, Double> priceCache = Map.of();
+    private volatile long priceAt = 0;
+    /** SYMBOL -> 價格（10 秒快取）；統一帳戶持幣估值也用它。 */
+    Map<String, Double> prices() {
+        if (System.currentTimeMillis() - priceAt > 10_000 || priceCache.isEmpty()) { priceCache = allPrices(); priceAt = System.currentTimeMillis(); }
+        return priceCache;
     }
 
     private Map<String, Double> allPrices() {

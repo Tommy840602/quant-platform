@@ -145,4 +145,22 @@ class FuturesAccountServiceTest {
         when(spot.env()).thenReturn("mainnet");
         assertTrue(fut.pm());
     }
+
+    @Test
+    void pmHoldingsMergedIntoBalancesWithoutDoubleCounting() throws Exception {
+        String body = """
+            {"pmAccount":{"uniMMR":"9","actualEquity":"1500","accountStatus":"NORMAL"},"pmUm":{"positions":[]},
+             "pmBalance":[{"asset":"USDT","crossMarginAsset":"1000","crossMarginFree":"1000","crossMarginLocked":"0"},
+                          {"asset":"BTC","crossMarginAsset":"0.005","crossMarginFree":"0.005","crossMarginLocked":"0"},
+                          {"asset":"DOGE","crossMarginAsset":"0","crossMarginFree":"0","crossMarginLocked":"0"}]}""";
+        var s = FuturesAccountService.parse(body, 0);
+        assertEquals(2, s.pmAssets().size(), "0 的不列");
+        var rows = WalletService.withPmAssets(List.of(Map.of("asset", "ETH", "free", 0.1, "locked", 0.0, "valueUsdt", 300.0)),
+                s.pmAssets(), Map.of("BTCUSDT", 100000.0), 1800);
+        assertEquals(3, rows.size());
+        assertEquals("USDT", rows.get(0).get("asset")); assertEquals("PM", rows.get(0).get("wallet"));
+        assertEquals(500.0, (double) rows.get(1).get("valueUsdt"), 1e-9);
+        assertEquals("SPOT", rows.get(2).get("wallet"));
+        assertEquals(27.78, (double) rows.get(1).get("weight"), 0.01, "500 / 1800");
+    }
 }
