@@ -58,7 +58,7 @@
 
     <el-card :header="t('dashboard.s11')" style="margin-top:16px">
       <el-table :data="orders" size="small" max-height="240">
-        <el-table-column prop="clientOrderId" label="ClientOrderId" width="200" />
+        <el-table-column prop="clientOrderId" label="ClientOrderId" width="200" show-overflow-tooltip />
         <el-table-column :label="t('dashboard.s8')">
         <template #default="{ row }">
           <span style="display:inline-flex;align-items:center;gap:6px"><coin-icon v-if="row.symbol && row.symbol !== 'ALL'" :symbol="row.symbol" :size="16" />{{ row.symbol }}</span>
@@ -67,7 +67,10 @@
         <el-table-column prop="side" :label="t('dashboard.s12')" width="70" />
         <el-table-column prop="type" :label="t('dashboard.s13')" width="90" />
         <el-table-column prop="quantity" :label="t('dashboard.s14')" width="90" />
-        <el-table-column prop="status" :label="t('dashboard.s3')" width="130" />
+        <el-table-column prop="status" :label="t('dashboard.s3')" width="110" />
+        <el-table-column :label="t('orders.reason')" min-width="240" show-overflow-tooltip>
+          <template #default="{ row }"><span v-if="row.reason" :style="{ color: row.status === 'REJECTED' ? '#f56c6c' : '#e6a23c' }">{{ row.reason }}</span></template>
+        </el-table-column>
       </el-table>
     </el-card>
 
