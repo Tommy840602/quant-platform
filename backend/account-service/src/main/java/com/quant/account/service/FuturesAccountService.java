@@ -89,9 +89,9 @@ public class FuturesAccountService {
     private boolean mainnet() { return "mainnet".equalsIgnoreCase(spot.env()); }
     private String url()    { return mainnet() ? mainUrl : testUrl; }
     private String key()    { String[] u = uiKeys.get(spot.env()); if (u != null && !u[0].isBlank()) return u[0];
-                              String k = mainnet() && mainKey != null && !mainKey.isBlank() ? mainKey : testKey;       return k == null ? "" : k.trim(); }
+                              String k = mainnet() ? (mainKey != null && !mainKey.isBlank() ? mainKey : spot.currentKey()) : testKey;       return k == null ? "" : k.trim(); }
     private String secret() { String[] u = uiKeys.get(spot.env()); if (u != null && !u[1].isBlank()) return u[1];
-                              String k = mainnet() && mainSecret != null && !mainSecret.isBlank() ? mainSecret : testSecret; return k == null ? "" : k.trim(); }
+                              String k = mainnet() ? (mainSecret != null && !mainSecret.isBlank() ? mainSecret : spot.currentSecret()) : testSecret; return k == null ? "" : k.trim(); }
 
     /**
      * 取快照：10 秒內重用；失敗時沿用 10 分鐘內的舊值（stale=true）。
@@ -216,7 +216,7 @@ public class FuturesAccountService {
 
     /** 統一帳戶模式（只有正式網）：Redis trading:futures-pm（連線設定頁）> BINANCE_FUTURES_PM。 */
     @Value("${binance.mainnet-pm-rest-url:https://papi.binance.com}") String papiUrl;
-    @Value("${binance.futures-pm:false}") boolean pmDefault;
+    @Value("${binance.futures-pm:true}") boolean pmDefault;
     public boolean pm() {
         if (!mainnet()) return false;
         try { String v = redis == null ? null : redis.opsForValue().get("trading:futures-pm"); return v == null ? pmDefault : "1".equals(v); }

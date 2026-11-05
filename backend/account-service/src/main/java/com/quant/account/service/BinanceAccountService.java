@@ -114,6 +114,9 @@ public class BinanceAccountService {
 
     public boolean live() { return !apiKey.isBlank() && !apiSecret.isBlank(); }
     public String env() { return env; }
+    /** 目前生效的金鑰（給合約 / 統一帳戶共用：正式網一把金鑰走到底）。 */
+    String currentKey() { return apiKey == null ? "" : apiKey; }
+    String currentSecret() { return apiSecret == null ? "" : apiSecret; }
 
     private HttpResponse<String> signedAccountGet() throws Exception {
         String query = "recvWindow=5000&timestamp=" + clock.now(restUrl);

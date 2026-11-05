@@ -253,6 +253,10 @@ export default {
     "s55": "下单 code={code} · {msg}"
   },
   "login": {
+    "keyOneTitle": "一把密钥：现货 + 合约共用",
+    "keyOneBody": "合约交易需要在币安开通「统一账户」（Portfolio Margin），合约单走统一账户（papi.binance.com）。这把密钥要勾「允许现货及杠杆交易」＋「允许合约」，并设置 IP 白名单；「允许提现」不要勾。",
+    "keyOneTest": "测试网没有统一账户：合约只能用 .env 的 BINANCE_FUTURES_API_KEY（testnet.binancefuture.com 另外申请）。",
+    "futShortSt": "合约",
     "pmLabel": "合约账户类型",
     "pmOff": "普通合约账户",
     "pmOn": "统一账户",
