@@ -428,6 +428,7 @@ export default {
     "s9": "登入失敗"
   },
   "strategy": {
+    "startRejected": "無法上線",
     "s1": "名稱",
     "s2": "標的",
     "s3": "部位",

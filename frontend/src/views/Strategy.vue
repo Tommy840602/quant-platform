@@ -296,7 +296,7 @@ const sizingWarn = computed(() => {
   }
   return null
 })
-async function resume(id) { await strategyApi.resume(id); ElMessage.success(t('botRisk.resumed')); load() }
+async function resume(id) { const r = await strategyApi.resume(id); load(); if (r?.code && r.code !== 0) return ElMessage.error(r.message); ElMessage.success(t('botRisk.resumed')) }
 async function start(id) {
   await loadNotional()
   const bot = list.value.find(b => b.id === id)
@@ -308,7 +308,13 @@ async function start(id) {
       router.push('/risk'); return
     } catch (e) { if (e === 'close') return }
   }
-  await strategyApi.start(id); ElMessage.success(t('strategy.s29')); load()
+  const r = await strategyApi.start(id)
+  load()
+  // 後端拒絕時 HTTP 仍是 200，錯誤在 body.code（例如曝險超過權益）→ 必須顯示原因，不能報「已上線」
+  if (r?.code && r.code !== 0) {
+    return ElMessageBox.alert(String(r.message || '').replace(/^rejected:\s*/, ''), t('strategy.startRejected'), { type: 'error' })
+  }
+  ElMessage.success(t('strategy.s29'))
 }
 async function stop(id, flatten) {
   if (flatten) {

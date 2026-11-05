@@ -428,6 +428,7 @@ export default {
     "s9": "登录失败"
   },
   "strategy": {
+    "startRejected": "无法上线",
     "s1": "名称",
     "s2": "标的",
     "s3": "仓位",

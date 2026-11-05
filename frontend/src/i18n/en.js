@@ -428,6 +428,7 @@ export default {
     "s9": "Sign-in failed"
   },
   "strategy": {
+    "startRejected": "Start rejected",
     "s1": "Name",
     "s2": "Symbol",
     "s3": "Position",
