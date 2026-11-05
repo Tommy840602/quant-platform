@@ -86,7 +86,8 @@
           <el-table :data="assets" size="small" max-height="360">
             <el-table-column :label="t('account.s8')" width="120">
               <template #default="{ row }">
-                <span style="display:inline-flex;align-items:center;gap:6px"><coin-icon :symbol="row.asset" :size="18" />{{ row.asset }}</span>
+                <span style="display:inline-flex;align-items:center;gap:6px"><coin-icon :symbol="row.asset" :size="18" />{{ row.asset }}
+                  <el-tag v-if="row.wallet === 'PM'" size="small" type="warning" effect="plain">{{ t('account.pmTag') }}</el-tag></span>
               </template>
             </el-table-column>
             <el-table-column :label="t('account.s9')" align="right">

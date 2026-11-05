@@ -67,6 +67,7 @@ export default {
     "trades": "Fills"
   },
   "account": {
+    "pmTag": "PM",
     "pmGuardStop": "Futures openings halted",
     "pmGuardWarn": "Margin warning",
     "pmTitle": "Portfolio Margin account",
@@ -264,7 +265,7 @@ export default {
     "ipCopied": "Copied — paste into the Binance API IP whitelist",
     "ipHint": "Put this in Binance API Management → Edit → IP access restriction; Slack alerts you when it changes",
     "keyOneTitle": "One key for spot + futures",
-    "keyOneBody": "Futures trading requires a Binance Portfolio Margin (unified) account; futures orders go through papi.binance.com. Enable Spot & Margin Trading + Futures on this key and set an IP whitelist; never enable withdrawals.",
+    "keyOneBody": "Futures trading requires a Binance Portfolio Margin (unified) account; futures orders go through papi.binance.com. Enable Spot & Margin Trading + Futures on this key and set an IP whitelist; never enable withdrawals. (spot orders also go through the PM account, so funds stay in one place)",
     "keyOneTest": "Testnet has no Portfolio Margin: futures use BINANCE_FUTURES_API_KEY from .env (issued separately at testnet.binancefuture.com).",
     "futShortSt": "futures",
     "pmLabel": "Futures account type",

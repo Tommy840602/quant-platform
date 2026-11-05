@@ -54,10 +54,10 @@ public class FuturesAccountService {
     /** 合約錢包快照。positions 只含非 0 持倉。 */
     public record Snapshot(double walletBalance, double unrealizedPnl, double marginBalance, double availableBalance,
                            double grossNotional, List<Map<String, Object>> positions, long fetchedAt,
-                           String uniMMR, String pmStatus, double pmCollateralEquity) {
+                           String uniMMR, String pmStatus, double pmCollateralEquity, List<Map<String, Object>> pmAssets) {
         public Snapshot(double walletBalance, double unrealizedPnl, double marginBalance, double availableBalance,
                         double grossNotional, List<Map<String, Object>> positions, long fetchedAt) {
-            this(walletBalance, unrealizedPnl, marginBalance, availableBalance, grossNotional, positions, fetchedAt, null, null, 0);
+            this(walletBalance, unrealizedPnl, marginBalance, availableBalance, grossNotional, positions, fetchedAt, null, null, 0, List.of());
         }
         public boolean pm() { return pmStatus != null; }
     }
@@ -182,8 +182,20 @@ public class FuturesAccountService {
         double equity = acc.path("actualEquity").asDouble();
         double avail = acc.path("totalAvailableBalance").asDouble(0) > 0 ? acc.path("totalAvailableBalance").asDouble()
                 : acc.path("virtualMaxWithdrawAmount").asDouble(0);
+        // 統一帳戶裡的「現貨」持幣（槓桿帳戶資產）：給集中度風控與帳戶頁明細用；總額已含在 actualEquity，不重複加
+        List<Map<String, Object>> assets = new ArrayList<>();
+        for (JsonNode b : a.path("pmBalance")) {
+            double qty = b.path("crossMarginAsset").asDouble(0);
+            if (qty <= 0) continue;
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("asset", b.path("asset").asText());
+            m.put("free", b.path("crossMarginFree").asDouble(0));
+            m.put("locked", b.path("crossMarginLocked").asDouble(0));
+            m.put("borrowed", b.path("crossMarginBorrowed").asDouble(0));
+            assets.add(m);
+        }
         return new Snapshot(equity - upnl, upnl, equity, avail, r2(gross), pos, t,
-                acc.path("uniMMR").asText(null), acc.path("accountStatus").asText(null), acc.path("accountEquity").asDouble(0));
+                acc.path("uniMMR").asText(null), acc.path("accountStatus").asText(null), acc.path("accountEquity").asDouble(0), assets);
     }
 
     /** 給 /balance 用的摘要。 */
@@ -203,7 +215,9 @@ public class FuturesAccountService {
     String fetch() throws Exception {
         if (pm()) {
             String acc = call(papiUrl, "/papi/v1/account"), um = call(papiUrl, "/papi/v1/um/account");
-            return "{\"pmAccount\":" + acc + ",\"pmUm\":" + um + "}";
+            String bal;
+            try { bal = call(papiUrl, "/papi/v1/balance"); } catch (Exception e) { bal = "[]"; }   // 只是明細，失敗不影響權益
+            return "{\"pmAccount\":" + acc + ",\"pmUm\":" + um + ",\"pmBalance\":" + bal + "}";
         }
         return call(url(), "/fapi/v2/account");
     }

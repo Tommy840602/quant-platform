@@ -54,6 +54,7 @@ x-backend-env: &backend-env
   # 幣安模擬交易（BINANCE_ENV=demo）：到 demo.binance.com 建立的 API 金鑰
   BINANCE_DEMO_API_KEY: ${BINANCE_DEMO_API_KEY:-}
   BINANCE_DEMO_API_SECRET: ${BINANCE_DEMO_API_SECRET:-}
+  BINANCE_SPOT_VIA_PM: ${BINANCE_SPOT_VIA_PM:-true}
   PM_MMR_WARN: ${PM_MMR_WARN:-1.5}
   PM_MMR_STOP: ${PM_MMR_STOP:-1.2}
   TRADING_DRY_RUN: ${TRADING_DRY_RUN:-true}
