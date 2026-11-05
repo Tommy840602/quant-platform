@@ -68,6 +68,10 @@ public class OrderEntity {
     public String getReason() { return reason; }
     public void setReason(String v) { this.reason = v; }
     public String getEnv() { return env; }
+    /** LIVE（真的送交易所）| DRY（Dry-Run 模擬）。 */
+    @jakarta.persistence.Column(name = "execution_mode") private String executionMode;
+    public String getExecutionMode() { return executionMode; }
+    public void setExecutionMode(String v) { this.executionMode = v; }
     public void setEnv(String v) { this.env = v; }
     public String getAccount() { return account; }
     public void setAccount(String v) { this.account = v; }

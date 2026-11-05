@@ -29,14 +29,20 @@ public class PositionStore {
 
     /** @return 更新後的部位；side 為 null 代表舊版事件 → 拒絕更新（寧可漏算也不可把 SELL 當 BUY）。 */
     public synchronized PositionEntity onFilled(String account, String symbol, OrderSide side, double qty, double price) {
+        return onFilled(account, "legacy", "LIVE", "SPOT", symbol, side, qty, price);
+    }
+
+    /** 部位依 (帳戶, 環境, 執行模式, 市場, 標的) 分開累計。 */
+    public synchronized PositionEntity onFilled(String account, String env, String mode, String market, String symbol,
+                                                OrderSide side, double qty, double price) {
         if (side == null) {
             log.warn("成交事件缺少 side，略過部位更新 [{}] {} qty={}", account, symbol, qty);
             return null;
         }
         String acc = account == null || account.isBlank() ? "main" : account;
-        PositionEntity p = repo.findById(new PositionId(acc, symbol)).orElseGet(() -> {
+        PositionEntity p = repo.findById(new PositionId(acc, env, mode, market, symbol)).orElseGet(() -> {
             PositionEntity e = new PositionEntity();
-            e.setAccount(acc); e.setSymbol(symbol);
+            e.setAccount(acc); e.setEnv(env); e.setExecutionMode(mode); e.setMarket(market); e.setSymbol(symbol);
             return e;
         });
         double oldQty = p.getQuantity() == null ? 0 : p.getQuantity();
@@ -75,9 +81,11 @@ public class PositionStore {
     public List<Map<String, Object>> snapshot(String account) {
         return repo.findAll().stream()
                 .filter(p -> account == null || account.equals(p.getAccount()))
+                .filter(p -> p.getQuantity() != null && Math.abs(p.getQuantity()) > EPS)
                 .map(p -> Map.<String, Object>of(
                         "account", p.getAccount(), "symbol", p.getSymbol(),
+                        "env", p.getEnv(), "market", p.getMarket(), "executionMode", p.getExecutionMode(),
                         "quantity", p.getQuantity(), "avgPrice", p.getAvgPrice(),
-                        "unrealizedPnl", p.getUnrealizedPnl())).collect(Collectors.toList());
+                        "unrealizedPnl", p.getUnrealizedPnl() == null ? 0.0 : p.getUnrealizedPnl())).collect(Collectors.toList());
     }
 }

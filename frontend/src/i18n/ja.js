@@ -67,6 +67,7 @@ export default {
     "trades": "約定"
   },
   "account": {
+    "posDims": "市場 / モード",
     "pmTag": "統合",
     "pmGuardStop": "先物の新規建て停止中",
     "pmGuardWarn": "証拠金警告",

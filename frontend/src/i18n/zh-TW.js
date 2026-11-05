@@ -67,6 +67,7 @@ export default {
     "trades": "成交"
   },
   "account": {
+    "posDims": "市場 / 模式",
     "pmTag": "統一",
     "pmGuardStop": "已停止合約開倉",
     "pmGuardWarn": "保證金預警",

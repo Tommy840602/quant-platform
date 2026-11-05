@@ -116,6 +116,13 @@
             <span style="display:inline-flex;align-items:center;gap:6px"><coin-icon v-if="row.symbol && row.symbol !== 'ALL'" :symbol="row.symbol" :size="16" />{{ row.symbol }}</span>
           </template>
         </el-table-column>
+        <el-table-column :label="t('account.posDims')" width="190">
+          <template #default="{ row }">
+            <el-tag size="small" effect="plain">{{ row.market === 'USDT_M' ? t('account.futShort') : t('account.futSpot') }}</el-tag>
+            <el-tag size="small" :type="row.executionMode === 'DRY' ? 'info' : 'danger'" effect="plain" style="margin-left:4px">{{ row.executionMode === 'DRY' ? 'Dry-Run' : 'LIVE' }}</el-tag>
+            <span class="hint">{{ row.env }}</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="quantity" :label="t('account.s9')" />
         <el-table-column prop="avgPrice" :label="t('account.s14')" />
         <el-table-column prop="unrealizedPnl" :label="t('account.s15')" />

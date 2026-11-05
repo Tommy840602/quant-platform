@@ -170,14 +170,14 @@ public class BinanceFuturesUserDataStream extends TextWebSocketHandler {
             if (pm && "executionReport".equals(type)) {   // 統一帳戶的槓桿（現貨）單
                 registry.onEvent(UdsRegistry.SPOT);
                 OrderEvent ev = toMarginEvent(e, orders);
-                if (ev != null) { kafka.send(Topics.ORDER_EVENTS, ev.symbol(), ev); log.info("UDS(統一帳戶現貨) 回報 {} {} l={} @ {}", ev.symbol(), ev.status(), ev.filledQty(), ev.avgPrice()); }
+                if (ev != null) { kafka.send(Topics.ORDER_EVENTS, ev.symbol(), OrderEvents.enrich(ev, orders)); log.info("UDS(統一帳戶現貨) 回報 {} {} l={} @ {}", ev.symbol(), ev.status(), ev.filledQty(), ev.avgPrice()); }
                 return;
             }
             if (!"ORDER_TRADE_UPDATE".equals(type)) return;
             registry.onEvent(UdsRegistry.FUTURES);
             OrderEvent ev = toEvent(e, orders);
             if (ev == null) return;
-            kafka.send(Topics.ORDER_EVENTS, ev.symbol(), ev);
+            kafka.send(Topics.ORDER_EVENTS, ev.symbol(), OrderEvents.enrich(ev, orders));
             log.info("UDS(合約) 回報 {} {} l={} @ {}", ev.symbol(), ev.status(), ev.filledQty(), ev.avgPrice());
         } catch (Exception ex) {
             log.warn("解析 ORDER_TRADE_UPDATE 失敗: {}", ex.getMessage());
