@@ -52,7 +52,10 @@ echo "positions: $p"
 status_of() { curl -s "http://localhost:8084/api/order/orders?limit=20" | python3 -c "import sys,json; d=json.load(sys.stdin)['data']; print(next((r['status'] for r in d if r['clientOrderId']=='$1'),'MISSING'))"; }
 st=$(status_of e2e-mkt-1); echo "oms status: $st"
 [ "$st" = "FILLED" ] || { echo "::error::OMS 訂單狀態不是 FILLED: $st"; exit 1; }
-echo "✅ 市價單成交並更新部位"
+fq=$(curl -s "http://localhost:8084/api/order/orders?limit=20" | python3 -c "import sys,json; d=json.load(sys.stdin)['data']; print(next((r.get('filledQty') for r in d if r['clientOrderId']=='e2e-mkt-1'),'MISSING'))")
+echo "oms filledQty: $fq"
+python3 -c "import sys; sys.exit(0 if abs(float('$fq')-0.001)<1e-12 else 1)" || { echo "::error::OMS 成交量 $fq ≠ 0.001（Dry-Run 重複入帳）"; exit 1; }
+echo "✅ 市價單成交並更新部位（OMS 成交量沒有重複）"
 echo "::endgroup::"
 
 echo "::group::2) 限價單未觸價掛著 → 觸價成交"

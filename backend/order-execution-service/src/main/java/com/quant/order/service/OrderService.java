@@ -192,12 +192,14 @@ public class OrderService {
         return side == OrderSide.BUY ? last <= limit : last >= limit;
     }
 
+    /**
+     * 模擬成交：只發一筆 FILLED 事件，成交量 / 均價 / 狀態統一由 OrderDbUpdater 入帳（以前這裡先寫 filledQty、
+     * 事件又再加一次 → 0.001 記成 0.002）。exchangeOrderId 維持 DRYRUN 標記，不再被「DRYRUN-cid」覆蓋。
+     */
     private void fillDryRun(String cid, String symbol, OrderSide side, double qty, double price, String account) {
-        updateStatus(cid, OrderStatus.FILLED, qty);
-        orders.findByClientOrderId(cid).ifPresent(e -> { e.setAvgPrice(price); orders.save(e); });
         long ts = System.currentTimeMillis();
-        kafka.send(Topics.ORDER_EVENTS, symbol, new OrderEvent(cid, DRYRUN_MARK + "-" + cid, symbol, side, OrderStatus.FILLED,
-                qty, price, ts, account, "dryfill|" + cid + "|" + qty));
+        kafka.send(Topics.ORDER_EVENTS, symbol, OrderEvents.enrich(new OrderEvent(cid, DRYRUN_MARK, symbol, side, OrderStatus.FILLED,
+                qty, price, ts, account, "dryfill|" + cid + "|" + qty), orders));
         log.info("[DRY-RUN] 成交 {} {} qty={} @ {}", symbol, side, qty, price);
     }
 
@@ -237,7 +239,7 @@ public class OrderService {
         long cutoff = System.currentTimeMillis() - OUTBOX_STALE_MS;
         int n = 0;
         for (OrderEntity o : stuck) {
-            if (DRYRUN_MARK.equals(o.getExchangeOrderId())) continue;
+            if (OrderEvents.isDry(o)) continue;
             OffsetDateTime t = o.getUpdatedAt() == null ? o.getCreatedAt() : o.getUpdatedAt();
             if (t != null && t.toInstant().toEpochMilli() > cutoff) continue;   // 可能正在送，別搶
             if (OrderStatus.CREATED.name().equals(o.getStatus())) {
@@ -313,17 +315,17 @@ public class OrderService {
                 // 掛著沒動：每 30 秒回查一次，不要每次都發 SUBMITTED 事件
             } else {
                 updateStatus(clientOrderId, mapped == OrderStatus.SUBMITTED ? OrderStatus.SUBMITTED : mapped, 0);
-                kafka.send(Topics.ORDER_EVENTS, symbol, new OrderEvent(clientOrderId, exchId, symbol, side, publishStatus,
+                kafka.send(Topics.ORDER_EVENTS, symbol, OrderEvents.enrich(new OrderEvent(clientOrderId, exchId, symbol, side, publishStatus,
                         delta, avg, System.currentTimeMillis(), account,
-                        "reconcile|" + clientOrderId + "|" + mapped + "|" + executed));
+                        "reconcile|" + clientOrderId + "|" + mapped + "|" + executed), orders));
             }
             log.info("對帳完成 {} -> {} executed={} known={} delta={} @ {}", clientOrderId, mapped, executed, known, delta, avg);
             return mapped;
         } catch (BinanceOrderGateway.ExchangeRejectedException e) {
             if (e.code == -2013) {   // Order does not exist：交易所從未收到 → 安全標 REJECTED
                 updateStatus(clientOrderId, OrderStatus.REJECTED, 0);
-                kafka.send(Topics.ORDER_EVENTS, symbol, new OrderEvent(clientOrderId, null, symbol, side, OrderStatus.REJECTED,
-                        0, 0, System.currentTimeMillis(), account, "reconcile|" + clientOrderId + "|REJECTED|0"));
+                kafka.send(Topics.ORDER_EVENTS, symbol, OrderEvents.enrich(new OrderEvent(clientOrderId, null, symbol, side, OrderStatus.REJECTED,
+                        0, 0, System.currentTimeMillis(), account, "reconcile|" + clientOrderId + "|REJECTED|0"), orders));
                 log.info("對帳：交易所無此單 {} → REJECTED", clientOrderId);
                 return OrderStatus.REJECTED;
             }
@@ -358,7 +360,7 @@ public class OrderService {
                 List.of(OrderStatus.SUBMITTED.name(), OrderStatus.PARTIALLY_FILLED.name(), OrderStatus.UNKNOWN.name()), market);
         int n = 0;
         for (OrderEntity o : open) {
-            if (DRYRUN_MARK.equals(o.getExchangeOrderId())) continue;   // 模擬單不回查交易所
+            if (OrderEvents.isDry(o)) continue;   // 模擬單不回查交易所
             OrderSide side = "SELL".equals(o.getSide()) ? OrderSide.SELL : OrderSide.BUY;
             try {
                 reconcileOne(o.getClientOrderId(), o.getSymbol(), futures, side, o.getAccount() == null ? "main" : o.getAccount());
@@ -440,10 +442,10 @@ public class OrderService {
                 OrderStatus status = "PARTIALLY_FILLED".equals(st)
                         ? OrderStatus.PARTIALLY_FILLED : OrderStatus.FILLED;
                 String exchId = n.path("orderId").asText(null);
-                kafka.send(Topics.ORDER_EVENTS, intent.symbol(), new OrderEvent(
+                kafka.send(Topics.ORDER_EVENTS, intent.symbol(), OrderEvents.enrich(new OrderEvent(
                         intent.clientOrderId(), exchId, intent.symbol(), intent.side(), status, executed, avg,
                         System.currentTimeMillis(), intent.accountOrDefault(),
-                        "resp|" + intent.clientOrderId() + "|" + executed));
+                        "resp|" + intent.clientOrderId() + "|" + executed), orders));
                 log.info("真實成交 {} {} qty={} @ {}", intent.symbol(), status, executed, avg);
             }
         } catch (Exception e) {
@@ -463,8 +465,8 @@ public class OrderService {
                     .map(o -> "SELL".equals(o.getSide()) ? OrderSide.SELL : OrderSide.BUY).orElse(null);
             String account = orders.findByClientOrderId(clientOrderId).map(OrderEntity::getAccount).orElse("main");
             long ts = System.currentTimeMillis();
-            kafka.send(Topics.ORDER_EVENTS, symbol, new OrderEvent(clientOrderId, null, symbol, side, OrderStatus.CANCELED,
-                    0, 0, ts, account, OrderEvent.eventId(clientOrderId, OrderStatus.CANCELED, 0, ts)));
+            kafka.send(Topics.ORDER_EVENTS, symbol, OrderEvents.enrich(new OrderEvent(clientOrderId, null, symbol, side, OrderStatus.CANCELED,
+                    0, 0, ts, account, OrderEvent.eventId(clientOrderId, OrderStatus.CANCELED, 0, ts)), orders));
             return ApiResponse.ok(resp);
         } catch (Exception e) { return ApiResponse.error(500, "cancel failed: " + e.getMessage()); }
     }
@@ -556,7 +558,7 @@ public class OrderService {
                     m.put("quantity", o.getQuantity()); m.put("filledQty", o.getFilledQty()); m.put("avgPrice", o.getAvgPrice());
                     m.put("status", o.getStatus());
                     m.put("strategyId", o.getStrategyId() == null ? "" : o.getStrategyId());
-                    m.put("env", (o.getEnv() == null ? "" : o.getEnv()) + (DRYRUN_MARK.equals(o.getExchangeOrderId()) ? "/dry" : "")); m.put("account", o.getAccount());
+                    m.put("env", (o.getEnv() == null ? "" : o.getEnv()) + (OrderEvents.isDry(o) ? "/dry" : "")); m.put("account", o.getAccount());
                     m.put("reason", o.getReason() == null ? "" : o.getReason());
                     m.put("createdAt", o.getCreatedAt() == null ? 0 : o.getCreatedAt().toInstant().toEpochMilli());
                     return m;
@@ -581,7 +583,7 @@ public class OrderService {
         boolean dry = gateway.isDryRun();
         Map<String, double[]> agg = new java.util.LinkedHashMap<>();   // key strategy|symbol -> [qty, open, cost]
         for (OrderEntity o : orders.findByEnvAndAccountAndStrategyIdIsNotNullOrderByIdAsc(env, account == null ? "main" : account)) {
-            if (DRYRUN_MARK.equals(o.getExchangeOrderId()) != dry) continue;   // 模擬單 / 真單分開
+            if (OrderEvents.isDry(o) != dry) continue;   // 模擬單 / 真單分開
             String key = o.getStrategyId() + "|" + o.getSymbol();
             double[] a = agg.computeIfAbsent(key, k -> new double[3]);
             OrderStatus st = safeStatus(o.getStatus());
@@ -622,7 +624,7 @@ public class OrderService {
         Map<String, java.util.Deque<double[]>> lots = new java.util.HashMap<>();   // symbol -> [qty, price]
         double realized = 0, fees = 0, buyNotional = 0; int trades = 0;
         for (OrderEntity o : orders.findByEnvAndStrategyIdAndStatusOrderByIdAsc(env, strategyId, OrderStatus.FILLED.name())) {
-            if (DRYRUN_MARK.equals(o.getExchangeOrderId()) != dry) continue;
+            if (OrderEvents.isDry(o) != dry) continue;
             OffsetDateTime t = o.getUpdatedAt() == null ? o.getCreatedAt() : o.getUpdatedAt();
             if (t != null && t.toInstant().toEpochMilli() < sinceMs) continue;
             double qty = o.getFilledQty() == null ? 0 : o.getFilledQty();
@@ -803,7 +805,8 @@ public class OrderService {
         e.setAccount(i.accountOrDefault());
         e.setMarket(i.isFutures() ? "USDT_M" : "SPOT");
         e.setEnv(gateway.currentEnv() == null ? "testnet" : gateway.currentEnv().toLowerCase());
-        if (gateway.isDryRun()) e.setExchangeOrderId(DRYRUN_MARK);   // 模擬單一落地就標記
+        if (gateway.isDryRun()) e.setExchangeOrderId(DRYRUN_MARK);   // 模擬單一落地就標記（舊欄位，相容用）
+        e.setExecutionMode(gateway.isDryRun() ? OrderEvents.DRY : OrderEvents.LIVE);
         orders.saveAndFlush(e);
     }
 
@@ -840,7 +843,7 @@ public class OrderService {
     private void publish(OrderIntent i, OrderStatus status, double filled, double avgPrice) {
         long ts = System.currentTimeMillis();
         kafka.send(Topics.ORDER_EVENTS, i.symbol(),
-                new OrderEvent(i.clientOrderId(), null, i.symbol(), i.side(), status, filled, avgPrice, ts,
-                        i.accountOrDefault(), OrderEvent.eventId(i.clientOrderId(), status, filled, ts)));
+                OrderEvents.enrich(new OrderEvent(i.clientOrderId(), null, i.symbol(), i.side(), status, filled, avgPrice, ts,
+                        i.accountOrDefault(), OrderEvent.eventId(i.clientOrderId(), status, filled, ts)), orders));
     }
 }

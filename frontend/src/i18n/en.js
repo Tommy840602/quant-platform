@@ -68,6 +68,7 @@ export default {
   },
   "account": {
     "invalidTitle": "Account query failed: equity is invalid — drawdown check paused and new positions blocked (exits still allowed)",
+    "posDims": "Market / mode",
     "pmTag": "PM",
     "pmGuardStop": "Futures openings halted",
     "pmGuardWarn": "Margin warning",

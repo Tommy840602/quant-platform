@@ -9,6 +9,9 @@ import java.time.OffsetDateTime;
 @IdClass(PositionId.class)
 public class PositionEntity {
     @Id private String account;
+    @Id private String env = "legacy";
+    @Id @Column(name = "execution_mode") private String executionMode = "LIVE";
+    @Id private String market = "SPOT";
     @Id private String symbol;
     private Double quantity = 0.0;
     @Column(name = "avg_price") private Double avgPrice = 0.0;
@@ -17,6 +20,12 @@ public class PositionEntity {
 
     public String getAccount() { return account; }
     public void setAccount(String v) { this.account = v; }
+    public String getEnv() { return env; }
+    public void setEnv(String v) { this.env = v; }
+    public String getExecutionMode() { return executionMode; }
+    public void setExecutionMode(String v) { this.executionMode = v; }
+    public String getMarket() { return market; }
+    public void setMarket(String v) { this.market = v; }
     public String getSymbol() { return symbol; }
     public void setSymbol(String v) { this.symbol = v; }
     public Double getQuantity() { return quantity; }
