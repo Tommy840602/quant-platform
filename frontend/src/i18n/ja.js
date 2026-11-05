@@ -122,6 +122,7 @@ export default {
     "s34": "評価額("
   },
   "backtest": {
+    "fundingLine": "資金調達料 {paid} USDT（{n} 回；マイナス = 受取）",
     "mkSpot": "現物（ロングのみ）",
     "mkFut": "先物（ロング/ショート）",
     "lsLine": "ロング {l} 回 {lp} USDT · ショート {s} 回 {sp} USDT",

@@ -49,14 +49,23 @@ public class BacktestEngine {
      * shortTwin ≠ null → U 本位合約、可做空：跟實盤 StrategyRunner 一樣，多跑一份同參數策略吃「價格倒數」K 線（1/p、高低互換），
      * 分身 BUY = 開空、SELL = 回補；停損 / 移動停利 / 停利用空單鏡像規則。多空互斥：反向訊號先平掉手上的倉再開新方向。
      */
-    public Result run(List<Kline> bars, Strategy strategy, Strategy shortTwin, RiskSpec spec) {
+    public Result run(List<Kline> bars, Strategy strategy, Strategy shortTwin, RiskSpec spec) { return run(bars, strategy, shortTwin, spec, null); }
+
+    /** funding ≠ null：合約回測，每個資金費結算時點（通常 8 小時）依當下部位扣 / 收資金費。 */
+    public Result run(List<Kline> bars, Strategy strategy, Strategy shortTwin, RiskSpec spec, java.util.NavigableMap<Long, Double> funding) {
         BacktestContext ctx = new BacktestContext(initialCash, fee, slippage);
+        long lastFundingApplied = bars.isEmpty() ? 0 : bars.get(0).openTime();
         List<Double> equity = new ArrayList<>();
         Guard g = spec == null ? null : new Guard(ctx, spec, initialCash);
+        if (g != null) g.funding = funding;
         Sides sides = g != null ? g : new Plain(ctx);
         StrategyContext shortView = shortTwin == null ? null : new ShortView(sides, ctx);
         for (Kline bar : bars) {
             ctx.setBarTime(bar.openTime());
+            if (funding != null && !funding.isEmpty()) {   // 這根開盤前發生的結算，用上一根收盤時的部位與價格
+                for (var f : funding.subMap(lastFundingApplied, false, bar.openTime(), true).entrySet()) ctx.applyFunding(bar.symbol(), f.getValue());
+                lastFundingApplied = bar.openTime();
+            }
             if (g != null) g.beforeBar(bar);          // 用「這根之前」的 ATR 檢查 K 線內是否觸價出場
             ctx.updatePrice(bar.symbol(), bar.close());
             if (g != null) { g.stats.add(bar.high(), bar.low(), bar.close()); g.breaker(bar); }
@@ -65,9 +74,14 @@ public class BacktestEngine {
             equity.add(ctx.equity());
         }
         long intervalMs = bars.isEmpty() ? 60_000 : safeInterval(bars.get(0).interval());
+        Map<String, Object> risk = new LinkedHashMap<>(g == null ? Map.of("applied", false) : g.report());
+        if (funding != null) {
+            risk.put("fundingPaid", Math.round(ctx.fundingPaid() * 100) / 100.0);
+            risk.put("fundingEvents", ctx.fundingEvents());
+            risk.put("fundingRates", funding.size());
+        }
         return new Result(equity, metrics(equity, intervalMs), ctx.trades(), ctx.avgFillPrice(), ctx.tradeLog(),
-                bars.isEmpty() ? 0 : bars.get(0).openTime(), bars.isEmpty() ? 0 : bars.get(bars.size() - 1).openTime(),
-                g == null ? Map.of("applied", false) : g.report());
+                bars.isEmpty() ? 0 : bars.get(0).openTime(), bars.isEmpty() ? 0 : bars.get(bars.size() - 1).openTime(), risk);
     }
 
     /** 與實盤 StrategyRunner.invert 相同。 */
@@ -115,6 +129,8 @@ public class BacktestEngine {
         final double lossScale;
         double peak = 0, trough = 0; long cooldownUntil = -1;
         int longTrips = 0, shortTrips = 0; double longPnl = 0, shortPnl = 0;
+        java.util.NavigableMap<Long, Double> funding;   // 合約回測：開倉時看當下最新的資金費率（與實盤 BotRiskManager 同規則）
+        long barTime;
         boolean paused = false; String pausedReason = null; long pausedAt = 0;
         int consec = 0, trips = 0, wins = 0; double realized = 0;
         final Map<String, Integer> exits = new LinkedHashMap<>(), blocked = new LinkedHashMap<>();
@@ -125,6 +141,7 @@ public class BacktestEngine {
         }
 
         void beforeBar(Kline bar) {
+            barTime = bar.openTime();
             String sym = bar.symbol();
             double q = ctx.position(sym);
             if (q < -1e-12) { beforeBarShort(bar); return; }
@@ -197,7 +214,7 @@ public class BacktestEngine {
             }
             if (ctx.position(sym) > 0) return;
             if (ctx.position(sym) < -1e-12) cover(sym, "反向訊號");     // 手上空單 → 先回補再看能不能開多
-            String block = entryBlock();
+            String block = entryBlock(true);
             if (block != null) { blocked.merge(block, 1, Integer::sum); return; }
             double qty = size(px);
             if (ctx.submitAt(intent, px, qty) != null) peak = px;
@@ -213,7 +230,7 @@ public class BacktestEngine {
                 BacktestContext.Trade t = ctx.submitAt(sell(sym), px, 0);
                 if (t != null) { trip(entry, t, false); exits.merge("反向訊號", 1, Integer::sum); peak = 0; }
             }
-            String block = entryBlock();
+            String block = entryBlock(false);
             if (block != null) { blocked.merge(block, 1, Integer::sum); return; }
             if (ctx.openShort(sym, px, size(px)) != null) trough = px;
         }
@@ -224,11 +241,16 @@ public class BacktestEngine {
             if (t != null) { trip(entry, t, true); exits.merge("空單" + why, 1, Integer::sum); trough = 0; }
         }
 
-        private String entryBlock() {
+        private String entryBlock(boolean isLong) {
             if (paused) return "熔斷暫停";
             if (stats.closedCount() < cooldownUntil) return "出場冷卻";
             String rb = RiskRules.regimeBlock(spec.type(), stats, p);
-            return rb == null ? null : rb.startsWith("異常") ? "異常高波動" : "盤勢不符";
+            if (rb != null) return rb.startsWith("異常") ? "異常高波動" : "盤勢不符";
+            if (funding != null && !funding.isEmpty()) {
+                var e = funding.floorEntry(barTime);
+                if (e != null && RiskRules.fundingBlock(isLong, e.getValue(), p) != null) return "資金費率不利";
+            }
+            return null;
         }
 
         private double size(double px) {

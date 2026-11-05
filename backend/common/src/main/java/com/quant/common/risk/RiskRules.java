@@ -30,6 +30,7 @@ public final class RiskRules {
         m.put("execMaker", 0.0);        // 1 = 限價優先：策略訊號先掛買一 / 賣一價，等 makerWaitSec 秒沒成交再撤單改市價（風控出場一律市價）
         m.put("makerWaitSec", 10.0);
         m.put("allowShort", 1.0);       // 合約機器人：1 = 也做空（反向價格分身出訊號）
+        m.put("maxFundingPct", 0.05);   // 合約：資金費率對開倉方向不利超過 N%（每 8 小時）就不開；0 = 不看
         m.put("leverage", 1.0);         // 合約槓桿（第一次下單前設定；1 = 部位大小就是名目，幾乎不會被強平）
         DEFAULTS = Collections.unmodifiableMap(m);
     }
@@ -122,6 +123,20 @@ public final class RiskRules {
         if (trail > 0 && px >= trail) return "移動停利";
         double tp = shortTakeProfitPrice(entry, p);
         if (tp > 0 && px <= tp) return "停利";
+        return null;
+    }
+
+    /**
+     * 資金費率閘門：費率 &gt; 0 是多單付錢給空單。做多遇到費率 &gt; 上限、做空遇到費率 &lt; −上限 → 不開倉。
+     * @param rate 小數（0.0001 = 0.01%）
+     * @return 擋下的原因；null = 放行
+     */
+    public static String fundingBlock(boolean isLong, double rate, Map<String, Object> p) {
+        double max = param(p, "maxFundingPct");
+        if (max <= 0) return null;
+        double pct = rate * 100;
+        if (isLong && pct > max) return String.format("資金費率 %.4f%% 對多單不利（上限 %.3f%%），不開多", pct, max);
+        if (!isLong && pct < -max) return String.format("資金費率 %.4f%% 對空單不利（上限 %.3f%%），不開空", pct, max);
         return null;
     }
 
