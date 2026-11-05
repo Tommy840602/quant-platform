@@ -428,6 +428,7 @@ export default {
     "s9": "ログイン失敗"
   },
   "strategy": {
+    "startRejected": "起動できません",
     "s1": "名前",
     "s2": "銘柄",
     "s3": "ポジション",
