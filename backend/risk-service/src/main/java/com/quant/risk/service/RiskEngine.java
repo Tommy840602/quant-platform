@@ -91,6 +91,12 @@ public class RiskEngine {
         boolean futures = "USDT_M".equalsIgnoreCase(String.valueOf(intent.getOrDefault("market", "SPOT")));
         boolean reduce = Boolean.TRUE.equals(intent.get("reduceOnly"));
         boolean opening = !reduce && (buy || futures);
+        // 統一帳戶風險保護（account-service 依 uniMMR / 帳戶狀態寫入）：合約只能減倉
+        if (futures && opening) {
+            String pm = null;
+            try { pm = redis.opsForValue().get("risk:pm-guard"); } catch (Exception ignore) {}
+            if (pm != null) return reject("統一帳戶風險保護：" + pm + "，停止合約開倉；平倉 / 減倉照常");
+        }
         double maxLoss = limits.maxDailyLossPct(), maxPos = futures ? 0 : limits.maxPositionPct();   // 集中度看的是現貨持幣，合約不適用
         double maxLev = futures ? limits.maxFuturesLeverage() : 0;                                  // 合約看總曝險 / 權益
         if (opening && (maxLoss > 0 || maxPos > 0 || maxLev > 0)) {

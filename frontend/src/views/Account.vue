@@ -40,6 +40,8 @@
         <template v-if="balance.futures.pm">
           <el-tag :type="balance.futures.accountStatus === 'NORMAL' ? 'success' : 'danger'" size="small" style="margin-left:8px">{{ balance.futures.accountStatus }}</el-tag>
           <el-tag :type="+balance.futures.uniMMR > 2 ? 'success' : (+balance.futures.uniMMR > 1.2 ? 'warning' : 'danger')" size="small" style="margin-left:6px" :title="t('account.pmMmrTip')">uniMMR {{ balance.futures.uniMMR ? (+balance.futures.uniMMR).toFixed(2) : '—' }}</el-tag>
+          <el-tag v-if="balance.futures.guard?.level === 'STOP'" type="danger" effect="dark" size="small" style="margin-left:6px" :title="balance.futures.guard.reason">{{ t('account.pmGuardStop') }}</el-tag>
+          <el-tag v-else-if="balance.futures.guard?.level === 'WARN'" type="warning" size="small" style="margin-left:6px" :title="balance.futures.guard.reason">{{ t('account.pmGuardWarn') }}</el-tag>
         </template>
         <el-tag v-if="balance.futures.stale" type="warning" size="small" style="margin-left:8px">{{ t('account.futStale') }}</el-tag>
       </template>
