@@ -15,6 +15,7 @@ export default {
     "system": "系統狀態"
   },
   "header": {
+    "demo": "模擬",
     "title": "量化交易平台",
     "marketOn": "行情已連線",
     "marketOff": "行情斷線",
@@ -255,6 +256,9 @@ export default {
     "s55": "下單 code={code} · {msg}"
   },
   "login": {
+    "demoEnv": "模擬交易 demo",
+    "keyOneDemo": "模擬交易：到 demo.binance.com 用模擬資金帳戶建立 API 金鑰（跟正式網金鑰不同），行情與正式網一致；可寫進 .env 的 BINANCE_DEMO_API_KEY / SECRET。模擬交易沒有統一帳戶，合約走一般合約（demo-fapi）。",
+    "demoSafe": "模擬交易：用幣安模擬資金，行情與正式網相同，不碰真錢",
     "ipNow": "平台目前的對外 IP：",
     "ipCopy": "複製",
     "ipCopied": "已複製，貼到幣安 API 的 IP 白名單",

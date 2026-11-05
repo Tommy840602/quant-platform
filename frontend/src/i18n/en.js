@@ -15,6 +15,7 @@ export default {
     "system": "System Status"
   },
   "header": {
+    "demo": "Demo",
     "title": "Quant Trading Platform",
     "marketOn": "Market connected",
     "marketOff": "Market offline",
@@ -255,6 +256,9 @@ export default {
     "s55": "Order code={code} · {msg}"
   },
   "login": {
+    "demoEnv": "Demo trading",
+    "keyOneDemo": "Demo trading: create an API key at demo.binance.com (different from mainnet keys); prices match mainnet. You can put it in .env as BINANCE_DEMO_API_KEY / SECRET. Demo has no Portfolio Margin; futures use standard demo futures (demo-fapi).",
+    "demoSafe": "Demo trading: Binance simulated funds with mainnet prices — no real money",
     "ipNow": "Platform public IP:",
     "ipCopy": "Copy",
     "ipCopied": "Copied — paste into the Binance API IP whitelist",

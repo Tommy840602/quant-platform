@@ -27,7 +27,7 @@
           <!-- 全站常駐：env + 是否真送單，避免在正式網關了 Dry-Run 卻沒意識到 -->
           <el-tag v-if="trade.env" :type="trade.mainnet ? (effDry ? 'warning' : 'danger') : 'info'"
                   :effect="trade.mainnet && !effDry ? 'dark' : 'light'" size="small" @click="$router.push('/login')" style="cursor:pointer">
-            {{ trade.mainnet ? t('header.mainnet') : t('header.testnet') }} · {{ effDry ? t('header.dryRun') : t('header.live') }}<span v-if="trade.mainnet && !effDry && trade.armRemainingSec > 0"> · {{ t('header.remain') }} {{ fmtRemain(trade.armRemainingSec) }}</span>
+            {{ trade.mainnet ? t('header.mainnet') : (trade.demo ? t('header.demo') : t('header.testnet')) }} · {{ effDry ? t('header.dryRun') : t('header.live') }}<span v-if="trade.mainnet && !effDry && trade.armRemainingSec > 0"> · {{ t('header.remain') }} {{ fmtRemain(trade.armRemainingSec) }}</span>
           </el-tag>
           <!-- 成交回報：UDS 連著 = 即時；設定了但沒連上 = 退回 30 秒輪詢 -->
           <el-tag v-if="udsExpected && !isMobile" :type="udsConnected ? 'success' : 'warning'" size="small" :title="udsTitle">

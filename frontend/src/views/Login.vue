@@ -8,6 +8,7 @@
         <el-form-item :label="t('login.s1')">
           <el-radio-group v-model="cfg.env" style="width:100%">
             <el-radio-button value="testnet">{{ t('login.s10') }}</el-radio-button>
+            <el-radio-button value="demo">{{ t('login.demoEnv') }}</el-radio-button>
             <el-radio-button value="mainnet">{{ t('login.s11') }}</el-radio-button>
           </el-radio-group>
         </el-form-item>
@@ -21,6 +22,7 @@
         <el-alert type="info" :closable="false" show-icon style="margin:-6px 0 14px" :title="t('login.keyOneTitle')">
           <div style="line-height:1.6">{{ t('login.keyOneBody') }}</div>
           <div v-if="cfg.env === 'testnet'" style="line-height:1.6;margin-top:4px">{{ t('login.keyOneTest') }}</div>
+          <div v-if="cfg.env === 'demo'" style="line-height:1.6;margin-top:4px">{{ t('login.keyOneDemo') }}</div>
         </el-alert>
 
         <el-form-item :label="t('login.s3')">
@@ -36,6 +38,8 @@
         </el-alert>
         <el-alert v-else-if="cfg.env==='mainnet'" type="warning" :closable="false" show-icon
           :title="t('login.s6')" style="margin-bottom:12px" />
+        <el-alert v-else-if="cfg.env==='demo'" type="success" :closable="false" show-icon
+          :title="t('login.demoSafe')" style="margin-bottom:12px" />
         <el-alert v-else type="success" :closable="false" show-icon
           :title="t('login.s7')" style="margin-bottom:12px" />
 
@@ -100,8 +104,9 @@ async function apply() {
   try {
     // 一把金鑰：正式網現貨 + 合約（統一帳戶）共用
     const main = cfg.env === 'mainnet'
+    const oneKey = main || cfg.env === 'demo'   // 正式網 / 模擬交易：一把金鑰現貨 + 合約
     const body = { env: cfg.env, apiKey: cfg.apiKey, apiSecret: cfg.apiSecret,
-      futuresApiKey: main ? cfg.apiKey : '', futuresApiSecret: main ? cfg.apiSecret : '' }
+      futuresApiKey: oneKey ? cfg.apiKey : '', futuresApiSecret: oneKey ? cfg.apiSecret : '' }
     await accountApi.setConfig(body)
     await tradeStore.save({ ...body, dryRun: cfg.dryRun, ...(main ? { futuresPm: true } : {}) })   // 寫進共用 store，右上角 / 帳戶頁立即同步
     localStorage.setItem('qp-env', cfg.env)

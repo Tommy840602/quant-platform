@@ -117,6 +117,13 @@ public class BinanceOrderGateway {
     // 合約 User Data Stream（listenKey 版，合約仍支援）
     @Value("${binance.futures-ws-url:wss://fstream.binancefuture.com}") private String futWsUrl;
     @Value("${binance.mainnet-futures-ws-url:wss://fstream.binance.com}") private String futMainnetWsUrl;
+    // ── 幣安模擬交易（Demo Trading）：行情與正式網一致、用模擬資金；一把金鑰現貨 + 合約共用 ──
+    @Value("${binance.demo-rest-url:https://demo-api.binance.com}") private String demoSpotUrl;
+    @Value("${binance.demo-futures-rest-url:https://demo-fapi.binance.com}") private String demoFutUrl;
+    @Value("${binance.demo-futures-ws-url:wss://demo-fstream.binance.com}") private String demoFutWsUrl;
+    @Value("${binance.demo-api-key:}") private String demoKey;
+    @Value("${binance.demo-api-secret:}") private String demoSecret;
+    private String envSpotKey = "", envSpotSecret = "";   // .env 的測試網現貨金鑰（切回 testnet 用）
 
     private String testnetSpotUrl, testnetFutUrl, testnetFutWsUrl;   // 保留測試網位址以便切回
 
@@ -155,7 +162,11 @@ public class BinanceOrderGateway {
     void resolveEnv() {
         testnetSpotUrl = spotUrl;  testnetFutUrl = futUrl;  testnetFutWsUrl = futWsUrl;   // 先記住 testnet 位址
         envFutKey = futKey == null ? "" : futKey; envFutSecret = futSecret == null ? "" : futSecret;
-        if ("mainnet".equalsIgnoreCase(env)) {
+        envSpotKey = spotKey == null ? "" : spotKey; envSpotSecret = spotSecret == null ? "" : spotSecret;
+        if (isDemo()) {
+            useEnv("demo");
+            log.info("BINANCE_ENV=demo ｜ 幣安模擬交易 spot={} fut={}（模擬資金，行情同正式網）", spotUrl, futUrl);
+        } else if ("mainnet".equalsIgnoreCase(env)) {
             spotUrl = spotMainnetUrl;  futUrl = futMainnetUrl;  futWsUrl = futMainnetWsUrl;
             if (!spotMainnetKey.isBlank())    spotKey = spotMainnetKey;
             if (!spotMainnetSecret.isBlank()) spotSecret = spotMainnetSecret;
@@ -216,14 +227,7 @@ public class BinanceOrderGateway {
         if (newEnv != null && !newEnv.isBlank()) {
             String before = env;
             env = newEnv.trim().toLowerCase();
-            boolean m = "mainnet".equals(env);
-            spotUrl = m ? spotMainnetUrl : testnetSpotUrl;
-            futUrl  = m ? futMainnetUrl  : testnetFutUrl;
-            futWsUrl = m ? futMainnetWsUrl : testnetFutWsUrl;
-            if (!env.equalsIgnoreCase(before)) {
-                futKey = m && futMainnetKey != null && !futMainnetKey.isBlank() ? futMainnetKey : envFutKey;
-                futSecret = m && futMainnetSecret != null && !futMainnetSecret.isBlank() ? futMainnetSecret : envFutSecret;
-            }
+            if (!env.equalsIgnoreCase(before)) useEnv(env);   // 網址 + 該環境 .env 的金鑰一起換（頁面貼的新金鑰在下面覆蓋）
             syncClock();
         }
         if (newDryRun != null) {
@@ -236,8 +240,8 @@ public class BinanceOrderGateway {
         if (newSecret != null && !newSecret.isBlank()) { spotSecret = newSecret.trim(); }
         if (newFutKey != null && !newFutKey.isBlank())       { futKey = newFutKey.trim(); }
         if (newFutSecret != null && !newFutSecret.isBlank()) { futSecret = newFutSecret.trim(); }
-        // 正式網：沒有另外指定合約金鑰 → 合約（統一帳戶）沿用現貨那把
-        if (isMainnet() && (newFutKey == null || newFutKey.isBlank()) && (futMainnetKey == null || futMainnetKey.isBlank())) {
+        // 正式網 / 模擬交易：沒有另外指定合約金鑰 → 合約沿用現貨那把（一把金鑰）
+        if ((isMainnet() || isDemo()) && (newFutKey == null || newFutKey.isBlank()) && (isDemo() || futMainnetKey == null || futMainnetKey.isBlank())) {
             futKey = spotKey; futSecret = spotSecret;
         }
         if (futuresEnabled != null) {
@@ -249,6 +253,29 @@ public class BinanceOrderGateway {
         fireModeChanged("applyConfig");
         return configStatus();
     }
+
+    /** 換到某個環境：網址與該環境 .env 的金鑰（testnet / mainnet / demo）。 */
+    private void useEnv(String e) {
+        switch (e) {
+            case "mainnet" -> {
+                spotUrl = spotMainnetUrl; futUrl = futMainnetUrl; futWsUrl = futMainnetWsUrl;
+                if (spotMainnetKey != null && !spotMainnetKey.isBlank()) spotKey = spotMainnetKey;
+                if (spotMainnetSecret != null && !spotMainnetSecret.isBlank()) spotSecret = spotMainnetSecret;
+                futKey = futMainnetKey != null && !futMainnetKey.isBlank() ? futMainnetKey : spotKey;
+                futSecret = futMainnetSecret != null && !futMainnetSecret.isBlank() ? futMainnetSecret : spotSecret;
+            }
+            case "demo" -> {
+                spotUrl = demoSpotUrl; futUrl = demoFutUrl; futWsUrl = demoFutWsUrl;
+                spotKey = demoKey == null ? "" : demoKey; spotSecret = demoSecret == null ? "" : demoSecret;
+                futKey = spotKey; futSecret = spotSecret;
+            }
+            default -> {
+                spotUrl = testnetSpotUrl; futUrl = testnetFutUrl; futWsUrl = testnetFutWsUrl;
+                spotKey = envSpotKey; spotSecret = envSpotSecret; futKey = envFutKey; futSecret = envFutSecret;
+            }
+        }
+    }
+    public boolean isDemo() { return "demo".equalsIgnoreCase(env); }
 
     /** 合約交易總開關（Redis trading:futures-enabled；沒設過 = 開，維持舊行為）。 */
     static final String FUT_ENABLED_KEY = "trading:futures-enabled";
@@ -263,7 +290,7 @@ public class BinanceOrderGateway {
         m.put("keySet", !spotKey.isBlank() && !spotSecret.isBlank());
         m.put("futuresEnabled", futuresEnabled()); m.put("futuresKeySet", futuresKeySet());
         m.put("futuresPm", futuresPm()); m.put("futuresUrl", futTradeBase());
-        m.put("mainnet", "mainnet".equalsIgnoreCase(env));
+        m.put("mainnet", "mainnet".equalsIgnoreCase(env)); m.put("demo", isDemo());
         m.put("clockOffsetMs", clock.offset(spotUrl));
         m.put("clockSyncedAt", clock.syncedAt(spotUrl));
         // 真錢安全鎖狀態：effectiveDryRun 才是「現在會不會真送單」

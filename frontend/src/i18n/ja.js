@@ -15,6 +15,7 @@ export default {
     "system": "システム状態"
   },
   "header": {
+    "demo": "デモ",
     "title": "クオンツ取引プラットフォーム",
     "marketOn": "相場接続中",
     "marketOff": "相場切断",
@@ -255,6 +256,9 @@ export default {
     "s55": "発注 code={code} · {msg}"
   },
   "login": {
+    "demoEnv": "デモ取引",
+    "keyOneDemo": "デモ取引：demo.binance.com で API キーを作成（本番とは別）。価格は本番と同じ。.env の BINANCE_DEMO_API_KEY / SECRET にも設定可。デモには統合口座がなく、先物は通常のデモ先物（demo-fapi）。",
+    "demoSafe": "デモ取引：Binance の仮想資金、価格は本番と同じ。実資金は使いません",
     "ipNow": "プラットフォームのグローバル IP：",
     "ipCopy": "コピー",
     "ipCopied": "コピーしました。Binance API の IP 制限に貼り付けてください",
